@@ -1,0 +1,28 @@
+[package]
+name = "ledger-infrastructure"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+ledger-domain.workspace = true
+ledger-application.workspace = true
+rusqlite = { version = "0.37", features = ["bundled"] }
+serde.workspace = true
+serde_json.workspace = true
+chrono = { workspace = true, features = ["clock"] }
+uuid = { workspace = true, features = ["v4"] }
+futures-channel.workspace = true
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg"] }
+tempfile = "3"
+llama-cpp-2 = { version = "=0.1.156", default-features = false, features = ["android-static-stdcxx"] }
+encoding_rs = "0.8"
+sha2 = "0.10"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+futures-executor = "0.3"

@@ -1,0 +1,24 @@
+[package]
+name = "ledgers-bro"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[features]
+default = ["desktop"]
+desktop = ["dioxus/desktop"]
+
+[dependencies]
+ledger-domain.workspace = true
+ledger-application.workspace = true
+ledger-infrastructure.workspace = true
+ledger-ui.workspace = true
+dioxus.workspace = true
+dioxus-ssr.workspace = true
+directories = "6"
+rfd = "0.15"
+futures-channel.workspace = true
+
+[lints]
+workspace = true

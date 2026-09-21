@@ -1,0 +1,21 @@
+[package]
+name = "ledger-ui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+ledger-domain.workspace = true
+ledger-application.workspace = true
+dioxus.workspace = true
+chrono.workspace = true
+base64 = "0.22"
+tokio = { version = "1", features = ["time", "macros"] }
+
+[dev-dependencies]
+dioxus-ssr.workspace = true
+tokio = { version = "1", features = ["rt", "macros", "time"] }
+
+[lints]
+workspace = true

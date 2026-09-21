@@ -1,0 +1,6 @@
+root ::= "{" ws "\"schema_version\":" ws "\"1\"," ws "\"status\":" ws ("\"unsupported\"," ws "\"candidates\":" ws "[]" | "\"proposal\"," ws "\"candidates\":" ws "[" candidate ("," ws candidate)? ("," ws candidate)? "]") ws "}"
+candidate ::= "{" ws "\"intent\":" ws ("\"expense\"" | "\"income\"" | "\"transfer\"" | "\"summary\"") "," ws "\"amount_text\":" ws amount "," ws "\"currency_text\":" ws currency "," ws "\"account_text\":" ws value "," ws "\"destination_account_text\":" ws value "," ws "\"category_text\":" ws value "," ws "\"date_text\":" ws date "," ws "\"description_text\":" ws value ws "}"
+value ::= "null" | string
+string ::= "\"" char{1,160} "\""
+char ::= [^"\\\x00-\x1F] | "\\" (["\\/bfnrt] | "u" [0-9a-fA-F]{4})
+ws ::= [ \t\n]{0,4}

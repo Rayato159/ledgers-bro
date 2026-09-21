@@ -1,0 +1,26 @@
+Use case: ui-mockup / reference-guided compositing.
+Create a NEW revision of the Ledgers Bro personal finance app concept, incorporating the user's latest art direction. ONE polished high-resolution landscape sheet, approximately 16:10, showing a large complete Windows desktop app dashboard on the left (about 75% width), and a complete Android quick-entry chat screen on the right (about 25%). Orthographic screenshot presentation, no perspective, no desk, generous but usable spacing. Small footer "UI CONCEPT · SAMPLE DATA". This is a design mockup, not an advertisement.
+REFERENCE ROLES, follow exactly:
+Reference image 1, the rainy illustrated street: use ONLY its color atmosphere -- muted seafoam/mint green, eucalyptus/sage, pale cream, slate gray, and a little dusty peach from the umbrella. Do not reproduce its characters, signs, logos, scene or text.
+Reference image 2, the pink personal profile webpage: use its UI design language and composition -- soft rounded modular cards, airy off-white surfaces, delicate borders, subtle shadows, pill navigation, large friendly character art integrated beside functional panels, small clean line icons, restrained decorative plus signs. REPLACE its pink palette with reference 1's mint/sage/cream/peach. Do not copy its profile text, identity, menu topics, layout verbatim, or music widgets.
+Reference image 3 is the user's ORIGINAL mascot: preserve recognizable short black bob, huge round glasses, pale face, charcoal sweater and trousers, plaid cuffs/collar, red guitar. Use this owned mascot as the finance companion; tasteful hand-drawn art, no new reference-image people.
+CRITICAL: this revision has NO bold comic outlines, NO skewed panels, NO halftone textures, NO hot pink. The prior comic concept is superseded.
+Typography: highly legible Thai sans serif, clear dark slate text, horizontal body copy and tabular-looking financial figures. Mint/deep teal interactive accents, peach used sparingly. Include distinctive custom-feeling artwork without sacrificing readable data.
+DESKTOP:
+Top rounded navigation bar: app mark + "LEDGERS BRO", tabs "ภาพรวม", "บัญชี", "รายการ", "แชต", "ภาษี"; small profile and settings icons.
+Main left content: welcoming line "ค่อย ๆ จัดการเงิน ในจังหวะของเรา"; date "กันยายน 2026"; a large premium rounded net-worth card "สินทรัพย์สุทธิ" "฿128,450" and subtle label "ข้อมูลอยู่ในเครื่อง".
+Right part of desktop main composition: tasteful full-height original mascot with guitar softly overlapping the negative space beside cards, analogous to reference 2's character-led composition. Keep mascot away from numeric text and controls.
+Below top card: two equal cards "รายรับเดือนนี้" "฿35,000" and "รายจ่ายเดือนนี้" "฿18,650".
+Bottom desktop content cards: a minimalist expense-category donut with a few clear legend labels "อาหาร", "ค่าเช่า", "อื่นๆ"; a card "รายการล่าสุด" with clean rows "อาหารกลางวัน −฿120", "กาแฟ −฿80", "เงินเดือน +฿35,000"; and a compact tax planning card "ภาษีปี 2569", amber/muted peach badge "ข้อมูลยังไม่ครบ", action "เพิ่มข้อมูลลดหย่อน". No invented amount of legally owed tax.
+A visible rounded quick-entry field across the lower main panel: placeholder "เช่น จ่าย 80 จาก เงินสด หมวด อาหาร", a mint circular send arrow, and suggestion chips "จ่าย", "รับ", "โอน", "ดูสรุป".
+ANDROID CHAT:
+Top title "บันทึกด่วน" with small mint badge "บนเครื่อง". Soft paper background, modest slim Android status area without iPhone notch.
+Small template chips "จ่าย", "รับ", "โอน".
+User chat bubble "กาแฟ 80".
+Assistant/form card "เลือกรายละเอียดรายการ" with explicit amount "฿80.00"; account buttons "เงินสด" and "ธนาคาร"; category buttons "อาหาร" and "ของกินเล่น", with an additional small "เลือกหมวดอื่น".
+Show these as unselected choices for missing/ambiguous fields, NOT falsely completed. A small caption "ยังไม่ได้บันทึก". The confirmation button "ตรวจรายการ" is visually disabled until choices are selected. Bottom composer "พิมพ์รายการ..." and send icon.
+Layout must communicate controlled quick entry and user choice, not an open-ended AI chatbot claiming transactions were saved. All panels use the new soft rounded mint palette.
+Output a visually coherent, calm, polished concept sheet with readable numbers, believable controls and original mascot identity.
+
+TARGETED FOLLOW-UP EDIT, BUILT-IN IMAGEGEN:
+Edit only one small icon in this existing Ledgers Bro UI concept. In the large left desktop net-worth card, immediately left of the Thai label 'ข้อมูลอยู่ในเครื่อง', there is an outline cloud icon. Replace ONLY that cloud icon with a small dark slate outline smartphone/device icon of the same visual weight and size, clearly denoting on-device local storage. Preserve every other pixel as closely as possible: all typography and Thai labels, amounts, card layout, colors, original mascot, desktop composition, Android chat, tax card, and background. Do not add content, change values, or redesign anything else.

@@ -1,0 +1,13 @@
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.heic binary
+*.heif binary
+*.ttf binary
+*.ico binary
+
+# Preserve third-party notices exactly as distributed.
+licenses/** -text
+crates/ui/assets/fonts/*.txt -text

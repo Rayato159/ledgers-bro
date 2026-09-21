@@ -1,0 +1,24 @@
+[package]
+name = "ledgers-bro-android"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[features]
+default = ["mobile"]
+mobile = ["dioxus/mobile"]
+
+[dependencies]
+ledger-application.workspace = true
+ledger-infrastructure.workspace = true
+ledger-ui.workspace = true
+dioxus.workspace = true
+futures-channel.workspace = true
+
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21.1"
+tokio = { version = "1", features = ["time"] }
+
+[lints]
+workspace = true

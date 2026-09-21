@@ -1,0 +1,10 @@
+[application]
+android_manifest = "native/AndroidManifest.xml"
+android_main_activity = "native/MainActivity.kt"
+android_min_sdk_version = 24
+
+[bundle]
+identifier = "com.dancingwithmycode.ledgersbro.test"
+publisher = "Dancing With My Code"
+category = "Finance"
+short_description = "สมุดบัญชีส่วนตัวในเครื่อง — รุ่นทดสอบ Android"

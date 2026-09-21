@@ -1,0 +1,99 @@
+/* Generated tanuki cutouts and editable category illustrations. No legacy room or human mascot. */
+.art-icon { --art-primary: #c8aff3; --art-secondary: #a5dccc; --art-paper: #fffaff; --art-outline: #65517a; flex: none; overflow: visible; }
+.art-icon-food, .art-icon-snacks, .art-icon-medical { --art-primary: #f4bad4; --art-secondary: #dca2c9; }
+.art-icon-bank, .art-icon-supplies { --art-primary: #a8d9f5; }
+.art-icon-salary, .art-icon-freelance, .art-icon-crypto { --art-primary: #ffd0ae; }
+.legend-art { display: inline-grid; place-items: center; border-left: 3px solid; width: 32px; }
+.category-field { border: 0; margin: 20px 0; padding: 0; min-width: 0; }
+.category-field legend { font-size: var(--text-body); margin-bottom: 10px; }
+.category-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.category-tile { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; min-height: 92px; border-radius: 20px; background: var(--paper); border: 1px solid transparent; padding: 10px 3px; font-size: var(--text-small); }
+.category-tile .art-icon { background: var(--surface); border-radius: 16px; padding: 4px; width: 52px; height: 52px; box-shadow: 0 4px 8px #7955af10; }
+.category-tile:nth-child(3n+2) .art-icon { background: #fbe2ee; }
+.category-tile:nth-child(3n) .art-icon { background: #e1f3ec; }
+.category-tile:hover { background: var(--raised); border-color: var(--muted); }
+.category-tile.selected { background: #eee2ff; border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.category-tile span { overflow-wrap: anywhere; }
+.category-art-preview, .account-art-types { display: flex; gap: 10px; align-items: center; }
+.account-art-banner { display: flex; min-height: 180px; align-items: center; justify-content: space-between; padding: 22px 28px; margin-bottom: 22px; background: var(--hero-gradient); overflow: hidden; gap: 18px; }
+.account-art-banner > div { min-width: 0; }
+.account-art-banner h2 { font-size: var(--text-heading); margin: 5px 0; }
+.account-art-banner p { font-size: var(--text-small); color: var(--muted); }
+.account-art-banner img { width: 160px; height: 160px; object-fit: contain; flex: none; }
+.account-art-types { margin-top: 14px; }
+.account-kind-preview { display: flex; align-items: center; gap: 12px; padding: 6px 12px; margin-top: 8px; background: var(--surface); border-radius: 13px; }
+.history-art-banner { display: flex; align-items: center; gap: 22px; background: var(--surface); border: 1px solid var(--line); border-radius: 24px; margin-bottom: 20px; padding: 18px 25px; }
+.history-art-banner img { width: 100px; height: 100px; object-fit: contain; }
+.history-art-banner p { font-size: var(--text-small); color: var(--muted); margin-top: 5px; }
+.illustrated-greeting { gap: 16px; }
+.phone-mascot { width: 115px; height: 130px; object-fit: contain; flex: none; }
+.illustrated-greeting strong { display: block; font-size: var(--text-heading); }
+.illustrated-greeting p { font-size: var(--text-small); }
+.receipt-scanner { border: 1px solid var(--line); background: var(--surface); border-radius: 20px; padding: 16px; margin-bottom: 24px; }
+.scanner-heading { display: flex; flex-wrap: wrap; gap: 9px; align-items: center; margin-bottom: 12px; }
+.scanner-heading h2 { font-size: var(--text-title); }
+.scanner-heading p { font-size: var(--text-small); color: var(--muted); }
+.local-badge { display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; margin-left: auto; white-space: nowrap; background: var(--raised); border-radius: 10px; font-size: var(--text-small); }
+.receipt-upload { display: flex; flex-wrap: wrap; position: relative; align-items: center; justify-content: center; gap: 9px; border: 1px dashed #b8a0d4; background: var(--paper); border-radius: 14px; padding: 17px 10px; margin: 0; cursor: pointer; font-size: var(--text-body); }
+.receipt-upload:hover, .receipt-upload:focus-within { background: var(--raised); outline: 2px solid var(--ink); outline-offset: 3px; }
+.receipt-upload small { width: 100%; text-align: center; font-size: var(--text-small); color: var(--muted); }
+.receipt-file-input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; padding: 0; }
+.receipt-upload.disabled { opacity: .55; }
+.scanner-privacy { font-size: var(--text-small); line-height: 1.5; margin-top: 10px; color: var(--muted); }
+.scan-progress { display: flex; align-items: center; gap: 10px; font-size: var(--text-body); padding: 16px 2px; }
+.scan-pulse { width: 12px; height: 12px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 5px var(--line); }
+.receipt-result { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 12px; margin-top: 17px; border-top: 1px solid var(--line); padding-top: 15px; }
+.receipt-preview { width: 100%; max-height: 180px; object-fit: contain; background: #fff; border: 1px solid var(--line); border-radius: 9px; }
+.receipt-findings > strong { font-size: var(--text-body); }
+.receipt-choices { display: flex; flex-direction: column; gap: 8px; }
+.receipt-choice { text-align: left; background: var(--raised); padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); }
+.receipt-choice strong, .receipt-choice small { display: block; }
+.receipt-choice small { font-size: var(--text-small); color: var(--muted); overflow-wrap: anywhere; margin-top: 4px; }
+.ocr-text { margin-top: 14px; font-size: var(--text-small); }
+.ocr-text summary { cursor: pointer; padding: 10px 0; }
+.ocr-text pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; max-height: 200px; overflow: auto; padding: 12px; background: var(--field); border-radius: 10px; user-select: text; }
+.receipt-findings .field-hint { margin: 6px 0; font-size: var(--text-small); }
+.receipt-editor { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line); }
+.receipt-lines { padding-left: 24px; margin: 16px 0; }
+.receipt-lines > li { padding: 14px 0; border-bottom: 1px solid var(--line); }
+.receipt-lines > li::marker { color: var(--ink); }
+.receipt-lines label { margin: 4px 0; font-size: var(--text-small); }
+.receipt-line-fields { display: grid; grid-template-columns: minmax(0, 1fr) 110px 44px; gap: 8px; align-items: end; margin-top: 8px; }
+.receipt-line-fields > div { min-width: 0; }
+.receipt-line-fields input, .receipt-line-fields select { padding: 8px; font-size: var(--text-small); }
+.receipt-line-fields .icon-button { margin-bottom: 3px; }
+.receipt-balance { margin-top: 16px; padding: 12px; border-radius: 12px; font-weight: 700; }
+.receipt-balance.balanced { color: var(--positive); background: #e1f3ec; }
+.receipt-balance.mismatch { color: var(--negative); background: #ffe8ee; }
+.receipt-reviewed { display: flex; gap: 10px; align-items: flex-start; font-size: var(--text-body); }
+.receipt-reviewed input { width: 22px; height: 22px; min-height: 22px; margin: 5px 0; flex: none; accent-color: var(--ink); }
+.confirmation dd, .entry-note-body { white-space: pre-wrap; overflow-wrap: anywhere; }
+.confirmation dl .confirmation-note { display: block; }
+.confirmation-note dd { text-align: left; margin-top: 10px; }
+.saved-entry-details { margin-top: 8px; font-size: var(--text-small); }
+.saved-entry-details summary { cursor: pointer; color: var(--ink); }
+.entry-note-body { margin-top: 8px; font-weight: 400; }
+@media (max-width: 1000px) {
+  .receipt-line-fields { grid-template-columns: minmax(0, 1fr) 44px; }
+  .receipt-line-fields > div:first-child { grid-column: 1 / -1; }
+  .category-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 760px) {
+  .category-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .category-tile { font-size: 1.15rem; }
+  .account-art-banner { padding: 20px; gap: 8px; min-height: 160px; }
+  .account-art-banner h2 { font-size: var(--text-title); }
+  .account-art-banner img { width: 105px; height: 125px; }
+  .account-art-types { gap: 4px; }
+  .account-art-types svg { width: 27px; height: 27px; }
+  .history-art-banner { gap: 14px; padding: 15px; }
+  .history-art-banner img { width: 76px; height: 88px; }
+  .history-art-banner h2 { font-size: var(--text-title); }
+  .phone-mascot { width: 88px; height: 105px; }
+  .illustrated-greeting strong { font-size: var(--text-title); }
+  .receipt-scanner { padding: 14px; }
+  .scanner-heading { gap: 6px; }
+  .scanner-heading > svg { width: 38px; }
+  .local-badge { margin-left: 0; }
+}
+@media (max-width: 370px) { .category-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }

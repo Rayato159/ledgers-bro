@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Ledgers Bro quick-entry proposal v1",
+  "description": "Untrusted local LLM proposal. Never a database command or authorization.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "status",
+    "candidates"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "enum": [
+        "1"
+      ]
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "proposal",
+        "unsupported"
+      ]
+    },
+    "candidates": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 3,
+      "items": {
+        "$ref": "#/$defs/candidate"
+      }
+    }
+  },
+  "$defs": {
+    "source_text": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 160
+    },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "intent",
+        "amount_text",
+        "currency_text",
+        "account_text",
+        "destination_account_text",
+        "category_text",
+        "date_text",
+        "description_text"
+      ],
+      "properties": {
+        "intent": {
+          "type": "string",
+          "enum": [
+            "expense",
+            "income",
+            "transfer",
+            "summary"
+          ]
+        },
+        "amount_text": {
+          "$ref": "#/$defs/source_text"
+        },
+        "currency_text": {
+          "$ref": "#/$defs/source_text"
+        },
+        "account_text": {
+          "$ref": "#/$defs/source_text"
+        },
+        "destination_account_text": {
+          "$ref": "#/$defs/source_text"
+        },
+        "category_text": {
+          "$ref": "#/$defs/source_text"
+        },
+        "date_text": {
+          "$ref": "#/$defs/source_text"
+        },
+        "description_text": {
+          "$ref": "#/$defs/source_text"
+        }
+      }
+    }
+  }
+}

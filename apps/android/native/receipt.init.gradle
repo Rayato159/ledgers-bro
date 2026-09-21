@@ -1,0 +1,21 @@
+// Project-scoped Gradle init hook: Dioxus 0.7 regenerates build.gradle.kts.
+def ledgerRoot = System.getenv('LEDGER_ANDROID_PROJECT_ROOT')
+if (!ledgerRoot) throw new GradleException('Missing Ledgers Bro project root')
+def ledgerAbi = System.getenv('LEDGER_ANDROID_ABI')
+if (!(ledgerAbi in ['x86_64', 'arm64-v8a'])) {
+    throw new GradleException('Use scripts/build-android.ps1 to select the Android ABI')
+}
+gradle.beforeProject { project ->
+    project.plugins.withId('com.android.application') {
+        // Dioxus shares its staging directory between targets. Exclude stale
+        // libraries from other targets, including extra ABIs bundled by AARs.
+        project.android.defaultConfig.ndk.abiFilters.clear()
+        project.android.defaultConfig.ndk.abiFilters.add(ledgerAbi)
+        // Keep custom resources in source control; Dioxus recreates target/dx on clean builds.
+        project.android.sourceSets.main.res.srcDir("${ledgerRoot}/apps/android/native/res")
+        project.dependencies.add('implementation', project.files("${ledgerRoot}/.tools/downloads/tesseract4android-4.9.0.aar"))
+        project.android.sourceSets.main.java.srcDir("${ledgerRoot}/apps/android/native/receipt")
+        project.android.sourceSets.main.assets.srcDir("${ledgerRoot}/.tools/android-ocr/assets")
+        project.android.sourceSets.main.assets.srcDir("${ledgerRoot}/licenses")
+    }
+}

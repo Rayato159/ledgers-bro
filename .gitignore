@@ -1,0 +1,54 @@
+/target/
+/.data/
+/.preview/
+/.tools/
+# Local editor and Android build state.
+/.idea/
+/.vscode/
+**/.gradle/
+**/.cxx/
+**/local.properties
+*.iml
+
+# Personal ledgers, exports, and backups.
+*.sqlite
+*.sqlite-*
+*.sqlite3*
+*.db
+*.db-*
+/exports/
+/backups/
+
+# Downloaded models and distributable build outputs.
+*.gguf
+*.safetensors
+*.onnx
+*.tflite
+*.traineddata
+*.apk
+*.aab
+*.ipa
+
+# Credentials and signing material.
+.env
+.env.*
+!.env.example
+*.keystore
+*.jks
+*.p12
+*.pfx
+*.pem
+*.key
+*.mobileprovision
+
+# Temporary files.
+*.log
+*.tmp
+*.bak
+*.orig
+*.swp
+*.swo
+__pycache__/
+*.pyc
+.DS_Store
+Thumbs.db

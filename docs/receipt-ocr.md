@@ -1,0 +1,49 @@
+# Receipt recognition: Windows and Android
+
+The receipt button selects a local JPG/PNG/HEIC/HEIF image, bounded to 32 MiB. Hosts normalize orientation and strip EXIF/GPS by re-encoding the preview as JPEG. OCR reads the same normalized pixels the user sees. Windows uses `ReceiptImageNormalizer` and `TesseractOcr`; Android uses its native document picker, ImageDecoder and Tesseract4Android. Neither adapter receives a repository or commits entries. The Dioxus component presents OCR evidence and candidate totals/dates, then reuses preview/confirm/commit. Account and category require user selection.
+
+## Run
+
+Run `./scripts/setup-ocr.ps1` once to install the pinned Windows reader and language files under `.tools/ocr`. Downloads are SHA-256 checked. This is a development setup script; it runs the upstream Windows installer in its own new directory. It never recursively removes or replaces an existing runtime directory.
+
+`./scripts/run-desktop.ps1` supplies that directory. For a packaged executable, ship the runtime and its dependencies/license files in an `ocr` folder next to the executable, or pass `--ocr-dir <absolute-path>`. Missing runtime is a recoverable UI error, never a silent cloud fallback. No receipt is uploaded or used for model training.
+
+## Scope and guardrails
+
+- JPG/PNG/HEIC/HEIF; 32 MiB compressed, 10,000 px per side and 50 megapixels maximum. Container signatures, not filenames, determine format. JPEG EXIF and HEIF container rotation are applied. Live Photo movies, RAW/DNG, AVIF and HEIF sequences are not supported.
+- Windows uses pinned ImageMagick 7.1.2-31 Q8 x64 with libheif for HEIF only. A restricted coder policy, source-dimension preflight, no delegates, bounded temporary output and a shared 45-second conversion deadline contain the helper. It downsizes to 4,000 px on the longest side; JPEG/PNG decoding also has a 256 MiB allocation limit. Some extreme images within the nominal pixel limit can still exceed decoder resources and return a recoverable error.
+- Android 9+ uses software ImageDecoder, sRGB, at most 3,200 px on the longest side, followed by bundled Tesseract4Android 4.9.0 and pinned `tha+eng` models. SAF grants only the selected document URI; no broad storage permission. Older Android versions show an explanatory error. Devices still require HEIF codec validation; emulator success is not a claim about every OEM.
+- The subprocess is launched directly with fixed arguments, no command shell and no URL input. Timeout is 45 seconds after decode; cancellation kills/waits for the child. Recognition is off the UI/ledger worker thread.
+- Working files are in a per-call temporary directory, removed on normal exit/cancellation. Process termination/power loss can leave OS temporary files; this is not a secure-erasure guarantee.
+- Thai/ASCII digits, unambiguous four-digit CE/BE dates, and labelled totals. Conflicting totals/dates become choices. New entries default to the supplied local day; when the receipt date is missing or ambiguous, the draft keeps today and the UI labels this as a default. A single recognized receipt date is preserved.
+- Foreign-currency markers suppress THB autofill for both payment and line amounts; user must enter actual THB values. Currency detection is conservative, not universal, and this is not currency conversion or tax/VAT calculation.
+- OCR text is plain text, never code, prompt instructions or HTML. All values still pass ledger validation and explicit confirmation.
+- Receipt image and OCR text are held for review only and cleared on successful commit/new draft. They are **not durable attachments**, evidence for tax filing, or backup.
+- Clean printed receipts are the initial target. This is not an accuracy guarantee for handwriting, faded thermal paper, rotated text inside an image, multi-column receipts or every merchant format. Missing/uncertain fields can be entered manually.
+
+## Item details and reconciliation
+
+Named lines ending in a readable amount become editable line candidates. Metadata, subtotals, grand totals, cash tendered and change are excluded from item sums. Repeated purchases are retained. Quantities/unit-price text stays with the description; the trailing amount is the line total. Wrapped/multi-column lines are not reliably reconstructed and require manual correction.
+
+VAT and service-charge lines with unclear treatment require an explicit choice between added and already-included amounts. Discounts subtract, included charges do not add again, and explicitly entered rounding may be positive or negative. The app never invents an adjustment to make OCR numbers balance, or calculates tax liability from these lines.
+
+`ReceiptLine` and `ReceiptBreakdown` are domain value objects. Construction checks exact integer-satang equality between line contributions and the chosen net payment. A difference of even one satang blocks preview. The application checks reconciliation and explicit review again before creating a prepared ledger entry; this is not solely a disabled UI button. Changing line details or the net payment clears the review checkbox.
+
+The confirmed breakdown generates one bullet per line and the net total in the durable journal note, plus the optional user note. History and confirmation preserve line breaks; CSV retains the complete note. Up to 100 lines with descriptions up to 120 characters are accepted. Stored notes are bounded at 20,000 characters to retain full receipt details; no detail is silently truncated. Image/raw OCR text remain temporary rather than durable attachments.
+
+Equality verifies the entered numbers, not OCR's fidelity to the physical receipt. Users must compare each line and the net payment with the image before confirmation.
+- Current capture uses a file/document picker on Windows and Android. In-app camera capture and the iOS host are still pending.
+
+Android selection/OCR runs outside the ledger worker. Rust polls volatile native results from a JVM-attached worker, avoiding repeated main-thread dispatch while the document picker backgrounds the Activity. Session IDs reject stale callbacks; cancellation, backgrounding during recognition and deadlines release the UI. Native OCR uses the interruptible recognition entry point before extracting text. Models are verified and copied from APK assets into private no-backup storage; no runtime model download is needed for OCR. Input/preview/text remain transient memory. The recognizer deadline is 45 seconds, with a 60-second result deadline and a five-minute picker deadline on the Rust bridge.
+
+## Source and verification
+
+Runtime: [Tesseract 5.5.3 Windows release](https://github.com/tesseract-ocr/tesseract/releases/tag/5.5.3), linked by [UB Mannheim](https://github.com/UB-Mannheim/tesseract/wiki). Models: [tessdata_fast](https://github.com/tesseract-ocr/tessdata_fast/tree/87416418657359cb625c412a48b6e1d6d41c29bd), `tha` and `eng`, LSTM `--oem 1`. These are an offline desktop baseline, not a claim of best Thai mobile OCR. The adapter can be replaced after device benchmarks. Check redistribution notices for the complete runtime and bundled native dependencies before packaging for sale.
+
+Automated rules tests cover total/subtotal/tax/change separation, exact satang, Thai digits, BE dates, ambiguity, invalid/future dates, foreign currency and oversized input. `tests/fixtures/receipt-th-en.png` is synthetic (not an actual tax invoice), generated by `scripts/make-receipt-fixture.ps1`. Run the real local reader test explicitly:
+
+```powershell
+cargo test -p ledger-infrastructure --test receipt_ocr -- --ignored
+```
+
+Also run `cargo test -p ledger-infrastructure --test receipt_images -- --include-ignored` for real HEIF decoding, EXIF/container orientation, 24 MP normalization and Thai/English total recognition. Runtime-dependent integration tests are marked ignored in the portable suite and must be invoked explicitly. Fixture provenance and regeneration are in `tests/fixtures/README.md`; these images are synthetic, not captures from a physical iPhone. See [iPhone import instructions](iphone-images-th.md).

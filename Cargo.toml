@@ -1,0 +1,45 @@
+[workspace]
+members = ["crates/domain", "crates/application", "crates/infrastructure", "crates/ui", "apps/desktop", "apps/android"]
+default-members = ["apps/desktop"]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+publish = false
+
+[workspace.dependencies]
+ledger-domain = { path = "crates/domain" }
+ledger-application = { path = "crates/application" }
+ledger-infrastructure = { path = "crates/infrastructure" }
+ledger-ui = { path = "crates/ui" }
+chrono = { version = "0.4.45", default-features = false, features = ["std"] }
+uuid = "1.23.1"
+thiserror = "2.0.17"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0"
+dioxus = { version = "=0.7.2", default-features = false, features = ["macro", "html", "signals", "hooks", "launch", "document"] }
+dioxus-ssr = "=0.7.2"
+futures-channel = "0.3"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+unused_must_use = "deny"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+dbg_macro = "deny"
+todo = "deny"
+unimplemented = "deny"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "debuginfo"
+
+# Verifying the 397 MB local model must remain practical in emulator debug builds.
+[profile.dev.package.sha2]
+opt-level = 3

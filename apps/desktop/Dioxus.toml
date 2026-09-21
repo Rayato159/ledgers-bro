@@ -1,0 +1,9 @@
+[application]
+name = "Ledgers Bro"
+default_platform = "desktop"
+
+[bundle]
+identifier = "com.dancingwithmycode.ledgersbro"
+publisher = "Dancing With My Code"
+category = "Finance"
+short_description = "A little clarity for your everyday money."
