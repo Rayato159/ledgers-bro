@@ -3,6 +3,10 @@ use ledger_domain::*;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum QuickResolution {
+    Batch {
+        source: String,
+        drafts: Vec<ModelDraft>,
+    },
     Draft {
         input: EntryInput,
         guidance: String,

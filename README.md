@@ -2,7 +2,7 @@
 
 แอปสมุดบัญชีในเครื่องด้วย Rust + Dioxus มี Windows และรุ่นทดลอง Android; iOS ยังไม่พอร์ต
 
-สถานะ 21 กันยายน 2026: **มีแอป Desktop และ APK รุ่นทดลอง Android x86_64/ARM64 เป็น development build ยังไม่ใช่รุ่นพร้อมขายบน Store** ตรวจเปิดแอปบน Emulator แล้ว ส่วนมือถือ ARM64 ยังไม่ได้ทดสอบบนเครื่องจริง ไม่มี backend สมุดบัญชี ไม่มี analytics และไม่ส่งข้อความหรือยอดเงินไปบริการ AI
+สถานะ 24 กันยายน 2026: **มีแอป Desktop และ APK รุ่นทดลอง Android x86_64/ARM64 เป็น development build ยังไม่ใช่รุ่นพร้อมขายบน Store** ตรวจเปิดแอปบน Emulator แล้ว ส่วนมือถือ ARM64 ยังไม่ได้ทดสอบบนเครื่องจริง ไม่มี backend สมุดบัญชี ไม่มี analytics และไม่ส่งข้อความหรือยอดเงินไปบริการ AI
 
 ## ลองใช้บน Windows
 
@@ -25,6 +25,11 @@
 **กรอกเองโดยไม่ใช้ AI:** กด **กรอกเอง** ด้านบน หรือปุ่มกรอกเองในหน้าบันทึกด่วน → เลือกรายจ่าย/รายรับ/โอนเงิน → กรอกยอดและเลือกบัญชี/หมวด → ตรวจรายการ → ยืนยัน วันที่เริ่มต้นเป็นวันนี้ รายละเอียดยังแก้ได้ก่อนยืนยัน ถ้า AI ใช้เวลานาน กด **ยกเลิกแล้วกรอกเอง** เพื่อเริ่มแบบฟอร์มเปล่าได้
 
 ข้อมูลอยู่ที่ `<data-directory>/ledger.sqlite3` โหมดปกติใช้ `ProjectDirs::data_local_dir()` ของ Windows ปัจจุบันฐานข้อมูลยังไม่เข้ารหัส ไม่มี PIN/biometric และยังไม่มี encrypted backup/restore ควรใช้ข้อมูลทดลองระหว่างพัฒนา **CSV เป็นรายงานส่งออก ไม่ใช่ไฟล์สำรองที่กู้คืนสมุดบัญชีได้ครบ**
+
+
+บันทึกด่วนรองรับประโยคไทย เช่น `ซื้อไก่ทอดไป 30 บาท และได้เงินจาก Facebook 400 บาท บันทึกลงเงินสด และ กรุงไทยตามลำดับ` โดยไม่ต้องดาวน์โหลดโมเดล ระบบแยกสองรายการ ถามช่องที่ขาด แล้วให้ยืนยันบันทึกทั้งชุดพร้อมกัน รายละเอียดและกรณีไม่รองรับดู [ชุดทดสอบ prompt](docs/verification-prompt-flow-tax-th.md)
+
+ภาพรวมมีกราฟรายรับ/รายจ่าย 6 เดือน สัดส่วน เปอร์เซ็นต์ที่มากกว่า และ flow rate `(รายรับ−รายจ่าย)/(รายรับ+รายจ่าย)` พร้อมเกณฑ์แย่/พอใช้/ดีที่เปิดอ่านได้ ไม่รวมยอดตั้งต้นและเงินโอน
 
 ## ทำงานแล้ว
 
@@ -78,7 +83,9 @@ cargo build -p ledgers-bro --release --locked
 
 ดู [ผลตรวจและขอบเขตที่ทดสอบจริง](docs/verification-2026-09-20.md) และ [ผลตรวจ OCR/งานภาพ](docs/verification-receipts-and-art.md) รวมการทดสอบบัญชี กฎอ่านใบเสร็จ ตัวอ่านภาพจริง และการกดยืนยันใน WebView
 
-ล่าสุด: [ผลตรวจธีมครีม, การยกเลิก AI และ HEIC บน Android](docs/verification-warm-ui-and-images.md) ระบุทั้งส่วนที่ผ่านและ HEIC ความละเอียดสูงที่ Emulator ยังอ่านไม่ได้
+ล่าสุด: [บันทึกด่วนหลายรายการ กราฟ flow rate และเครื่องคำนวณภาษี](docs/verification-prompt-flow-tax-th.md)
+
+ผลตรวจก่อนหน้า: [ผลตรวจธีมครีม, การยกเลิก AI และ HEIC บน Android](docs/verification-warm-ui-and-images.md) ระบุทั้งส่วนที่ผ่านและ HEIC ความละเอียดสูงที่ Emulator ยังอ่านไม่ได้
 
 ## ไฟล์ใน repository
 
@@ -92,9 +99,9 @@ cargo build -p ledgers-bro --release --locked
 
 ## ก่อนขายยังต้องทำ
 
-Encrypted database/key storage, backup/restore, PIN/biometric, camera/iOS OCR adapters + merchant accuracy benchmarks, LLM accuracy/latency/battery benchmarks บนมือถือจริง, durable receipt attachments, PDF, recurring obligations/notifications, opt-in bank notifications, forecast/financial health, แก้รายการและค้นหา/กรองแบบครบ, Android device tests, accessibility audit, large-ledger tests, signed package และ Store review
+Encrypted database/key storage, backup/restore, PIN/biometric, camera/iOS OCR adapters + merchant accuracy benchmarks, LLM accuracy/latency/battery benchmarks บนมือถือจริง, durable receipt attachments, PDF, recurring obligations/notifications, opt-in bank notifications, forecast/ภาระหนี้และสภาพคล่อง, แก้รายการและค้นหา/กรองแบบครบ, Android device tests, accessibility audit, large-ledger tests, signed package และ Store review
 
-หน้าภาษีระบุว่า **ยังไม่เปิดคำนวณ** ต้องทำ rule packs ตามปี ชุดทดสอบอิสระ และตรวจความครอบคลุมก่อนเปิดใช้ ไม่มีสูตรภาษีที่อนุมานด้วย LLM
+หน้าภาษีคำนวณ PIT รายปี 2568/2569 ได้ใน [ขอบเขตที่ระบุ](docs/tax-engine-th.md) พร้อมขั้นภาษี ค่าใช้จ่าย ลดหย่อน วิธีขั้นต่ำ และเครดิตภาษี; ปี 2569 เป็นประมาณการ ยังไม่ครอบคลุม VAT/บริการต่างประเทศ/สิทธิทุกประเภท และไม่มีการยื่นแบบอัตโนมัติ ไม่ใช้ LLM คำนวณภาษี
 
 ## เอกสารผลิตภัณฑ์
 

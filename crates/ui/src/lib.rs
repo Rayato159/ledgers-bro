@@ -2,6 +2,8 @@
 mod account_deletion;
 mod app;
 mod artwork;
+mod batch_entry;
+mod cashflow;
 mod components;
 mod entry;
 mod export;
@@ -12,6 +14,7 @@ mod pages;
 mod receipt;
 mod receipt_editor;
 mod state;
+mod tax;
 mod typography;
 mod voice;
 

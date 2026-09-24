@@ -73,6 +73,8 @@ pub enum Command {
     },
     Preview(EntryInput),
     Commit(PreparedEntry),
+    PreviewBatch(Vec<EntryInput>),
+    CommitBatch(Vec<PreparedEntry>),
     Reverse(EntryId),
     ExportCsv(ExportOptions),
 }
@@ -85,6 +87,8 @@ pub enum Response {
     Resolved(QuickResolution),
     Prepared(PreparedEntry),
     Committed(CommitOutcome),
+    PreparedBatch(Vec<PreparedEntry>),
+    CommittedBatch(Vec<CommitOutcome>),
     Csv(CsvExport),
 }
 
@@ -144,7 +148,7 @@ impl<R: LedgerRepository, C: Clock, I: IdSource> LedgerApplication<R, C, I> {
                     self.ids.submission_id()?,
                 )?))
             }
-            Command::Resolve(text) => Ok(Response::Resolved(resolve_quick_entry(
+            Command::Resolve(text) => Ok(Response::Resolved(resolve_entry_text(
                 &text,
                 self.clock.today()?,
                 &self.repository.snapshot()?.accounts,
@@ -221,6 +225,35 @@ impl<R: LedgerRepository, C: Clock, I: IdSource> LedgerApplication<R, C, I> {
                 Ok(Response::Committed(
                     self.repository
                         .commit(&prepared.entry, prepared.submission)?,
+                ))
+            }
+            Command::PreviewBatch(inputs) => {
+                if inputs.is_empty() || inputs.len() > MAX_BATCH_ENTRIES {
+                    return Err(AppError::Input("ตรวจได้ครั้งละ 1–8 รายการ".into()));
+                }
+                let mut prepared = Vec::new();
+                for input in inputs {
+                    let Response::Prepared(entry) = self.execute(Command::Preview(input))? else {
+                        return Err(AppError::Input("ตรวจรายการไม่สำเร็จ".into()));
+                    };
+                    prepared.push(entry);
+                }
+                Ok(Response::PreparedBatch(prepared))
+            }
+            Command::CommitBatch(prepared) => {
+                if prepared.is_empty()
+                    || prepared.len() > MAX_BATCH_ENTRIES
+                    || prepared.iter().any(|p| {
+                        matches!(
+                            p.entry.kind(),
+                            EntryKind::Opening { .. } | EntryKind::Reversal { .. }
+                        )
+                    })
+                {
+                    return Err(AppError::Input("ชุดรายการไม่ถูกต้อง กรุณาตรวจรายการใหม่".into()));
+                }
+                Ok(Response::CommittedBatch(
+                    self.repository.commit_batch(&prepared)?,
                 ))
             }
             Command::Reverse(id) => {

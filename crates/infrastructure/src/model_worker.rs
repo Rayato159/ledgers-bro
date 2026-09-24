@@ -161,7 +161,13 @@ impl ModelWorker {
         }
         match ledger.request(Command::Resolve(source.clone())).await {
             Ok(response) => Ok(response),
-            Err(AppError::Input(_) | AppError::Rule(_)) => {
+            Err(error @ (AppError::Input(_) | AppError::Rule(_))) => {
+                // The model contract describes alternatives for ONE transaction.
+                // Never let failed multi-entry parsing fall back to saving a prefix.
+                if source.contains("และ") || source.contains('\n') || source.contains("ตามลำดับ")
+                {
+                    return Err(error);
+                }
                 ledger_application::check_model_source(&source)?;
                 let output = self.propose(source.clone(), operation.clone()).await?;
                 check_cancel(&operation)?;

@@ -170,12 +170,17 @@ fn launch() -> Result<(), Box<dyn std::error::Error>> {
                 .with_inner_size(LogicalSize::new(1280.0, 950.0))
                 .with_min_inner_size(LogicalSize::new(360.0, 640.0)),
         )
-        .with_menu(None)
         .with_data_directory(directory.join(match inspect_port {
             Some(port) => format!("webview-inspect-{port}"),
             None => "webview".into(),
         }))
         .with_background_color((255, 227, 165, 255));
+    // macOS routes Command-C/V/A through the native Edit menu, including WKWebView
+    // text fields. Removing that menu makes pasted quick-entry prompts disappear.
+    #[cfg(not(target_os = "macos"))]
+    {
+        config = config.with_menu(None);
+    }
     if let Some(port) = inspect_port {
         config = config.with_windows_browser_args(format!("--remote-debugging-port={port}"));
     }

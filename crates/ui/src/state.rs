@@ -63,6 +63,8 @@ pub struct UiState {
     pub scan_cancel: Signal<Option<Arc<AtomicBool>>>,
     pub model_operation: Signal<Option<ModelOperation>>,
     pub model_choices: Signal<Option<(String, Vec<ModelDraft>)>>,
+    pub batch: Signal<Option<(String, Vec<ModelDraft>)>>,
+    pub batch_prepared: Signal<Option<Vec<PreparedEntry>>>,
 }
 impl UiState {
     pub fn cancel_model(self) {
@@ -77,6 +79,8 @@ impl UiState {
         let operation = ModelOperation::default();
         self.model_operation.set(Some(operation.clone()));
         self.model_choices.set(None);
+        self.batch.set(None);
+        self.batch_prepared.set(None);
         self.input.set(None);
         self.prepared.set(None);
         self.receipt.set(None);
@@ -113,6 +117,14 @@ impl UiState {
         self.prepared.set(None);
         self.model_choices.set(None);
         match resolution {
+            QuickResolution::Batch { source, drafts } => {
+                self.input.set(None);
+                self.batch_prepared.set(None);
+                self.batch.set(Some((source, drafts)));
+                self.guidance.set(
+                    "แยกรายการแล้ว ตรวจข้อความต้นฉบับและเติมช่องที่ขาดด้านล่าง ยังไม่มีรายการถูกบันทึก".into(),
+                );
+            }
             QuickResolution::Draft { input, guidance } => {
                 self.input.set(Some(input));
                 self.guidance.set(guidance);
@@ -172,6 +184,8 @@ impl UiState {
                         .transpose()
                 }) {
                     Ok(Some((image, analysis))) => {
+                        self.batch.set(None);
+                        self.batch_prepared.set(None);
                         self.input.set(Some(analysis.draft(today)));
                         self.prepared.set(None);
                         self.receipt.set(Some(ReceiptReview::new(image, analysis)));
@@ -203,17 +217,30 @@ impl UiState {
         // A successful commit dismisses its dialog/preview. The task must belong
         // to the root, otherwise unmounting that child cancels the refresh and
         // leaves the entire app busy even though the transaction was saved.
+        let created_account = matches!(&command, Command::CreateAccount { .. });
         dioxus::dioxus_core::spawn_forever(async move {
             let result = gateway.0.request(command).await;
             match result {
                 Ok(Response::Dashboard(view)) => self.view.set(Some(view)),
                 Ok(Response::Resolved(resolution)) => self.apply_resolution(resolution),
                 Ok(Response::Prepared(prepared)) => self.prepared.set(Some(prepared)),
+                Ok(Response::PreparedBatch(prepared)) => self.batch_prepared.set(Some(prepared)),
                 Ok(Response::AccountDeletion(deletion)) => {
                     self.account_deletion.set(Some(deletion))
                 }
                 Ok(Response::AccountDeleted(id)) => {
                     self.account_deletion.set(None);
+                    self.batch_prepared.set(None);
+                    if let Some((_, drafts)) = self.batch.write().as_mut() {
+                        for draft in drafts {
+                            if draft.input.account == Some(id) {
+                                draft.input.account = None;
+                            }
+                            if draft.input.destination == Some(id) {
+                                draft.input.destination = None;
+                            }
+                        }
+                    }
                     // A draft referring to the removed account cannot be saved.
                     let uses_deleted = self.input.peek().as_ref().is_some_and(|input| {
                         input.account == Some(id) || input.destination == Some(id)
@@ -243,7 +270,11 @@ impl UiState {
                         ))),
                     }
                 }
-                Ok(Response::Committed(_)) => {
+                Ok(Response::Committed(_)) | Ok(Response::CommittedBatch(_)) => {
+                    if !created_account {
+                        self.batch.set(None);
+                    }
+                    self.batch_prepared.set(None);
                     self.receipt.set(None);
                     self.account_form.set(false);
                     self.prepared.set(None);
@@ -278,6 +309,8 @@ impl UiState {
         }
         let today = self.view.peek().as_ref().map(|v| v.today);
         if let Some(today) = today {
+            self.batch.set(None);
+            self.batch_prepared.set(None);
             // Cancel interpretation before opening an independent draft. The
             // awaiting task rejects late model output and releases busy itself.
             self.cancel_model();
@@ -451,6 +484,8 @@ mod tests {
             scan_cancel: use_signal(|| None),
             model_operation: use_signal(|| None),
             model_choices: use_signal(|| None),
+            batch: use_signal(|| None),
+            batch_prepared: use_signal(|| None),
         }
     }
 
@@ -502,6 +537,52 @@ mod tests {
         assert!(!dioxus_ssr::render(&dom).contains("originating-dialog"));
     }
 
+    #[component]
+    fn BatchAccountHarness() -> Element {
+        let store = use_test_state();
+        use_effect(move || {
+            store.apply_resolution(QuickResolution::Batch {
+                source: "ซื้อไก่ทอด30บาท".into(),
+                drafts: vec![ModelDraft {
+                    input: EntryInput::empty("2026-09-24".parse().expect("date")),
+                    guidance: "เพิ่มบัญชี".into(),
+                }],
+            });
+            store.send(Command::CreateAccount {
+                name: "เงินสด".into(),
+                kind: ledger_domain::AccountKind::Cash,
+                opening: "0".into(),
+            });
+        });
+        let ready = store.view.read().is_some() && !*store.busy.read();
+        let retained = store
+            .batch
+            .read()
+            .as_ref()
+            .is_some_and(|(source, drafts)| source == "ซื้อไก่ทอด30บาท" && drafts.len() == 1);
+        rsx! { div { if ready && retained { "batch-retained-after-account-creation" } else { "pending" } } }
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn creating_a_missing_account_preserves_the_uncommitted_prompt_batch() {
+        let mut dom = VirtualDom::new(BatchAccountHarness);
+        dom.insert_any_root_context(Box::new(Gateway(Arc::new(DelayedRefresh {
+            calls: Arc::new(AtomicUsize::new(0)),
+        }))));
+        dom.rebuild_in_place();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                dom.wait_for_work().await;
+                dom.render_immediate(&mut dioxus::dioxus_core::NoOpMutations);
+                if dioxus_ssr::render(&dom).contains("batch-retained-after-account-creation") {
+                    break;
+                }
+            }
+        })
+        .await
+        .expect("adding the missing account must not discard the prompt");
+    }
+
     #[derive(Clone, Copy)]
     enum ManualStart {
         Idle,
@@ -543,6 +624,9 @@ mod tests {
             store.view.set(Some(
                 dashboard(LedgerState::default(), today).expect("fixture"),
             ));
+            if !matches!(start, ManualStart::Saving) {
+                store.batch.set(Some(("ซื้อข้าว30บาท".into(), vec![])));
+            }
             match start {
                 ManualStart::Idle => {}
                 ManualStart::StalledModel => store.resolve_text("กาแฟ 80".into()),
@@ -554,6 +638,8 @@ mod tests {
             && store.input.read().as_ref() == Some(&EntryInput::empty(today))
             && !*store.busy.read()
             && store.model_choices.read().is_none()
+            && store.batch.read().is_none()
+            && store.batch_prepared.read().is_none()
             && store.prepared.read().is_none();
         let protected = matches!(start, ManualStart::Saving)
             && *store.busy.read()

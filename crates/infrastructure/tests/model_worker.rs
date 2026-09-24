@@ -5,7 +5,7 @@ use ledger_infrastructure::{LOCAL_MODEL_FILENAME, LedgerWorker, ModelWorker};
 use std::sync::atomic::Ordering;
 
 #[test]
-fn missing_model_keeps_exact_commands_available_but_never_fakes_free_text() {
+fn missing_model_keeps_commands_and_bounded_thai_batches_available() {
     let directory = tempfile::tempdir().expect("temporary directory");
     let model = ModelWorker::start(directory.path().join("models")).expect("worker");
     let ledger = LedgerWorker::start(directory.path().join("ledger.sqlite3")).expect("ledger");
@@ -18,9 +18,23 @@ fn missing_model_keeps_exact_commands_available_but_never_fakes_free_text() {
         Ok(Response::Resolved(QuickResolution::Draft { .. }))
     ));
     assert!(
-        block_on(model.resolve(&ledger, "ซื้อกาแฟ 80 บาท".into(), ModelOperation::default()))
-            .is_err()
+        block_on(model.resolve(
+            &ledger,
+            "เช้านี้แวะซื้อกาแฟจ่ายไป 80 บาท".into(),
+            ModelOperation::default()
+        ))
+        .is_err()
     );
+    assert!(
+        matches!(block_on(model.resolve(&ledger, "ซื้อไก่ทอดไป 30 บาท และได้เงินจาก Facebook 400 บาท บันทึกลงเงินสด และ กรุงไทยตามลำดับ".into(), ModelOperation::default())), Ok(Response::Resolved(QuickResolution::Batch { drafts, .. })) if drafts.len() == 2)
+    );
+    let failure = block_on(model.resolve(
+        &ledger,
+        "ซื้อข้าว30บาท และคำสั่งไม่สมบูรณ์".into(),
+        ModelOperation::default(),
+    ))
+    .expect_err("whole batch must fail");
+    assert!(!failure.to_string().contains("ดาวน์โหลด"));
 }
 
 #[test]

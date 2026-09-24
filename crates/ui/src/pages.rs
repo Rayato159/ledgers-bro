@@ -1,5 +1,4 @@
 use crate::{HostInfo, artwork::*, components::*, state::*};
-use chrono::Datelike;
 use dioxus::prelude::*;
 use ledger_application::{Command, Dashboard};
 use ledger_domain::*;
@@ -116,23 +115,6 @@ pub fn TransactionRows(view: Dashboard, limit: usize, allow_cancel: bool) -> Ele
                     } }
                 }
             }
-        }
-    }
-}
-
-#[component]
-pub fn TaxPage(today: EntryDate) -> Element {
-    let year = today.date().year() + 543;
-    rsx! {
-        section { class: "page-heading", div { h1 { "ภาษีปี {year}" } } span { class: "status-pill", "ยังไม่เปิดคำนวณ" } }
-        section { class: "card tax-intro", span { class: "tax-symbol", Icon { name: "file", size: 30 } } h2 { "ตัวเลขภาษี ต้องมีที่มาชัดเจน" } p { "รุ่นนี้ยังไม่คำนวณภาษี และไม่ได้ยื่นแบบให้ การบันทึกหมวดเงินเดือนไม่ได้แปลว่ายอดนั้นเป็นเงินได้ก่อนหักภาษี" } }
-        div { class: "tax-grid",
-            for (title, body) in [
-                ("เงินเดือนและรายได้อื่น", "ต้องแยกเงินได้ก่อนหัก เงินเข้าบัญชีจริง และภาษีหัก ณ ที่จ่าย พร้อมประเภทเงินได้"),
-                ("สิทธิลดหย่อน", "ตรวจสิทธิ หลักฐาน และเพดานร่วมของแต่ละรายการตามปีภาษี ก่อนนำมาคำนวณ"),
-                ("บริการต่างประเทศและ VAT", "ต้องทราบชนิดบริการ สถานะ VAT และใบเรียกเก็บเงิน ไม่เหมาว่าบริการต่างประเทศทุกอย่างต้องนำส่งแบบเดียวกัน"),
-                ("กฎที่ผ่านการตรวจสอบ", "จะแสดงผลเมื่อเครื่องคำนวณและชุดกรณีทางภาษีผ่านการตรวจสอบ เวลานี้ยังไม่มีตัวเลขภาษีที่รับรองได้"),
-            ] { article { class: "card tax-item", h3 { "{title}" } p { "{body}" } } }
         }
     }
 }

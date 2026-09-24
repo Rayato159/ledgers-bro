@@ -16,6 +16,11 @@ pub enum CommitOutcome {
 /// Each mutation is atomic and must recheck invariants against current data.
 /// A snapshot is consistent across both collections. No partially saved postings.
 pub trait LedgerRepository {
+    /// All entries save atomically, including validation and idempotent retries.
+    fn commit_batch(
+        &mut self,
+        entries: &[crate::PreparedEntry],
+    ) -> Result<Vec<CommitOutcome>, StorageError>;
     fn snapshot(&mut self) -> Result<LedgerState, StorageError>;
     /// Validate the reviewed state and remove the account plus whole journal
     /// entries atomically. A stale plan must fail without deleting anything.

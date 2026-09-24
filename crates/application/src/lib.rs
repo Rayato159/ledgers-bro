@@ -1,6 +1,8 @@
 //! Use cases and ports. Adapters depend on this crate, never the reverse.
 mod account_deletion;
 mod accounting_export;
+mod cashflow;
+mod entry_text;
 mod error;
 mod local_model;
 pub mod model_contract;
@@ -17,6 +19,8 @@ mod service;
 
 pub use account_deletion::*;
 pub use accounting_export::*;
+pub use cashflow::*;
+pub use entry_text::*;
 pub use error::*;
 pub use ports::*;
 pub use quick_entry::*;
@@ -24,3 +28,6 @@ pub use receipt::*;
 pub use receipt_input::*;
 pub use report::*;
 pub use service::*;
+
+mod tax;
+pub use tax::*;

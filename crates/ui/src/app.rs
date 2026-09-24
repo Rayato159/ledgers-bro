@@ -11,6 +11,8 @@ use ledger_application::Command;
 
 #[component]
 pub fn App() -> Element {
+    let tax_session = use_signal(crate::tax::TaxSession::default);
+    use_context_provider(|| tax_session);
     let gateway = use_context::<Gateway>();
     let host = use_context::<HostInfo>();
     let mut store = UiState {
@@ -29,6 +31,8 @@ pub fn App() -> Element {
         scan_cancel: use_signal(|| None),
         model_operation: use_signal(|| None),
         model_choices: use_signal(|| None),
+        batch: use_signal(|| None),
+        batch_prepared: use_signal(|| None),
     };
     use_context_provider(|| store);
     use_effect(move || store.send(Command::Load));
@@ -73,7 +77,7 @@ pub fn App() -> Element {
                         Page::Transactions => rsx! { TransactionsPage { view } },
                         Page::Chat => rsx! { QuickEntryPage { view } },
                         Page::Manual => rsx! { ManualEntryPage { view } },
-                        Page::Tax => rsx! { TaxPage { today: view.today } },
+                        Page::Tax => rsx! { crate::tax::TaxPage {} },
                     }
                 } else {
                     div { class: "card startup", h1 { "สมุดบัญชีของเรา" } p { "กำลังเปิดข้อมูลในเครื่อง…" } button { class: "primary", disabled: *store.busy.read(), onclick: move |_| store.send(Command::Load), "ลองเปิดอีกครั้ง" } }

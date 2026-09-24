@@ -66,6 +66,43 @@ impl SqliteLedger {
 }
 
 impl LedgerRepository for SqliteLedger {
+    fn commit_batch(
+        &mut self,
+        entries: &[ledger_application::PreparedEntry],
+    ) -> Result<Vec<CommitOutcome>, StorageError> {
+        if entries.is_empty() || entries.len() > ledger_application::MAX_BATCH_ENTRIES {
+            return Err(StorageError::Corrupt);
+        }
+        let tx = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(database_error)?;
+        let mut state = read_state(&tx)?;
+        let mut outcomes = Vec::new();
+        let mut submissions = BTreeSet::new();
+        let mut ids = BTreeSet::new();
+        for prepared in entries {
+            if !submissions.insert(prepared.submission)
+                || !ids.insert(prepared.entry.id())
+                || matches!(
+                    prepared.entry.kind(),
+                    EntryKind::Opening { .. } | EntryKind::Reversal { .. }
+                )
+            {
+                return Err(StorageError::SubmissionConflict);
+            }
+            if let Some(outcome) = existing_submission(&tx, &prepared.entry, prepared.submission)? {
+                outcomes.push(outcome);
+            } else {
+                validate_append(&state, &prepared.entry)?;
+                insert_entry(&tx, &prepared.entry, prepared.submission)?;
+                state.entries.push(prepared.entry.clone());
+                outcomes.push(CommitOutcome::Saved(prepared.entry.id()));
+            }
+        }
+        tx.commit().map_err(database_error)?;
+        Ok(outcomes)
+    }
     fn delete_account(&mut self, deletion: &AccountDeletion) -> Result<(), StorageError> {
         let tx = self
             .connection

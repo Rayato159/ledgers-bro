@@ -8,7 +8,23 @@ pub fn QuickEntryPage(view: Dashboard) -> Element {
     let mut store = use_context::<UiState>();
     let host = use_context::<HostInfo>();
     let mut text = use_signal(String::new);
+    let mut previous_text = use_signal(String::new);
     let capturing = use_signal(|| false);
+    // Chips and voice input also update the composer. They must invalidate the
+    // previous confirmation just like typing, even without a DOM input event.
+    use_effect(move || {
+        let current = text.read().clone();
+        if *previous_text.peek() != current {
+            previous_text.set(current);
+            store.batch.set(None);
+            store.batch_prepared.set(None);
+            store.model_choices.set(None);
+            store.prepared.set(None);
+            store.input.set(None);
+            store.receipt.set(None);
+            store.guidance.set(String::new());
+        }
+    });
     use_drop(move || store.cancel_model());
     let first_account = view
         .accounts
@@ -35,11 +51,12 @@ pub fn QuickEntryPage(view: Dashboard) -> Element {
                     button { class: "sample-chip", onclick: move |_| text.set("กาแฟ 80".into()), "กาแฟ 80" }
                     button { class: "sample-chip", onclick: move |_| text.set(expense_sample.clone()), "จ่ายค่าอาหาร" }
                     button { class: "sample-chip", onclick: move |_| text.set(income_sample.clone()), "รับเงินเดือน" }
+                    button { class: "sample-chip", onclick: move |_| text.set("ซื้อไก่ทอดไป 30 บาท และได้เงินจาก Facebook 400 บาท บันทึกลงเงินสด และ กรุงไทยตามลำดับ".into()), "หลายรายการ" }
                     button { class: "sample-chip", onclick: move |_| text.set("สรุป เดือนนี้".into()), "สรุปเดือนนี้" }
                 }
                 form { class: "chat-compose", onsubmit: move |event| { event.prevent_default(); if !*capturing.peek() { store.resolve_text(text()); } },
                     label { r#for: "quick-text", class: "sr-only", "พิมพ์รายการแบบด่วน" }
-                    textarea { id: "quick-text", placeholder: "เช่น เมื่อวานซื้อกาแฟ 80 บาท จ่ายเงินสด", rows: "3", maxlength: 1000, required: true, value: "{text}", disabled: *store.busy.read() || *capturing.read(), oninput: move |event| { text.set(event.value()); store.model_choices.set(None); store.prepared.set(None); store.input.set(None); store.receipt.set(None); store.guidance.set(String::new()); } }
+                    textarea { id: "quick-text", placeholder: "เช่น เมื่อวานซื้อกาแฟ 80 บาท จ่ายเงินสด", rows: "3", maxlength: 1000, required: true, value: "{text}", disabled: *store.busy.read() || *capturing.read(), oninput: move |event| { text.set(event.value()); store.batch.set(None); store.batch_prepared.set(None); store.model_choices.set(None); store.prepared.set(None); store.input.set(None); store.receipt.set(None); store.guidance.set(String::new()); } }
                     crate::voice::VoiceInput { text, capturing }
                     button { class: "primary", r#type: "submit", disabled: *capturing.read() || *store.busy.read() || text.read().trim().is_empty(), "อ่านรายการ" Icon { name: "arrow", size: 17 } }
                 }
@@ -53,6 +70,8 @@ pub fn QuickEntryPage(view: Dashboard) -> Element {
                 if view.accounts.is_empty() {
                     EmptyState { title: "เพิ่มบัญชีก่อนเริ่มจด", body: "แอปต้องรู้ว่าเงินเข้าหรือออกจากบัญชีไหน จะได้คำนวณยอดถูก" }
                     button { class: "primary", onclick: move |_| store.account_form.set(true), "เพิ่มบัญชีแรก" }
+                } else if let Some((source, drafts)) = store.batch.read().clone() {
+                    crate::batch_entry::BatchReview { source, drafts, view: view.clone() }
                 } else if let Some(prepared) = prepared {
                     Confirmation { prepared, view: view.clone() }
                 } else if let Some((source, drafts)) = store.model_choices.read().clone() {
@@ -98,7 +117,8 @@ pub fn ManualEntryPage(view: Dashboard) -> Element {
 #[component]
 fn EntryForm(input: EntryInput, view: Dashboard) -> Element {
     let store = use_context::<UiState>();
-    let can_preview = input.is_complete();
+    let missing = missing_entry_fields(&input);
+    let can_preview = missing.is_empty();
     let kind = input.kind;
     let has_receipt = input.receipt.is_some();
     let categories: &[Category] = if kind == TransactionKind::Income {
@@ -145,7 +165,7 @@ fn EntryForm(input: EntryInput, view: Dashboard) -> Element {
             label { r#for: "entry-date", "วันที่รายการ" } input { id: "entry-date", r#type: "date", required: true, min: "1900-01-01", max: "{view.today}", value: input.date, disabled: *store.busy.read(), onchange: move |event| store.update_entry(|i| i.date = event.value()) }
             if let Some(receipt) = input.receipt.clone() { crate::receipt_editor::ReceiptEditor { receipt, total: input.amount.clone() } }
             label { r#for: "entry-note", "รายละเอียดเพิ่มเติม (ไม่จำเป็น)" } textarea { id: "entry-note", maxlength: 500, rows: "3", placeholder: "เช่น ข้าวกลางวัน", value: input.note, disabled: *store.busy.read(), oninput: move |event| store.update_entry(|i| i.note = event.value()) }
-            if !can_preview { p { class: "field-hint", "กรอกยอดเงิน เลือกบัญชี และรายละเอียดที่จำเป็นให้ครบก่อนตรวจรายการ" } }
+            if !can_preview { p { class: "batch-question", role: "status", "ยังขาด: {missing.join(\" · \")} — เติมข้อมูลเหล่านี้ก่อนบันทึก" } }
             button { class: "primary full-width", r#type: "submit", disabled: *store.busy.read() || !can_preview, "ตรวจรายการก่อนบันทึก" Icon { name: "arrow", size: 18 } }
         }
     }

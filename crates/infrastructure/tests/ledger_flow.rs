@@ -842,3 +842,140 @@ fn csv_quotes_thai_notes_newlines_and_neutralizes_spreadsheet_formulas() {
     assert!(csv.contains("\"'=malicious()\""));
     assert!(csv.contains("\"'=HYPERLINK(\"\"example\"\")\nข้าว,ชา\""));
 }
+
+#[test]
+fn users_prompt_previews_without_writing_then_commits_both_accounts_once() {
+    let mut app = app(SqliteLedger::in_memory().expect("db"));
+    let cash = account(&mut app, "เงินสด", AccountKind::Cash, "1000");
+    let bank = account(&mut app, "กรุงไทย", AccountKind::Bank, "0");
+    let before = snapshot(&mut app);
+    let Response::Resolved(QuickResolution::Batch { mut drafts, .. }) = app
+        .execute(Command::Resolve(
+            "ซื้อไก่ทอดไป 30 บาท และได้เงินจาก Facebook 400 บาท บันทึกลงเงินสด และ กรุงไทยตามลำดับ".into(),
+        ))
+        .expect("resolve")
+    else {
+        panic!("batch")
+    };
+    assert!(
+        app.execute(Command::PreviewBatch(
+            drafts.iter().map(|d| d.input.clone()).collect()
+        ))
+        .is_err()
+    );
+    assert_eq!(snapshot(&mut app), before);
+    drafts[0].input.category = Some(Category::Food);
+    drafts[1].input.category = Some(Category::OtherIncome);
+    let Response::PreparedBatch(prepared) = app
+        .execute(Command::PreviewBatch(
+            drafts.into_iter().map(|d| d.input).collect(),
+        ))
+        .expect("preview")
+    else {
+        panic!("prepared batch")
+    };
+    assert_eq!(snapshot(&mut app), before);
+    app.execute(Command::CommitBatch(prepared.clone()))
+        .expect("commit all");
+    let after = snapshot(&mut app);
+    assert_eq!(minor(&after, cash), 97_000);
+    assert_eq!(minor(&after, bank), 40_000);
+    assert_eq!(after.expenses.minor(), 3000);
+    assert_eq!(after.income.minor(), 40000);
+    assert_eq!(
+        monthly_cashflow(&after).expect("flow")[5].rate(),
+        Some(8604)
+    );
+    let Response::CommittedBatch(outcomes) =
+        app.execute(Command::CommitBatch(prepared)).expect("retry")
+    else {
+        panic!("batch result")
+    };
+    assert!(
+        outcomes
+            .iter()
+            .all(|o| matches!(o, CommitOutcome::AlreadySaved(_)))
+    );
+    assert_eq!(snapshot(&mut app), after);
+}
+
+#[test]
+fn failure_in_second_entry_rolls_back_first_and_retry_saves_all() {
+    let dir = TempDir::new().expect("temp");
+    let path = dir.path().join("ledger.sqlite3");
+    let mut app = app(SqliteLedger::open(&path).expect("db"));
+    let cash = account(&mut app, "cash", AccountKind::Cash, "1000");
+    let before = snapshot(&mut app);
+    let first = preview(
+        &mut app,
+        TransactionKind::Income,
+        cash,
+        "400",
+        Some(Category::OtherIncome),
+        None,
+    );
+    let second = preview(
+        &mut app,
+        TransactionKind::Expense,
+        cash,
+        "30",
+        Some(Category::Food),
+        None,
+    );
+    let raw = Connection::open(&path).expect("raw");
+    raw.execute_batch("CREATE TRIGGER batch_failure BEFORE INSERT ON postings WHEN NEW.system_book='expense' BEGIN SELECT RAISE(ABORT,'failure'); END;").expect("inject");
+    assert!(
+        app.execute(Command::CommitBatch(vec![first.clone(), second.clone()]))
+            .is_err()
+    );
+    assert_eq!(snapshot(&mut app), before);
+    raw.execute_batch("DROP TRIGGER batch_failure;")
+        .expect("remove fault");
+    app.execute(Command::CommitBatch(vec![first, second]))
+        .expect("retry all");
+    assert_eq!(minor(&snapshot(&mut app), cash), 137000);
+}
+
+#[test]
+fn batch_revalidates_stale_accounts_and_duplicate_submission_ids_atomically() {
+    let dir = TempDir::new().expect("temp");
+    let path = dir.path().join("ledger.sqlite3");
+    let mut app = app(SqliteLedger::open(&path).expect("db"));
+    let cash = account(&mut app, "cash", AccountKind::Cash, "1000");
+    let bank = account(&mut app, "bank", AccountKind::Bank, "1000");
+    let first = preview(
+        &mut app,
+        TransactionKind::Expense,
+        cash,
+        "30",
+        Some(Category::Food),
+        None,
+    );
+    let second = preview(
+        &mut app,
+        TransactionKind::Expense,
+        bank,
+        "30",
+        Some(Category::Food),
+        None,
+    );
+    let before = snapshot(&mut app);
+    assert!(
+        app.execute(Command::CommitBatch(vec![first.clone(), first.clone()]))
+            .is_err()
+    );
+    assert_eq!(snapshot(&mut app), before);
+    Connection::open(&path)
+        .expect("raw")
+        .execute(
+            "UPDATE accounts SET archived=1 WHERE id=?1",
+            [bank.to_string()],
+        )
+        .expect("archive");
+    let archived = snapshot(&mut app);
+    assert!(
+        app.execute(Command::CommitBatch(vec![first, second]))
+            .is_err()
+    );
+    assert_eq!(snapshot(&mut app), archived);
+}

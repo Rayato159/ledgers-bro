@@ -1,5 +1,7 @@
 # แชตบันทึกด่วน — specification v1
 
+อัปเดต 24 กันยายน 2026: เพิ่ม grammar ประโยคไทยและหลายรายการใน Rust (ไม่เรียกโมเดล) พร้อมแจ้งข้อมูลที่ขาดและยืนยันแบบ atomic batch ดู [ตัวอย่างและผลทดสอบ](verification-prompt-flow-tax-th.md) ขอบเขต LLM ยังเป็นการตีความทางเลือกของรายการเดียว; ถ้าแบ่งหลายรายการไม่สำเร็จจะไม่ส่งให้โมเดลเลือกเฉพาะรายการแรก ข้อความอิสระนอก grammar ยังต้องดาวน์โหลดโมเดลก่อน
+
 สถานะ implementation 21 กันยายน 2026: มี parser, form/choices/confirmation, durable idempotency, model JSON validator และ local llama.cpp runtime ต่อกับ Windows/Android แล้ว ดู [คู่มือ AI ในเครื่อง](local-llm-th.md) ยังไม่มี fuzzy ranking/aliases หรือ draft persistence ตามสเปกทั้งหมด รายละเอียดด้านล่างบางส่วนเป็นเป้าหมายผลิตภัณฑ์ ใช้สถานะในคู่มือและ README เป็นขอบเขตที่ทำงานจริง
 
 **ความหมายของ deterministic ที่จะรับประกัน**

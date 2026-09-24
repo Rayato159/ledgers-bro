@@ -39,11 +39,12 @@ pub fn Overview(view: Dashboard) -> Element {
                 div { class: "cashflow", span { "เงินเข้า − เงินออก" } strong { "฿{cashflow}" } }
             }
         }
+        crate::cashflow::CashflowChart { view: view.clone() }
         div { class: "overview-bottom",
             section { class: "card spending", div { class: "section-heading", h2 { "เงินไปไหนบ้าง" } span { class: "muted small", "เดือนนี้" } } ExpenseChart { view: view.clone() } }
             section { class: "card recent", div { class: "section-heading", h2 { "เรื่องเงินล่าสุด" } button { class: "text-button", onclick: move |_| store.page.set(Page::Transactions), "ดูทั้งหมด" Icon { name: "arrow", size: 14 } } }
                 TransactionRows { view: view.clone(), limit: 4, allow_cancel: false }
-                div { class: "mini-tax", span { class: "tax-symbol", Icon { name: "file", size: 21 } } div { strong { "ภาษีปี {year}" } p { "ยังไม่เปิดคำนวณ • ต้องตรวจข้อมูลและกฎภาษีก่อน" } } button { class: "icon-button", "aria-label": "ดูรายละเอียดภาษี", onclick: move |_| store.page.set(Page::Tax), Icon { name: "arrow", size: 19 } } }
+                div { class: "mini-tax", span { class: "tax-symbol", Icon { name: "file", size: 21 } } div { strong { "ภาษีปี {year}" } p { "คำนวณรายปีจากรายได้และสิทธิที่ยืนยัน" } } button { class: "icon-button", "aria-label": "ดูรายละเอียดภาษี", onclick: move |_| store.page.set(Page::Tax), Icon { name: "arrow", size: 19 } } }
             }
         }
         button { class: "quick-banner", onclick: move |_| { store.page.set(Page::Chat); }, span { class: "quick-icon", Icon { name: "chat", size: 23 } } div { strong { "เล่าให้ฟัง วันนี้จ่ายอะไรไปบ้าง?" } p { "ลองพิมพ์ กาแฟ 80 แล้วเลือกบัญชีและหมวด" } } span { class: "round-arrow", Icon { name: "arrow", size: 22 } } }
