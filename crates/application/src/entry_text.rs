@@ -35,60 +35,67 @@ pub fn resolve_entry_text(
             "ข้อความมีหลายความหมายหรือรายละเอียดภาษี กรุณาระบุยอดรับจ่ายจริงให้ชัด แยกแต่ละรายการก่อนบันทึก".into(),
         ));
     }
-    let (body, assignment) = source
-        .split_once("บันทึกลง")
-        .map_or((source.trim(), None), |(body, tail)| {
-            (body.trim(), Some(tail.trim()))
-        });
-    let clauses = split_list(body)?;
+    // Only a terminal list of account names is a global assignment. Split
+    // transaction clauses first when each clause supplies its own account.
+    let terminal = unquoted_assignment(source);
+    let global = if let Some((body, tail)) = terminal {
+        let names = split_list(tail.trim().trim_end_matches("ตามลำดับ"))?;
+        (tail.trim().ends_with("ตามลำดับ")
+            || (names.len() > 1 && !names.iter().any(|name| starts_transaction(name))))
+        .then_some((body, tail))
+    } else {
+        None
+    };
+    let clauses = split_list(global.map_or(source, |(body, _)| body))?;
     if clauses.is_empty()
         || clauses.len() > MAX_BATCH_ENTRIES
-        || clauses.iter().any(|part| part.is_empty())
+        || clauses.iter().any(|p| p.is_empty())
     {
         return Err(AppError::Input(
-            "แบ่งข้อความเป็นรายการชัดเจนด้วยคำว่า “และ” หรือขึ้นบรรทัดใหม่ ครั้งละไม่เกิน 8 รายการ".into(),
+            "แบ่งข้อความด้วย “และ”, “แล้วก็” หรือขึ้นบรรทัดใหม่ ครั้งละไม่เกิน 8 รายการ".into(),
         ));
     }
     let mut drafts = Vec::new();
-    for clause in &clauses {
-        if let Ok(QuickResolution::Draft { input, guidance }) =
-            resolve_quick_entry(clause, today, accounts)
+    for clause in clauses {
+        let (body, assignment) = unquoted_assignment(clause)
+            .map_or((clause, None), |(body, tail)| {
+                (body.trim(), Some(tail.trim()))
+            });
+        let mut draft = if let Ok(QuickResolution::Draft { input, guidance }) =
+            resolve_quick_entry(body, today, accounts)
         {
-            drafts.push(ModelDraft { input, guidance });
+            ModelDraft { input, guidance }
         } else {
-            drafts.push(parse_clause(clause, today, accounts)?);
+            parse_clause(body, today, accounts)?
+        };
+        if let Some(name) = assignment {
+            if draft.input.account.is_none() {
+                // Account, category and trailing date all belong to this clause.
+                let canonical = format!("{body} จากบัญชี{name}");
+                draft = if let Ok(QuickResolution::Draft { input, guidance }) =
+                    resolve_quick_entry(&canonical, today, accounts)
+                {
+                    ModelDraft { input, guidance }
+                } else {
+                    parse_clause(&canonical, today, accounts)?
+                };
+            } else {
+                assign_account(&mut draft, name, accounts)?;
+            }
         }
+        drafts.push(draft);
     }
-    if let Some(assignment) = assignment {
-        let ordered = assignment.strip_suffix("ตามลำดับ");
-        let names: Vec<_> = split_list(ordered.unwrap_or(assignment))?
-            .into_iter()
-            .map(|s| s.trim().trim_matches('"'))
-            .collect();
+    if let Some((_, assignment)) = global {
+        let ordered = assignment.trim().strip_suffix("ตามลำดับ");
+        let names = split_list(ordered.unwrap_or(assignment))?;
         let unambiguous = names.len() == drafts.len() && (drafts.len() == 1 || ordered.is_some());
         for (index, draft) in drafts.iter_mut().enumerate() {
-            // A global assignment conflicting with a clause must be reviewed,
-            // never silently replace the original account.
-            let found = if unambiguous {
-                find_account(names[index], accounts)
+            if unambiguous {
+                assign_account(draft, names[index], accounts)?;
             } else {
-                None
-            };
-            if draft.input.account.is_some() && draft.input.account != found {
                 draft.input.account = None;
-                draft.guidance = "บัญชีในรายการขัดกับบัญชีท้ายข้อความ กรุณาเลือกบัญชีที่ต้องการ".into();
-            } else {
-                draft.input.account = found;
-                draft.guidance = if !unambiguous {
-                    "จำนวนบัญชีไม่ตรงกับรายการ หรือยังไม่ได้ระบุ “ตามลำดับ” กรุณาเลือกบัญชีให้แต่ละรายการ".into()
-                } else if found.is_none() {
-                    format!(
-                        "ไม่พบบัญชี “{}” กรุณาเพิ่มบัญชีนี้ในหน้าบัญชี หรือเลือกบัญชีที่มีอยู่",
-                        names[index]
-                    )
-                } else {
-                    String::new()
-                };
+                draft.guidance =
+                    "จำนวนบัญชีไม่ตรงกับรายการ หรือยังไม่ได้ระบุ “ตามลำดับ” กรุณาเลือกบัญชีให้แต่ละรายการ".into();
             }
         }
     }
@@ -96,6 +103,59 @@ pub fn resolve_entry_text(
         source: source.to_owned(),
         drafts,
     })
+}
+
+fn unquoted_assignment(text: &str) -> Option<(&str, &str)> {
+    let mut quoted = false;
+    for (index, ch) in text.char_indices() {
+        if ch == '"' {
+            quoted = !quoted;
+        }
+        if !quoted && text[index..].starts_with("บันทึกลง") {
+            return Some((&text[..index], &text[index + "บันทึกลง".len()..]));
+        }
+    }
+    None
+}
+
+fn starts_transaction(text: &str) -> bool {
+    let text = text
+        .trim()
+        .trim_start_matches("วันนี้")
+        .trim_start_matches("เมื่อวาน")
+        .trim();
+    ["ซื้อ", "จ่าย", "รับ", "ได้เงิน", "ได้รับ", "โอน"]
+        .iter()
+        .any(|word| text.starts_with(word))
+}
+
+fn assign_account(
+    draft: &mut ModelDraft,
+    name: &str,
+    accounts: &[Account],
+) -> Result<(), AppError> {
+    let found = find_account(name, accounts);
+    if found.is_none() && (name.contains("บันทึกลง") || name.contains(|c: char| c.is_ascii_digit()))
+    {
+        return Err(AppError::Input(
+            "ยังมีข้อความหรือยอดเงินหลังชื่อบัญชีที่อ่านไม่ครบ กรุณาแยกรายการด้วย “แล้วก็” หรือขึ้นบรรทัดใหม่".into(),
+        ));
+    }
+    if draft.input.account.is_some() && draft.input.account != found {
+        draft.input.account = None;
+        draft.guidance = "บัญชีในรายการขัดกับบัญชีท้ายข้อความ กรุณาเลือกบัญชีที่ต้องการ".into();
+    } else {
+        draft.input.account = found;
+        draft.guidance = if found.is_none() {
+            format!(
+                "ไม่พบบัญชี “{}” กรุณาเพิ่มบัญชีนี้ในหน้าบัญชี หรือเลือกบัญชีที่มีอยู่",
+                name.trim()
+            )
+        } else {
+            String::new()
+        };
+    }
+    Ok(())
 }
 
 // Quoted account names and notes may themselves contain “และ”.
@@ -109,9 +169,13 @@ fn split_list(text: &str) -> Result<Vec<&str>, AppError> {
         }
         if ch == '"' {
             quoted = !quoted;
-        } else if !quoted && (ch == '\n' || text[index..].starts_with("และ")) {
+        } else if !quoted
+            && let Some(separator) = ["แล้วก็", "และก็", "แล้ว", "และ", "\n"]
+                .iter()
+                .find(|s| text[index..].starts_with(**s))
+        {
             parts.push(text[start..index].trim());
-            start = index + if ch == '\n' { 1 } else { "และ".len() };
+            start = index + separator.len();
         }
     }
     if quoted {
@@ -287,8 +351,23 @@ pub fn missing_entry_fields(input: &EntryInput) -> Vec<&'static str> {
     } else if input.category.is_none() {
         fields.push("หมวดหมู่");
     }
+    if input
+        .recurring
+        .as_ref()
+        .is_some_and(|s| s.month.parse::<ledger_domain::Month>().is_err())
+    {
+        fields.push("งวดเดือนที่ต้องการจ่าย (YYYY-MM)");
+    }
     if input.date.parse::<EntryDate>().is_err() {
         fields.push("วันที่รายการ");
+    }
+    if let Some(receipt) = &input.receipt {
+        if receipt.reconcile(&input.amount).is_err() {
+            fields.push("รายละเอียดใบเสร็จและยอดรวมที่ตรงกัน");
+        }
+        if !receipt.reviewed {
+            fields.push("ยืนยันตรวจรายละเอียดกับภาพใบเสร็จ");
+        }
     }
     fields
 }

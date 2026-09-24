@@ -2789,6 +2789,7 @@ dependencies = [
  "base64",
  "chrono",
  "dioxus",
+ "dioxus-html",
  "dioxus-ssr",
  "ledger-application",
  "ledger-domain",

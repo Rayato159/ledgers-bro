@@ -6,7 +6,7 @@
 
 ## ลองใช้
 
-1. Windows: `./scripts/run-desktop.ps1` หรือ Android: build/install ตาม `docs/android-emulator-th.md`
+1. Desktop: `cargo run -p ledgers-bro --locked -- --data-dir .data/sandbox` หรือ Android: build/install ตาม `docs/android-emulator-th.md`
 2. เพิ่มบัญชี แล้วเข้า **บันทึกด่วน → AI ในเครื่อง → ดาวน์โหลด AI ในเครื่อง** ใช้อินเทอร์เน็ตครั้งแรกประมาณ 397 MB ต้องมีพื้นที่ว่างสำหรับไฟล์ชั่วคราวและโมเดล
 3. พิมพ์ เช่น `เมื่อวานซื้อกาแฟ 80 บาท จ่ายเงินสด` หรือ `จายค่าอาหาร 120 บาทจากเงินสด`
 4. อ่านข้อความต้นฉบับเทียบตัวเลือก กด **เลือกและตรวจรายละเอียด** เลือกบัญชี/หมวดที่ขาด แล้ว **ตรวจรายการก่อนบันทึก → ยืนยันบันทึก**
@@ -15,8 +15,8 @@
 
 สำหรับโมเดลที่ดาวน์โหลดไว้ใน workspace แล้ว:
 
-```powershell
-./scripts/run-desktop.ps1 -ModelDirectory "$PWD/.tools/llm"
+```sh
+cargo run -p ledgers-bro --locked -- --data-dir .data/sandbox --model-dir .tools/llm
 ```
 
 ถ้าไม่มีโมเดล ยังใช้ `กาแฟ 80` หรือ `จ่าย 80 จาก เงินสด หมวด อาหาร` และแบบฟอร์มได้ การพิมพ์ตามรูปแบบนี้ใช้ Rust parser โดยไม่เรียก LLM
@@ -50,7 +50,7 @@
 - SHA-256: `ac2d97712095a558e31573f62f466a3f9d93990898b0ec79d7c974c1780d524a`
 - [Qwen chat template](https://huggingface.co/Qwen/Qwen3-0.6B/blob/main/tokenizer_config.json) ใช้ non-thinking assistant prefix; ไม่รองรับการแทนไฟล์ด้วยโมเดลอื่นโดยใช้ template เดิม
 - [Rust wrapper](https://github.com/utilityai/llama-cpp-rs), [llama.cpp Android](https://github.com/ggml-org/llama.cpp/blob/master/docs/android.md)
-- รวม Apache-2.0/MIT notices ใน `licenses/local-ai` และแสดงในหน้าบันทึกด่วน โมเดลไม่มีการ fine-tune โดยโปรเจกต์นี้
+- รวม Apache-2.0/MIT notices ใน `licenses/local-ai` หน้าบันทึกด่วนใช้ลิงก์ไปอ่านที่ต้นทาง พร้อมลิงก์ดาวน์โหลดสำเนาที่ฝังมากับแอปแทนข้อความยาว โมเดลไม่มีการ fine-tune โดยโปรเจกต์นี้
 
 โมเดลนี้เป็น baseline ขนาดเล็กที่ทดสอบจริง ไม่ได้อ้างว่าแม่นที่สุดหรือเบาที่สุด ต้องมีชุดประเมินภาษาไทยกว้างขึ้นและมือถือจริงหลายระดับ RAM ก่อนขาย ดูผลตรวจที่ `docs/verification-local-llm.md`
 
@@ -62,8 +62,8 @@
 
 ตรวจตัวอย่างด้วยโมเดลจริง (ใช้ข้อความสังเคราะห์และพิมพ์ผลออก console; อย่าใส่ข้อมูลส่วนตัวใน fixture):
 
-```powershell
-. ./scripts/with-native-tools.ps1
-Initialize-LedgerNativeTools
+```sh
 cargo run -p ledger-infrastructure --example local_model_probe --locked -- .tools/llm
 ```
+
+คำสั่งบัญชี รายจ่ายประจำ และลูกหนี้ใช้ตัวอ่านคำสั่งแบบกำหนดรูปแบบบนเครื่องก่อน LLM รองรับการตรวจหลายคำสั่งและยืนยันพร้อมกัน ดู [คู่มือ prompt](prompt-actions-th.md) หากคำสั่งหลายรายการอ่านไม่ครบ จะไม่ลดเหลือรายการเดียวเพื่อส่งให้โมเดล

@@ -54,6 +54,7 @@ fn preview(
         date: "2026-09-20".into(),
         note: "test".into(),
         receipt: None,
+        recurring: None,
     };
     match app.execute(Command::Preview(input)).expect("preview") {
         Response::Prepared(prepared) => prepared,
@@ -825,6 +826,7 @@ fn csv_quotes_thai_notes_newlines_and_neutralizes_spreadsheet_formulas() {
         date: "2026-09-20".into(),
         note: "=HYPERLINK(\"example\")\nข้าว,ชา".into(),
         receipt: None,
+        recurring: None,
     };
     let Response::Prepared(prepared) = app.execute(Command::Preview(input)).expect("preview")
     else {
@@ -978,4 +980,83 @@ fn batch_revalidates_stale_accounts_and_duplicate_submission_ids_atomically() {
             .is_err()
     );
     assert_eq!(snapshot(&mut app), archived);
+}
+
+#[test]
+fn multiple_ocr_receipts_reconcile_before_atomic_save_and_do_not_duplicate_on_retry() {
+    let dir = TempDir::new().expect("tempdir");
+    let mut application =
+        app(SqliteLedger::open(&dir.path().join("ledger.sqlite3")).expect("open"));
+    let cash = account(&mut application, "เงินสด", AccountKind::Cash, "1000");
+    let today = "2026-09-20".parse().expect("date");
+    let text = [
+        "Coffee 80.00\nGrand Total 80.00",
+        "Cake 100.00\nDiscount -10.00\nGrand Total 90.00",
+    ]
+    .iter()
+    .enumerate()
+    .map(|(i, text)| {
+        format_receipt_prompt(
+            &analyze_receipt(text, today).expect("analysis"),
+            today,
+            i + 1,
+        )
+    })
+    .collect::<Vec<_>>()
+    .join("\n");
+    let Response::Resolved(QuickResolution::Batch { drafts, .. }) = application
+        .execute(Command::Resolve(text))
+        .expect("resolve")
+    else {
+        panic!("batch");
+    };
+    let mut inputs: Vec<_> = drafts
+        .into_iter()
+        .map(|d| {
+            let mut input = d.input;
+            input.account = Some(cash);
+            input.category = Some(Category::Food);
+            input
+        })
+        .collect();
+    assert!(
+        application
+            .execute(Command::PreviewBatch(inputs.clone()))
+            .is_err()
+    );
+    for input in &mut inputs {
+        input.receipt.as_mut().expect("receipt").reviewed = true;
+    }
+    inputs[1].amount = "91.00".into();
+    assert!(
+        application
+            .execute(Command::PreviewBatch(inputs.clone()))
+            .is_err()
+    );
+    assert_eq!(minor(&snapshot(&mut application), cash), 100_000);
+    inputs[1].amount = "90.00".into();
+    let Response::PreparedBatch(prepared) = application
+        .execute(Command::PreviewBatch(inputs))
+        .expect("balanced batch")
+    else {
+        panic!("prepared batch");
+    };
+    application
+        .execute(Command::CommitBatch(prepared.clone()))
+        .expect("save both");
+    application
+        .execute(Command::CommitBatch(prepared))
+        .expect("idempotent retry");
+    let view = snapshot(&mut application);
+    assert_eq!(minor(&view, cash), 83_000);
+    assert!(
+        view.entries
+            .iter()
+            .any(|e| e.note().as_str().contains("Coffee"))
+    );
+    assert!(
+        view.entries
+            .iter()
+            .any(|e| e.note().as_str().contains("Discount"))
+    );
 }

@@ -28,9 +28,12 @@ fn missing_model_keeps_commands_and_bounded_thai_batches_available() {
     assert!(
         matches!(block_on(model.resolve(&ledger, "ซื้อไก่ทอดไป 30 บาท และได้เงินจาก Facebook 400 บาท บันทึกลงเงินสด และ กรุงไทยตามลำดับ".into(), ModelOperation::default())), Ok(Response::Resolved(QuickResolution::Batch { drafts, .. })) if drafts.len() == 2)
     );
+    assert!(
+        matches!(block_on(model.resolve(&ledger, "เมื่อวานซื้อกาแฟ 50 บาท บันทึกลง เงินสด แล้วก็วันนี้ได้เงินค่าจ้างวาดรูป 200 บาท บันทึกลงกรุงไทย".into(), ModelOperation::default())), Ok(Response::Resolved(QuickResolution::Batch { drafts, .. })) if drafts.len() == 2)
+    );
     let failure = block_on(model.resolve(
         &ledger,
-        "ซื้อข้าว30บาท และคำสั่งไม่สมบูรณ์".into(),
+        "ซื้อข้าว30บาท แล้วก็คำสั่งไม่สมบูรณ์".into(),
         ModelOperation::default(),
     ))
     .expect_err("whole batch must fail");
@@ -96,4 +99,73 @@ fn model_interpretation_and_preview_do_not_write_until_an_explicit_commit() {
     };
     assert_eq!(after.expenses.to_string(), "80.00");
     assert_eq!(after.accounts[0].balance.to_string(), "920.00");
+}
+
+#[test]
+fn action_prompts_work_without_model_and_failures_never_fall_back_to_one_purchase() {
+    let directory = tempfile::tempdir().expect("temporary directory");
+    let model = ModelWorker::start(directory.path().join("models")).expect("worker");
+    let ledger = LedgerWorker::start(directory.path().join("ledger.sqlite3")).expect("ledger");
+    for text in [
+        "เพิ่มบัญชี ชื่อ เงินสด ประเภท เงินสด ยอดเริ่มต้น 1000",
+        "เพิ่มลูกหนี้ ชื่อ เอ ยอด 500",
+        "ยกเลิกรายการ รายการ กาแฟ",
+        "เพิ่มลูกหนี้ ชื่อ เอ เรื่อง ค่าเรียน ยอด 500\nเอคืนหนี้ 50 บาท เข้า เงินสด",
+    ] {
+        assert!(matches!(
+            block_on(model.resolve(&ledger, text.into(), ModelOperation::default())),
+            Ok(Response::Resolved(QuickResolution::Actions { .. }))
+        ));
+    }
+    let error = block_on(model.resolve(
+        &ledger,
+        "สมชายคืนหนี้ 100 บาท แล้วก็ข้อความไม่ครบ".into(),
+        ModelOperation::default(),
+    ))
+    .expect_err("whole message");
+    assert!(!error.to_string().contains("ดาวน์โหลด"));
+    let Response::Dashboard(view) = block_on(ledger.request(Command::Load)).expect("view") else {
+        unreachable!()
+    };
+    assert!(view.entries.is_empty());
+    assert!(view.receivables.is_empty());
+    assert!(view.accounts.is_empty());
+}
+
+#[test]
+fn long_receipt_blocks_bypass_ai_and_keep_every_item() {
+    use ledger_application::{analyze_receipt, format_receipt_prompt};
+    let directory = tempfile::tempdir().expect("directory");
+    let model = ModelWorker::start(directory.path().join("models")).expect("worker");
+    let ledger = LedgerWorker::start(directory.path().join("ledger.sqlite3")).expect("ledger");
+    let today = "2026-09-20".parse().expect("date");
+    let lines = (1..=40)
+        .map(|n| format!("Coffee number {n} 1.00"))
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\nGrand Total 40.00";
+    let text = format_receipt_prompt(&analyze_receipt(&lines, today).expect("analysis"), today, 1);
+    assert!(text.chars().count() > 1000);
+    let response = block_on(model.resolve(&ledger, text.clone(), ModelOperation::default()))
+        .expect("receipt needs no AI weights");
+    let Response::Resolved(QuickResolution::Batch { drafts, .. }) = response else {
+        unreachable!()
+    };
+    assert_eq!(
+        drafts[0]
+            .input
+            .receipt
+            .as_ref()
+            .expect("receipt")
+            .lines
+            .len(),
+        40
+    );
+    let error = block_on(model.resolve(
+        &ledger,
+        text.replace("[จบใบเสร็จ]", ""),
+        ModelOperation::default(),
+    ))
+    .expect_err("malformed receipt");
+    assert!(!error.to_string().contains("ดาวน์โหลด"));
 }

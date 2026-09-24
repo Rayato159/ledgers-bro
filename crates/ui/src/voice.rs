@@ -32,7 +32,7 @@ pub enum VoiceEvent {
 pub(crate) fn voice_unavailable<T: Send + 'static>() -> UiFuture<T> {
     Box::pin(async {
         Err(AppError::Input(
-            "รุ่น Windows ยังไม่มีตัวถอดเสียงในเครื่อง พิมพ์รายการได้ตามปกติ".into(),
+            "รุ่นเดสก์ท็อปยังไม่มีตัวถอดเสียงในเครื่อง พิมพ์รายการได้ตามปกติ".into(),
         ))
     })
 }
@@ -123,7 +123,7 @@ pub(crate) fn VoiceInput(text: Signal<String>, mut capturing: Signal<bool>) -> E
         store.prepared.set(None);
         store.model_choices.set(None);
         store.input.set(None);
-        store.receipt.set(None);
+
         store.guidance.set(String::new());
         capturing.set(true);
         needs_model.set(false);
@@ -185,38 +185,38 @@ pub(crate) fn VoiceInput(text: Signal<String>, mut capturing: Signal<bool>) -> E
                                 store.gateway.peek().0.stop_voice(id);
                                 phase.set(VoiceEvent::Processing);
                             }
-                        }, Icon { name: "stop", size: 20 } "พูดเสร็จแล้ว" }
+                        }, Icon { name: "stop", size: 20 } {crate::i18n::tr("พูดเสร็จแล้ว")} }
                     }
                     button { r#type: "button", class: "text-button", onclick: move |_| {
                         if let Some(task) = task.take() { task.cancel(); }
                         session.set(None);
                         capturing.set(false);
                         message.set("ยกเลิกแล้ว ข้อความเดิมยังอยู่".into());
-                    }, Icon { name: "close", size: 18 } "ยกเลิกเสียง" }
+                    }, Icon { name: "close", size: 18 } {crate::i18n::tr("ยกเลิกเสียง")} }
                 } else {
                     button { r#type: "button", class: "soft-button voice-button",
                         disabled: !supported || *store.busy.read(),
                         "aria-describedby": "voice-help",
                         onclick: move |_| start.call(false), Icon { name: "mic", size: 21 }
-                        if text.read().trim().is_empty() { "พูดรายการ" } else { "พูดแทนข้อความ" }
+                        if text.read().trim().is_empty() { {crate::i18n::tr("พูดรายการ")} } else { {crate::i18n::tr("พูดแทนข้อความ")} }
                     }
-                    span { class: "local-badge", "ภาษาไทย · ในเครื่อง" }
+                    span { class: "local-badge", {crate::i18n::tr("ภาษาไทย · ในเครื่อง")} }
                 }
             }
             if active {
-                p { class: "voice-status", role: "status", "aria-live": "polite", Icon { name: "mic", size: 18 } "{status}" }
+                p { class: "voice-status", role: "status", "aria-live": "polite", Icon { name: "mic", size: 18 } "{crate::i18n::tr(status)}" }
             } else if !message.read().is_empty() {
-                p { class: "voice-status", role: "status", "aria-live": "polite", "{message}" }
+                p { class: "voice-status", role: "status", "aria-live": "polite", "{crate::i18n::tr(&message.read())}" }
             }
             if !active && *needs_model.read() {
-                button { r#type: "button", class: "soft-button", disabled: *store.busy.read(), onclick: move |_| start.call(true), Icon { name: "download", size: 20 } "ดาวน์โหลดภาษาไทยออฟไลน์" }
-                p { class: "field-hint", "ใช้เน็ตเพื่อดาวน์โหลดโมเดลของ Android ครั้งแรก ระบบอาจขอให้ยืนยัน ขนาดขึ้นกับบริการเสียงของเครื่อง" }
+                button { r#type: "button", class: "soft-button", disabled: *store.busy.read(), onclick: move |_| start.call(true), Icon { name: "download", size: 20 } {crate::i18n::tr("ดาวน์โหลดภาษาไทยออฟไลน์")} }
+                p { class: "field-hint", {crate::i18n::tr("ใช้เน็ตเพื่อดาวน์โหลดโมเดลของ Android ครั้งแรก ระบบอาจขอให้ยืนยัน ขนาดขึ้นกับบริการเสียงของเครื่อง")} }
             }
             p { id: "voice-help", class: "field-hint",
                 if supported {
-                    "เช่น “กาแฟ 80” • ต้องมีตัวถอดเสียงภาษาไทยออฟไลน์ของ Android แอปไม่เก็บไฟล์เสียงและไม่สลับไปใช้ Cloud"
+                    {crate::i18n::tr("เช่น “กาแฟ 80” • ต้องมีตัวถอดเสียงภาษาไทยออฟไลน์ของ Android แอปไม่เก็บไฟล์เสียงและไม่สลับไปใช้ Cloud")}
                 } else {
-                    "รุ่น Windows ยังไม่มีตัวถอดเสียงในเครื่อง ทดลองปุ่มไมค์ในแอป Android ที่รองรับได้"
+                    {crate::i18n::tr("รุ่นเดสก์ท็อปยังไม่มีตัวถอดเสียงในเครื่อง ทดลองปุ่มไมค์ในแอป Android ที่รองรับได้")}
                 }
             }
         }

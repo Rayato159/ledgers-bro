@@ -19,5 +19,22 @@ mod typography;
 mod voice;
 
 pub use app::App;
-pub use gateway::{ArtAssets, Gateway, HostInfo, UiFuture, UiGateway};
+pub use gateway::{ArtAssets, Gateway, HostInfo, ReceiptScan, UiFuture, UiGateway};
 pub use voice::{VoiceEvent, VoiceSessionId};
+
+mod recurring;
+
+mod receivables;
+mod recurring_picker;
+
+mod prompt_review;
+
+mod prompt_examples;
+
+mod i18n;
+
+mod currency;
+
+mod navigation;
+
+mod theme;

@@ -44,6 +44,14 @@ impl AccountDeletion {
                 .any(|p| p.target() == PostingTarget::Account(account_id))
         };
         let removed: Vec<_> = state.entries.iter().filter(touches_account).collect();
+        if removed.iter().any(|e| {
+            matches!(
+                e.kind(),
+                EntryKind::Lending { .. } | EntryKind::Repayment { .. }
+            )
+        }) {
+            return Err(StorageError::ReceivableAccountInUse);
+        }
         let entry_ids = removed.iter().rev().map(|entry| entry.id()).collect();
         let transaction_count = removed
             .iter()
@@ -73,6 +81,12 @@ impl AccountDeletion {
             })
             .collect();
         let remaining = LedgerState {
+            currency: state.currency,
+            currency_locked: state.currency_locked,
+            thai_tax_enabled: state.thai_tax_enabled,
+            receivables: state.receivables.clone(),
+            recurring: state.recurring.clone(),
+            settlements: state.settlements.clone(),
             accounts: state
                 .accounts
                 .iter()
@@ -126,6 +140,20 @@ impl AccountDeletion {
 
     pub fn account(&self) -> &Account {
         &self.account
+    }
+    pub fn affected_recurring_count(&self) -> usize {
+        self.expected
+            .recurring
+            .iter()
+            .filter(|schedule| {
+                schedule.account() == Some(self.account.id())
+                    || self
+                        .expected
+                        .settlements
+                        .iter()
+                        .any(|s| s.recurring == schedule.id() && self.entry_ids.contains(&s.entry))
+            })
+            .count()
     }
     pub fn transaction_count(&self) -> usize {
         self.transaction_count

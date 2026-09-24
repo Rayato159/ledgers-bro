@@ -2,6 +2,10 @@ use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum DomainError {
+    #[error("Unsupported ledger currency. Choose THB, USD, EUR, GBP, AUD, CAD, SGD, or CNY.")]
+    InvalidCurrency,
+    #[error("เรื่องหนี้ต้องมี 1–300 ตัวอักษร วันเริ่มเก็บต้องไม่ก่อนตั้งหนี้ และยอดต้องเพียงพอสำหรับจำนวนงวด")]
+    InvalidReceivable,
     #[error("จำนวนเงินต้องเป็นตัวเลขและมีทศนิยมไม่เกิน 2 ตำแหน่ง")]
     InvalidMoney,
     #[error("จำนวนเงินเกินขอบเขตที่รองรับ")]
@@ -27,6 +31,10 @@ pub enum DomainError {
     InvalidId,
     #[error("วันที่ไม่ถูกต้อง ใช้ YYYY-MM-DD (ค.ศ.)")]
     InvalidDate,
+    #[error("วันครบกำหนดต้องเป็นวันที่ 1–31 และเดือนสิ้นสุดต้องไม่ก่อนเดือนเริ่มต้น")]
+    InvalidRecurring,
+    #[error("จำนวนงวดต้องเป็นจำนวนเต็ม 1–1,200 หรือเลือกไม่กำหนดจำนวนงวด")]
+    InvalidInstallments,
     #[error("เพิ่มได้สูงสุด 100 บัญชี รวมบัญชีที่เก็บเข้าคลัง")]
     AccountLimit,
     #[error("มีบัญชีชื่อนี้อยู่แล้ว")]

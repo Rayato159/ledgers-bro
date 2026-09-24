@@ -107,7 +107,15 @@ fn fixture() -> Dashboard {
         .expect("reversal"),
     );
     dashboard(
-        LedgerState { accounts, entries },
+        LedgerState {
+            currency: Currency::Thb,
+            currency_locked: false,
+            thai_tax_enabled: true,
+            receivables: vec![],
+            accounts,
+            entries,
+            ..Default::default()
+        },
         "2026-09-20".parse().expect("today"),
     )
     .expect("dashboard")
@@ -325,6 +333,12 @@ fn all_history_exports_in_date_order_with_activity_totals_wider_than_money_balan
     }
     let view = dashboard(
         LedgerState {
+            currency: Currency::Thb,
+            currency_locked: false,
+            thai_tax_enabled: true,
+            receivables: vec![],
+            recurring: vec![],
+            settlements: vec![],
             accounts: vec![account],
             entries,
         },

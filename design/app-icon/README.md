@@ -7,7 +7,7 @@ Generated with Codex's built-in image generation using the app's existing tanuki
 - `launcher-512.png`: smaller preview.
 - `../../apps/android/native/res/`: adaptive icon layers and legacy launcher PNGs for five Android densities.
 
-Regenerate the Android resources and previews with `./scripts/export-app-icons.ps1`. This script uses ImageMagick only for mechanical trimming, resizing, padding, and export; it does not redraw the artwork.
+Android resources and previews were generated with a local Windows helper (no longer tracked). The export used ImageMagick only for mechanical trimming, resizing, padding, and export; it does not redraw the artwork.
 
 Android's manifest points both `icon` and `roundIcon` to `ledger_launcher`. The Gradle initialization hook adds the source-controlled resource directory to the generated Android project so the icon survives `cargo clean` and subsequent Dioxus builds.
 

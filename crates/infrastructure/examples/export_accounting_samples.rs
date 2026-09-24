@@ -94,6 +94,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             date: "2026-09-20".into(),
             note: note.into(),
             receipt: None,
+            recurring: None,
         }))?
         else {
             return Err(std::io::Error::other("expected preview").into());

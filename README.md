@@ -1,115 +1,95 @@
-# Ledgers Bro
+# Ledgers Bro 🦝💸
 
-แอปสมุดบัญชีในเครื่องด้วย Rust + Dioxus มี Windows และรุ่นทดลอง Android; iOS ยังไม่พอร์ต
+Your money ghosted you. Let's find it.
 
-สถานะ 24 กันยายน 2026: **มีแอป Desktop และ APK รุ่นทดลอง Android x86_64/ARM64 เป็น development build ยังไม่ใช่รุ่นพร้อมขายบน Store** ตรวจเปิดแอปบน Emulator แล้ว ส่วนมือถือ ARM64 ยังไม่ได้ทดสอบบนเครื่องจริง ไม่มี backend สมุดบัญชี ไม่มี analytics และไม่ส่งข้อความหรือยอดเงินไปบริการ AI
+An open-source, local-first ledger built with **Rust + Dioxus + SQLite**. Thai / English UI, light / dark themes. Your wallet, your device, your business.
 
-## ลองใช้บน Windows
+## Download & install 📦
 
-ต้องมี Rust MSVC toolchain, Visual Studio C++ Build Tools, CMake, libclang (LLVM หรือ Android NDK) และ WebView2 ตาม [Dioxus setup](https://dioxuslabs.com/learn/0.7/getting_started/) ใช้ Dioxus 0.7.2 และตรึง dependency graph ใน `Cargo.lock` สคริปต์จะค้นหา libclang ให้โดยไม่เปลี่ยน environment ถาวร
+**Coming soon. No installer release yet.** When published, grab an installer from [GitHub Releases](https://github.com/Rayato159/ledgers-bro/releases). No Rust, no build tools, no terminal side quest.
 
-```powershell
-# สมุดบัญชีทดลองแยกจากข้อมูลส่วนตัว
-./scripts/run-desktop.ps1
+- **Windows:** download the `.msi`, double-click it, and follow the installer.
+- **Android:** download the `.apk` on your phone, open it, and allow installation from that source if Android asks.
+- **macOS / Linux / iOS:** no ready-to-install packages announced yet.
 
-# โฟลเดอร์ข้อมูลส่วนตัวของแอปใน Windows
-./scripts/run-desktop.ps1 -Personal
+Release files will appear when a release is ready. The source code below is for building it yourself. 🛠️
+
+## The receipts 📸
+
+Real app captures with synthetic data. The mobile image shows the responsive layout in a narrow desktop window, not an iOS build.
+
+![Desktop overview in English](docs/images/desktop-overview-en.png)
+
+<table>
+  <tr>
+    <td width="72%"><img src="docs/images/desktop-receivables-dark-en.png" alt="English receivables page in dark mode" /></td>
+    <td width="28%"><img src="docs/images/mobile-accounts-en.png" alt="English accounts page at mobile width" /></td>
+  </tr>
+</table>
+
+## Build & try it 🧑‍💻
+
+Clone the repository and install **Rust 1.88+**. Run commands from the repository root unless stated otherwise.
+
+### Desktop — macOS, Windows, Linux
+
+Install your platform's [Dioxus native prerequisites](https://dioxuslabs.com/learn/0.7/getting_started/), plus CMake and libclang:
+
+| Platform | Native tools |
+| --- | --- |
+| macOS | Xcode Command Line Tools, CMake, LLVM |
+| Windows | MSVC C++ Build Tools, CMake, LLVM, WebView2 |
+| Linux | C/C++ toolchain, CMake, Clang, WebKitGTK 4.1 and the Dioxus system libraries |
+
+```sh
+cargo run -p ledgers-bro --locked -- --data-dir .data/sandbox
 ```
 
-หรือเรียก `./scripts/run-desktop.ps1` เพื่อเปิดสมุดบัญชีทดลอง ภาพทานูกิแบบ doodles, CSS และฟอนต์ฝังใน executable ไม่ต้องเชื่อมเครือข่ายโหลดภาพหรือฟอนต์
+That builds and opens the app with a separate test ledger. Add `--mobile-preview` after `--data-dir .data/sandbox` to check the phone-width layout on desktop. For an optimized build:
 
-**อ่านใบเสร็จ:** เข้า **บันทึกด่วน → เลือกรูปใบเสร็จ → ตรวจยอด/วันที่ → เลือกบัญชีและหมวด → ยืนยัน** รองรับ JPG/PNG/HEIC/HEIF ไม่เกิน 32 MB บน Windows และ Android 9 ขึ้นไป อ่านไทย/อังกฤษในเครื่อง Windows ติดตั้งครั้งแรกด้วย `./scripts/setup-ocr.ps1`; APK รวมตัวอ่านและโมเดลภาษาไว้แล้ว ดู [Receipt OCR](docs/receipt-ocr.md) ภาพใช้ชั่วคราวสำหรับตรวจรายการ ยังไม่แนบเก็บในฐานข้อมูล
-
-เริ่มจาก **เพิ่มบัญชีแรก → ใส่ยอดเริ่มต้น → บันทึกด่วน → พิมพ์ `กาแฟ 80` → เลือกบัญชี/หมวด → ตรวจรายการ → ยืนยัน** แล้วปิดเปิดด้วย data directory เดิมเพื่อตรวจยอด
-
-**กรอกเองโดยไม่ใช้ AI:** กด **กรอกเอง** ด้านบน หรือปุ่มกรอกเองในหน้าบันทึกด่วน → เลือกรายจ่าย/รายรับ/โอนเงิน → กรอกยอดและเลือกบัญชี/หมวด → ตรวจรายการ → ยืนยัน วันที่เริ่มต้นเป็นวันนี้ รายละเอียดยังแก้ได้ก่อนยืนยัน ถ้า AI ใช้เวลานาน กด **ยกเลิกแล้วกรอกเอง** เพื่อเริ่มแบบฟอร์มเปล่าได้
-
-ข้อมูลอยู่ที่ `<data-directory>/ledger.sqlite3` โหมดปกติใช้ `ProjectDirs::data_local_dir()` ของ Windows ปัจจุบันฐานข้อมูลยังไม่เข้ารหัส ไม่มี PIN/biometric และยังไม่มี encrypted backup/restore ควรใช้ข้อมูลทดลองระหว่างพัฒนา **CSV เป็นรายงานส่งออก ไม่ใช่ไฟล์สำรองที่กู้คืนสมุดบัญชีได้ครบ**
-
-
-บันทึกด่วนรองรับประโยคไทย เช่น `ซื้อไก่ทอดไป 30 บาท และได้เงินจาก Facebook 400 บาท บันทึกลงเงินสด และ กรุงไทยตามลำดับ` โดยไม่ต้องดาวน์โหลดโมเดล ระบบแยกสองรายการ ถามช่องที่ขาด แล้วให้ยืนยันบันทึกทั้งชุดพร้อมกัน รายละเอียดและกรณีไม่รองรับดู [ชุดทดสอบ prompt](docs/verification-prompt-flow-tax-th.md)
-
-ภาพรวมมีกราฟรายรับ/รายจ่าย 6 เดือน สัดส่วน เปอร์เซ็นต์ที่มากกว่า และ flow rate `(รายรับ−รายจ่าย)/(รายรับ+รายจ่าย)` พร้อมเกณฑ์แย่/พอใช้/ดีที่เปิดอ่านได้ ไม่รวมยอดตั้งต้นและเงินโอน
-
-## ทำงานแล้ว
-
-- บัญชี 5 ประเภท สูงสุด 100 บัญชี รวมบัญชีที่อาจเก็บเข้าคลังในอนาคต ชื่อบัญชีไม่ซ้ำ
-- ลบบัญชีพร้อมรายการที่เกี่ยวข้องผ่านหน้าต่างยืนยัน แสดงจำนวนรายการและยอดก่อน–หลังของบัญชีคู่โอน ลบรายการโอนทั้งสองฝั่งพร้อมประวัติการยกเลิก และย้อนคืนทั้งหมดหากลบไม่สำเร็จ
-- รายรับ รายจ่าย โอนเงิน ยอดเริ่มต้น และยกเลิกรายการด้วย reversal ที่เก็บประวัติ
-- สมุดบัญชีสองฝั่ง เงินบาทเป็นจำนวนเต็มสตางค์ ไม่มี float ในกฎบัญชี
-- SQLite พร้อม migration, foreign keys, atomic transaction, idempotency และตรวจ postings เมื่ออ่าน
-- สินทรัพย์ หนี้สิน สินทรัพย์สุทธิ รายรับ/รายจ่ายเดือนนี้ กราฟหมวด และประวัติ
-- คำสั่ง deterministic พร้อมตัวอย่าง แบบฟอร์ม ตัวเลือกเมื่อกำกวม และยืนยันก่อนบันทึก
-- หน้ากรอกเองแยกจากแชต ไม่ต้องติดตั้งหรือเรียก AI พร้อมยกเลิกการอ่านด้วย AI แล้วกลับมาใช้แบบฟอร์มได้
-- ปุ่มพูดรายการบน Android ผ่าน on-device speech recognizer ภาษาไทย เติมข้อความให้แก้ก่อนอ่าน/ยืนยัน ต้องมีบริการและโมเดลออฟไลน์ที่รองรับ; Windows ยังไม่มีตัวถอดเสียง ดู [วิธีใช้และข้อจำกัดเสียง](docs/voice-entry-th.md)
-- CSV บัญชีคู่: สมุดรายวันทั่วไป บัญชีแยกประเภท และงบทดลอง ผ่านหน้าต่างเลือกไฟล์ Windows ภาษาไทยเป็นค่าเริ่มต้น เลือก English ได้ พร้อม UTF-8 BOM และป้องกัน spreadsheet formula injection
-- อ่านใบเสร็จผ่าน OCR ไทย/อังกฤษในเครื่องบน Windows/Android รวม HEIC/HEIF พร้อมแก้แนวภาพก่อนแสดงและอ่าน มีภาพเทียบ ข้อความต้นทาง ตัวเลือกยอด/วันที่ และยกเลิกการอ่าน
-- รายการจากใบเสร็จแก้ได้ทีละบรรทัด บันทึกเป็น bullet ในรายละเอียด และบังคับตรวจผลรวมตรงยอดสุทธิก่อนยืนยัน แยกส่วนลด ภาษี/ค่าบริการบวกเพิ่ม และยอดที่รวมแล้ว
-- UI โทนม่วงลาเวนเดอร์ ชมพู–พีช การ์ดขาวมุมมนและปุ่มไล่สี เมนูบันทึกด่วนกลางแถบล่าง ทานูกิลายเส้น doodles และไอคอนหมวด/ประเภทบัญชีสีพาสเทล
-- Local LLM ผ่าน llama.cpp: ข้อความอิสระ → JSON ที่จำกัดรูปแบบและอ้างข้อความต้นทาง → ตัวเลือก → แบบฟอร์ม → ยืนยัน; คำสั่งตรงรูปแบบยังใช้ Rust parser ได้โดยไม่มีโมเดล
-
-บัตรเครดิตแสดงยอดหนี้ ไม่ใช่วงเงิน รูดบัตรเป็นรายจ่ายและเพิ่มหนี้ โอนธนาคารจ่ายบัตรลดหนี้โดยไม่เพิ่มรายจ่ายซ้ำ Crypto/พอร์ตหุ้นขณะนี้จดมูลค่าเงินบาทด้วยมือ ไม่มี holdings, FX, ราคาสด หรือ valuation adjustments
-
-## โครงสร้างและตรวจงาน
-
-```text
-apps/desktop          composition root + native file dialog
-       ├── crates/ui                 Dioxus presentation
-       └── crates/infrastructure     SQLite + clock + IDs + worker
-                     │
-             crates/application     use cases + ports + parser + projections
-                     │
-               crates/domain        entities + value objects + rules
-```
-
-อ่าน [สถาปัตยกรรม](docs/architecture.md) และ [Code conventions](CONTRIBUTING.md)
-
-Android: build ด้วย `./scripts/build-android.ps1` แล้วติดตั้ง/เปิดบน emulator ด้วย `./scripts/run-android.ps1 -Device emulator-5554` ชื่อแอป **Ledgers Bro Test** มีข้อมูลแยกจาก Windows, Export ผ่าน document picker และอ่านใบเสร็จจากรูปในเครื่อง ดู [คู่มือ Android](docs/android-emulator-th.md) และ [รูปจาก iPhone](docs/iphone-images-th.md)
-
-มือถือ ARM64: build ด้วย `./scripts/build-android.ps1 -Target aarch64-linux-android` แล้วใช้ `./scripts/run-android.ps1 -Device 'PHONE_SERIAL' -Abi arm64` หลังเชื่อมต่อ USB debugging แต่ละ target ต้อง build ทีละตัว
-
-รายงาน: เข้า **รายการ → ส่งออก CSV → เลือกรายงาน/ภาษา → เลือกที่บันทึก** ดู [ขอบเขตและผลตรวจไฟล์บัญชีคู่](docs/accounting-export-th.md). VAT/หัก ณ ที่จ่ายยังไม่ได้ถูกแยกเป็นบัญชีภาษีในรายงานนี้
-
-LLM: [คู่มือ AI ในเครื่องและข้อจำกัด](docs/local-llm-th.md) — เข้า **บันทึกด่วน → ดาวน์โหลด AI ในเครื่อง** ครั้งแรกประมาณ 397 MB จากนั้นข้อความประมวลผลออฟไลน์ ไม่มี cloud fallback ใช้ Qwen3 0.6B Q4_K_M ผ่าน llama.cpp ไม่ได้ใช้ katgpt-rs; [ผลประเมิน katgpt-rs](docs/katgpt-rs-evaluation-th.md) เป็นบันทึกการประเมินก่อนหน้า
-
-```powershell
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets --locked -- -D warnings
-cargo test --workspace --locked
+```sh
 cargo build -p ledgers-bro --release --locked
 ```
 
-`scripts/check.ps1` รวมการตรวจหลัก มี workflow Windows ใน `.github/workflows/check.yml` แต่ยังไม่ได้รันบน GitHub ทดสอบเลขเงิน คำสั่ง/ขอบเขต LLM บัตรเครดิต cancellation/retry การเปิดไฟล์หลังปิด connection fault injection และบัญชีที่ 100 จากสอง connection
+Run `target/release/ledgers-bro` (`ledgers-bro.exe` on Windows). Optional receipt scanning needs the [OCR runtime setup](docs/receipt-ocr.md).
 
-ดู [ผลตรวจและขอบเขตที่ทดสอบจริง](docs/verification-2026-09-20.md) และ [ผลตรวจ OCR/งานภาพ](docs/verification-receipts-and-art.md) รวมการทดสอบบัญชี กฎอ่านใบเสร็จ ตัวอ่านภาพจริง และการกดยืนยันใน WebView
+### Android — device or emulator (experimental)
 
-ล่าสุด: [บันทึกด่วนหลายรายการ กราฟ flow rate และเครื่องคำนวณภาษี](docs/verification-prompt-flow-tax-th.md)
+1. Install Python 3.10+, JDK 21, and Android Studio. In SDK Manager, install SDK platform tools, NDK, and CMake. Set `JAVA_HOME` and `ANDROID_HOME` to their installation folders.
+2. Install the Rust target and pinned Dioxus CLI, then build:
 
-ผลตรวจก่อนหน้า: [ผลตรวจธีมครีม, การยกเลิก AI และ HEIC บน Android](docs/verification-warm-ui-and-images.md) ระบุทั้งส่วนที่ผ่านและ HEIC ความละเอียดสูงที่ Emulator ยังอ่านไม่ได้
+```sh
+cargo install dioxus-cli --version 0.7.2 --locked
+rustup target add aarch64-linux-android
+python3 scripts/build-android.py --check
+python3 scripts/build-android.py
+```
 
-## ไฟล์ใน repository
+3. Connect a phone with USB debugging enabled, accept its debugging prompt, and install the test APK:
 
-เก็บ source code, `Cargo.lock`, รูป/ฟอนต์ที่ใช้งาน, icon master, test fixtures, scripts, licenses และเอกสารเท่านั้น `.gitignore` กันฐานข้อมูลส่วนตัว, โมเดล AI/OCR, เครื่องมือที่ดาวน์โหลด, signing keys, editor state, ภาพตรวจงานชั่วคราว และผล build ออกจาก Git
+```sh
+adb devices
+adb install -r target/android/ledgers-bro-test-arm64.apk
+```
 
-การ clone ใหม่จะไม่มี `.tools`, `.data` หรือ APK ให้ติดตั้งเครื่องมือตามคู่มือและ build ใหม่ สคริปต์ setup จะดาวน์โหลด dependency ที่ตรึงเวอร์ชันและตรวจ checksum ส่วนโมเดล LLM ดาวน์โหลดผ่านหน้าบันทึกด่วน ภาพธีมเก่าที่เลิกใช้ถูกนำออกแล้ว แต่เก็บบันทึกที่มาและ prompts ไว้ใน `design`
+4. Open **Ledgers Bro** on the device. This APK uses a debug signature.
 
-เอกสาร `docs/verification-*.md` เป็นผลตรวจตามวันที่ในเอกสาร พาธ `.preview` และ hash ของ APK ในบันทึกเก่าเป็นหลักฐานรอบนั้น ไม่ใช่ไฟล์ที่แจกหรือผลตรวจของ build ล่าสุด
+Use `python` if that is your Python executable's name. For an x86_64 emulator, install the `x86_64-linux-android` Rust target, build with `--target x86_64-linux-android`, and install `target/android/ledgers-bro-test-x86_64.apk`. [Full Android guide](docs/android-emulator-th.md).
 
-ดู [ผลตรวจตอนจัด repository](docs/verification-repository-setup.md) สำหรับขอบเขตการล้างไฟล์และการทดสอบล่าสุด
+### iOS
 
-## ก่อนขายยังต้องทำ
+No iOS host or working build steps yet, so there is no IPA to run on an iPhone. The “soon™” era continues. 🫠
 
-Encrypted database/key storage, backup/restore, PIN/biometric, camera/iOS OCR adapters + merchant accuracy benchmarks, LLM accuracy/latency/battery benchmarks บนมือถือจริง, durable receipt attachments, PDF, recurring obligations/notifications, opt-in bank notifications, forecast/ภาระหนี้และสภาพคล่อง, แก้รายการและค้นหา/กรองแบบครบ, Android device tests, accessibility audit, large-ledger tests, signed package และ Store review
+### Tests
 
-หน้าภาษีคำนวณ PIT รายปี 2568/2569 ได้ใน [ขอบเขตที่ระบุ](docs/tax-engine-th.md) พร้อมขั้นภาษี ค่าใช้จ่าย ลดหย่อน วิธีขั้นต่ำ และเครดิตภาษี; ปี 2569 เป็นประมาณการ ยังไม่ครอบคลุม VAT/บริการต่างประเทศ/สิทธิทุกประเภท และไม่มีการยื่นแบบอัตโนมัติ ไม่ใช้ LLM คำนวณภาษี
+```sh
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test --workspace --locked
+```
 
-## เอกสารผลิตภัณฑ์
+## Tiny but relevant 🧾
 
-- [สเปกผลิตภัณฑ์](docs/product-plan-th.md)
-- [ช่องแชต](docs/quick-entry-chat-th.md) · [system prompt](prompts/quick-entry-system.txt) · [JSON contract](schemas/quick-entry-proposal.schema.json)
-- [บันทึกด้วยเสียงบน Android](docs/voice-entry-th.md) · [ผลตรวจเสียงและข้อจำกัด](docs/verification-voice-entry.md)
-- [ภาษีและ VAT บริการต่างประเทศ](docs/tax-engine-th.md)
-- [ทดสอบและขึ้น Store](docs/testing-and-release-th.md)
-- [ธีมปัจจุบัน](design/pastel-companion-theme.md) · [ประวัติภาพ doodles](design/dark-doodle-theme.md)
+In **More → Settings**, choose a currency before creating the first account. Each ledger uses one currency; no automatic conversion. Supported: THB, USD, EUR, GBP, AUD, CAD, SGD, CNY. Desktop can use separate `--data-dir` folders for separate ledgers. Thai tax is optional and THB-only. Prompts and speech currently use Thai; receipt OCR supports THB receipts.
 
-ชื่อ Ledgers Bro เป็นชื่อทำงาน ยังไม่ได้ตรวจเครื่องหมายการค้าหรือชื่อใน Store ราคาเป้าหมายไทย 349 บาท
+[MIT](LICENSE). Fork it, fix it, make your wallet less embarrassing. Third-party [models / OCR](licenses/) and [fonts](crates/ui/assets/fonts/LICENSE.txt) retain their own licenses. Early software: try synthetic data first; the local database is not encrypted.

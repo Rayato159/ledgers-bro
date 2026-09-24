@@ -10,15 +10,15 @@
 4. เทียบภาพกับยอดสุทธิ วันที่ และแต่ละบรรทัด เลือกบัญชี/หมวด สำหรับ VAT ระบุว่าบวกเพิ่มหรือรวมในราคาแล้ว
 5. ผลรวมต้องตรงยอดสุทธิทุกสตางค์ ก่อนติ๊กตรวจรายการและกดยืนยัน แอปไม่บันทึกจาก OCR อัตโนมัติ
 
-```powershell
-& "$env:LOCALAPPDATA/Android/Sdk/platform-tools/adb.exe" -s emulator-5554 push "C:/path/to/IMG_1234.HEIC" /sdcard/Download/
+```sh
+adb -s emulator-5554 push /path/to/IMG_1234.HEIC /sdcard/Download/
 ```
 
-ติดตั้งรุ่นใหม่: `./scripts/build-android.ps1` แล้ว `./scripts/run-android.ps1 -Device emulator-5554` อย่าลบแอปก่อนติดตั้งทับถ้าต้องการเก็บข้อมูลทดลองเดิม
+ติดตั้งรุ่นใหม่ตาม [คู่มือ Android](android-emulator-th.md) อย่าลบแอปก่อนติดตั้งทับถ้าต้องการเก็บข้อมูลทดลองเดิม
 
 ## Windows
 
-ติดตั้งตัวอ่านด้วย `./scripts/setup-ocr.ps1` แล้วเปิด `./scripts/run-desktop.ps1` เลือกรูปจากหน้าบันทึกด่วนเหมือนกัน ตัวอ่าน HEIF อยู่ใน `.tools/ocr/image-decoder` และถูกนำไปด้วยเมื่อสร้างแพ็กเกจ Desktop
+ติดตั้งตัวอ่านตาม [คู่มือ OCR](receipt-ocr.md) แล้วเปิด `cargo run -p ledgers-bro --locked -- --data-dir .data/sandbox` เลือกรูปจากหน้าบันทึกด่วนเหมือนกัน ตัวอ่าน HEIF อยู่ใน `.tools/ocr/image-decoder` ต้องจัดเตรียม runtime นี้ก่อนใช้งาน HEIF บน Windows
 
 รูปใช้ตรวจชั่วคราว ยังไม่ถูกแนบเก็บกับรายการ รองรับภาพนิ่ง ไม่รับไฟล์วิดีโอ Live Photo, RAW/DNG หรือ AVIF หากอ่านไม่ได้สามารถเลือก JPG หรือครอปเฉพาะใบเสร็จแล้วลองใหม่ได้
 

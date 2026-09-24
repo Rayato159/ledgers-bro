@@ -91,6 +91,9 @@ pub fn export_csv(view: &Dashboard, options: ExportOptions) -> Result<CsvExport,
         };
         let underlying = original.unwrap_or(entry);
         let kind = match entry.kind() {
+            EntryKind::ReceivableOpening { .. } => lang.text("ยอดลูกหนี้ยกมา", "Opening receivable"),
+            EntryKind::Lending { .. } => lang.text("ให้ยืมเงิน", "Loan advance"),
+            EntryKind::Repayment { .. } => lang.text("ลูกหนี้ชำระเงินต้น", "Principal repayment"),
             EntryKind::Opening { .. } => lang.text("ยอดเริ่มต้น", "Opening balance"),
             EntryKind::Income { .. } => lang.text("รายรับ", "Income"),
             EntryKind::Expense { .. } => lang.text("รายจ่าย", "Expense"),
@@ -116,6 +119,28 @@ pub fn export_csv(view: &Dashboard, options: ExportOptions) -> Result<CsvExport,
         postings.sort_by_key(|p| p.amount().minor() < 0); // Debit lines precede credits.
         for posting in postings {
             let (account_id, account_name) = match posting.target() {
+                PostingTarget::System(SystemBook::Receivable) => {
+                    let id = match underlying.kind() {
+                        EntryKind::ReceivableOpening { receivable, .. }
+                        | EntryKind::Lending { receivable, .. }
+                        | EntryKind::Repayment { receivable, .. } => *receivable,
+                        _ => return Err(DomainError::InvalidReceivable),
+                    };
+                    let loan = view
+                        .receivables
+                        .iter()
+                        .find(|r| r.id() == id)
+                        .ok_or(DomainError::InvalidReceivable)?;
+                    (
+                        format!("receivable:{id}"),
+                        format!(
+                            "{} — {} · {}",
+                            lang.text("ลูกหนี้", "Receivable"),
+                            loan.debtor().as_str(),
+                            loan.description().as_str()
+                        ),
+                    )
+                }
                 PostingTarget::Account(id) => {
                     let account = view
                         .accounts
@@ -170,12 +195,14 @@ pub fn export_csv(view: &Dashboard, options: ExportOptions) -> Result<CsvExport,
         }
     }
     let contents = match options.report {
-        AccountingReport::Journal => journal_csv(&lines, lang, false)?,
+        AccountingReport::Journal => journal_csv(&lines, lang, false, view.currency)?,
         AccountingReport::GeneralLedger => {
             lines.sort_by(|a, b| a.account_id.cmp(&b.account_id));
-            journal_csv(&lines, lang, true)?
+            journal_csv(&lines, lang, true, view.currency)?
         }
-        AccountingReport::TrialBalance => trial_balance_csv(&lines, lang, view.today)?,
+        AccountingReport::TrialBalance => {
+            trial_balance_csv(&lines, lang, view.today, view.currency)?
+        }
     };
     Ok(CsvExport {
         filename: format!("{}-{}.csv", options.report.label(lang), view.today),
@@ -215,6 +242,7 @@ fn journal_csv(
     lines: &[JournalLine],
     lang: ExportLanguage,
     ledger: bool,
+    currency: Currency,
 ) -> Result<String, DomainError> {
     let mut csv = String::from("\u{feff}");
     let mut headers = [
@@ -236,6 +264,9 @@ fn journal_csv(
             lang.text("ยอดคงเหลือเดบิต (บาท)", "Debit balance (THB)"),
             lang.text("ยอดคงเหลือเครดิต (บาท)", "Credit balance (THB)"),
         ]);
+    }
+    for header in &mut headers {
+        *header = currency_header(header, currency);
     }
     write_row(&mut csv, &headers);
     let mut totals = (0_i128, 0_i128);
@@ -279,6 +310,7 @@ fn trial_balance_csv(
     lines: &[JournalLine],
     lang: ExportLanguage,
     as_of: EntryDate,
+    currency: Currency,
 ) -> Result<String, DomainError> {
     let mut csv = String::from("\u{feff}");
     write_row(
@@ -292,7 +324,7 @@ fn trial_balance_csv(
             ("ยอดคงเหลือเดบิต (บาท)", "Debit balance (THB)"),
             ("ยอดคงเหลือเครดิต (บาท)", "Credit balance (THB)"),
         ]
-        .map(|(th, en)| lang.text(th, en)),
+        .map(|(th, en)| currency_header(&lang.text(th, en), currency)),
     );
     let mut accounts = BTreeMap::<&str, (&str, i128, i128)>::new();
     for line in lines {
@@ -362,4 +394,14 @@ fn write_row(csv: &mut String, cells: &[String]) {
         csv.push('"');
     }
     csv.push_str("\r\n");
+}
+
+fn currency_header(label: &str, currency: Currency) -> String {
+    if currency == Currency::Thb {
+        label.to_owned()
+    } else {
+        label
+            .replace("(THB)", &format!("({})", currency.code()))
+            .replace("(บาท)", &format!("({})", currency.code()))
+    }
 }

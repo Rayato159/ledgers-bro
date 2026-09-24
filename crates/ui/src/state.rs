@@ -1,5 +1,5 @@
 use crate::Gateway;
-use crate::receipt::ReceiptReview;
+use crate::receipt::{ReceiptAttachment, ReceiptDestination, ReceiptReview};
 use dioxus::prelude::*;
 use ledger_application::*;
 use std::sync::{
@@ -15,33 +15,35 @@ pub enum Page {
     Chat,
     Manual,
     Tax,
+    Recurring,
+    Receivables,
+    Settings,
 }
 impl Page {
-    pub const ALL: [Self; 5] = [
-        Self::Overview,
-        Self::Accounts,
-        Self::Chat,
-        Self::Transactions,
-        Self::Tax,
-    ];
     pub const fn label(self) -> &'static str {
         match self {
+            Self::Settings => "ตั้งค่า",
             Self::Overview => "ภาพรวม",
             Self::Accounts => "บัญชี",
             Self::Transactions => "รายการ",
-            Self::Chat => "บันทึกด่วน",
+            Self::Chat => "เพิ่มรายการ",
             Self::Manual => "กรอกเอง",
             Self::Tax => "ภาษี",
+            Self::Recurring => "รายจ่ายประจำ",
+            Self::Receivables => "ลูกหนี้",
         }
     }
     pub const fn icon(self) -> &'static str {
         match self {
+            Self::Settings => "settings",
             Self::Overview => "home",
             Self::Accounts => "wallet",
-            Self::Transactions => "list",
+            Self::Transactions => "notebook",
             Self::Chat => "chat",
             Self::Manual => "edit",
             Self::Tax => "file",
+            Self::Recurring => "calendar",
+            Self::Receivables => "wallet",
         }
     }
 }
@@ -59,12 +61,20 @@ pub struct UiState {
     pub input: Signal<Option<EntryInput>>,
     pub prepared: Signal<Option<PreparedEntry>>,
     pub guidance: Signal<String>,
-    pub receipt: Signal<Option<ReceiptReview>>,
+    pub composer: Signal<String>,
+    pub receipts: Signal<Vec<ReceiptAttachment>>,
+    pub scan_progress: Signal<String>,
     pub scan_cancel: Signal<Option<Arc<AtomicBool>>>,
     pub model_operation: Signal<Option<ModelOperation>>,
     pub model_choices: Signal<Option<(String, Vec<ModelDraft>)>>,
+    pub prompt_drafts: Signal<Option<(String, Vec<PromptDraft>)>>,
+    pub prompt_prepared: Signal<Option<PromptPlan>>,
     pub batch: Signal<Option<(String, Vec<ModelDraft>)>>,
     pub batch_prepared: Signal<Option<Vec<PreparedEntry>>>,
+    pub recurring_prepared: Signal<Option<PreparedRecurringPayment>>,
+    pub receivable_review: Signal<Option<ReceivableReview>>,
+    pub repayment_form: Signal<bool>,
+    pub repayment_selection: Signal<Option<ledger_domain::ReceivableId>>,
 }
 impl UiState {
     pub fn cancel_model(self) {
@@ -79,11 +89,13 @@ impl UiState {
         let operation = ModelOperation::default();
         self.model_operation.set(Some(operation.clone()));
         self.model_choices.set(None);
+        self.prompt_drafts.set(None);
+        self.prompt_prepared.set(None);
         self.batch.set(None);
         self.batch_prepared.set(None);
         self.input.set(None);
         self.prepared.set(None);
-        self.receipt.set(None);
+
         self.guidance.set("กำลังอ่านรายการในเครื่อง…".into());
         self.notice.set(None);
         self.busy.set(true);
@@ -113,10 +125,17 @@ impl UiState {
         });
     }
     fn apply_resolution(mut self, resolution: QuickResolution) {
-        self.receipt.set(None);
         self.prepared.set(None);
         self.model_choices.set(None);
         match resolution {
+            QuickResolution::Actions { source, drafts } => {
+                self.input.set(None);
+                self.batch.set(None);
+                self.prompt_prepared.set(None);
+                self.prompt_drafts.set(Some((source, drafts)));
+                self.guidance
+                    .set("ตรวจทุกคำสั่งและเติมข้อมูลที่ขาดก่อนยืนยัน ยังไม่มีข้อมูลถูกบันทึก".into());
+            }
             QuickResolution::Batch { source, drafts } => {
                 self.input.set(None);
                 self.batch_prepared.set(None);
@@ -139,69 +158,234 @@ impl UiState {
                 .set("ใช้ตัวอย่างด้านบน หรือเลือกแบบฟอร์ม กรอกชื่อที่มีช่องว่างในเครื่องหมายคำพูด".into()),
         }
     }
-    pub fn scan_receipt(self, file: dioxus::html::FileData) {
-        self.run_receipt_scan(Some(file));
+    pub fn scan_receipts(
+        self,
+        files: Vec<dioxus::html::FileData>,
+        destination: ReceiptDestination,
+    ) {
+        if !files.is_empty() {
+            self.run_receipt_scan(Some(files), destination);
+        }
     }
-    pub fn pick_receipt(self) {
-        self.run_receipt_scan(None);
+    pub fn pick_receipts(self, destination: ReceiptDestination) {
+        self.run_receipt_scan(None, destination);
     }
-    fn run_receipt_scan(mut self, file: Option<dioxus::html::FileData>) {
+    fn run_receipt_scan(
+        mut self,
+        files: Option<Vec<dioxus::html::FileData>>,
+        destination: ReceiptDestination,
+    ) {
         if *self.busy.peek() {
             return;
         }
-        if file
+        if self
+            .view
+            .peek()
             .as_ref()
-            .is_some_and(|file| file.size() > MAX_RECEIPT_BYTES as u64)
+            .is_some_and(|v| v.currency != ledger_domain::Currency::Thb)
         {
-            self.notice
-                .set(Some((true, "รูปใบเสร็จต้องไม่เกิน 32 MB".into())));
+            self.notice.set(Some((true, "Receipt OCR currently supports THB ledgers only. Use manual entry in your ledger currency.".into())));
             return;
         }
-        let Some(today) = self.view.peek().as_ref().map(|view| view.today) else {
+        let existing = self.receipts.peek().len();
+        let existing_bytes = self
+            .receipts
+            .peek()
+            .iter()
+            .filter_map(|a| a.review.as_ref().ok())
+            .map(|r| r.byte_len)
+            .sum::<u64>();
+        if existing >= MAX_RECEIPT_IMAGES
+            || files.as_ref().is_some_and(|files| {
+                files.len() + existing > MAX_RECEIPT_IMAGES
+                    || files.iter().fold(existing_bytes, |total, file| {
+                        total.saturating_add(file.size())
+                    }) > MAX_RECEIPT_BATCH_BYTES
+            })
+        {
+            self.notice.set(Some((
+                true,
+                "เพิ่มได้ไม่เกิน 8 รูปต่อชุด รวมไม่เกิน 128 MB กรุณาแบ่งบันทึกเป็นชุดเล็กลง".into(),
+            )));
+            return;
+        }
+        let Some(today) = self.view.peek().as_ref().map(|v| v.today) else {
             return;
         };
         let cancel = Arc::new(AtomicBool::new(false));
         self.scan_cancel.set(Some(cancel.clone()));
-        self.model_choices.set(None);
         self.busy.set(true);
         self.notice.set(None);
+        self.scan_progress
+            .set("กำลังเลือกรูปและอ่านใบเสร็จในเครื่อง…".into());
         let gateway = self.gateway.peek().clone();
         dioxus::dioxus_core::spawn_forever(async move {
-            let result = if let Some(file) = file {
-                gateway.0.scan_receipt(file, cancel.clone()).await.map(Some)
+            let result = if let Some(files) = files {
+                let mut results = Vec::new();
+                let count = files.len();
+                for (index, file) in files.into_iter().enumerate() {
+                    if cancel.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    self.scan_progress
+                        .set(format!("กำลังอ่านใบเสร็จ {} / {}…", index + 1, count));
+                    let name = file.name();
+                    let result = if file.size() > MAX_RECEIPT_BYTES as u64 {
+                        Err(AppError::Input("รูปใบเสร็จต้องไม่เกิน 32 MB".into()))
+                    } else {
+                        await_receipt(gateway.0.scan_receipt(file, cancel.clone()), &cancel, 90)
+                            .await
+                    };
+                    results.push((name, result));
+                }
+                Ok(results)
             } else {
-                gateway.0.pick_receipt(cancel.clone()).await
+                await_receipt(gateway.0.pick_receipts(cancel.clone()), &cancel, 840).await
             };
             if cancel.load(Ordering::Relaxed) {
-                self.notice
-                    .set(Some((false, "ยกเลิกการอ่านใบเสร็จแล้ว".into())));
+                self.notice.set(Some((
+                    false,
+                    "หยุดอ่านใบเสร็จแล้ว (ยกเลิกหรือหมดเวลา) ข้อความและรายการเดิมยังอยู่".into(),
+                )));
             } else {
-                match result.and_then(|result| {
-                    result
-                        .map(|(image, text)| {
-                            analyze_receipt(&text, today).map(|analysis| (image, analysis))
-                        })
-                        .transpose()
-                }) {
-                    Ok(Some((image, analysis))) => {
-                        self.batch.set(None);
-                        self.batch_prepared.set(None);
-                        self.input.set(Some(analysis.draft(today)));
-                        self.prepared.set(None);
-                        self.receipt.set(Some(ReceiptReview::new(image, analysis)));
-                        self.guidance
-                            .set("อ่านใบเสร็จแล้ว ตรวจยอด วันที่ และเลือกบัญชีกับหมวดก่อนบันทึก".into());
-                        self.page.set(Page::Chat);
+                match result {
+                    Ok(results)
+                        if results.len() + existing > MAX_RECEIPT_IMAGES
+                            || results
+                                .iter()
+                                .filter_map(|(_, result)| result.as_ref().ok())
+                                .fold(existing_bytes, |total, (image, _)| {
+                                    total.saturating_add(image.bytes().len() as u64)
+                                })
+                                > MAX_RECEIPT_BATCH_BYTES =>
+                    {
+                        self.notice.set(Some((
+                            true,
+                            "เพิ่มได้ไม่เกิน 8 รูปต่อชุด รวมไม่เกิน 128 MB แบ่งเลือกรูปให้น้อยลง".into(),
+                        )))
                     }
-                    Ok(None) => {}
+                    Ok(results) => {
+                        let mut drafts = self
+                            .batch
+                            .peek()
+                            .as_ref()
+                            .map(|(_, d)| d.clone())
+                            .unwrap_or_default();
+                        if destination == ReceiptDestination::Manual
+                            && drafts.is_empty()
+                            && let Some(input) = self.input.peek().clone()
+                            && (!input.amount.is_empty()
+                                || !input.note.is_empty()
+                                || input.account.is_some())
+                        {
+                            drafts.push(ModelDraft {
+                                input,
+                                guidance: "รายการที่กรอกไว้ก่อนเพิ่มใบเสร็จ".into(),
+                            });
+                        }
+                        if destination == ReceiptDestination::Manual
+                            && drafts.len() + results.len() > MAX_BATCH_ENTRIES
+                        {
+                            self.notice.set(Some((
+                                true,
+                                "รวมรายการเดิมแล้วเกิน 8 รายการ บันทึกชุดเดิมก่อนเพิ่มใบเสร็จ".into(),
+                            )));
+                        } else {
+                            let mut blocks = Vec::new();
+                            let mut attachments = self.receipts.peek().clone();
+                            let mut successes = 0;
+                            for (name, result) in results {
+                                let number = attachments.len() + 1;
+                                let review = result.and_then(|(image, text)| {
+                                    analyze_receipt(&text, today)
+                                        .map(|analysis| ReceiptReview::new(image, analysis))
+                                });
+                                if let Ok(review) = &review {
+                                    successes += 1;
+                                    blocks.push(format_receipt_prompt(
+                                        &review.analysis,
+                                        today,
+                                        number,
+                                    ));
+                                    drafts.push(ModelDraft {
+                                        input: review.analysis.draft(today),
+                                        guidance: format!(
+                                            "ใบเสร็จ {number}: ตรวจยอด วันที่ และเลือกบัญชีกับหมวดก่อนบันทึก"
+                                        ),
+                                    });
+                                }
+                                attachments.push(ReceiptAttachment {
+                                    name,
+                                    review: review.map_err(|e| e.to_string()),
+                                });
+                            }
+                            self.receipts.set(attachments);
+                            if successes > 0 {
+                                self.prompt_drafts.set(None);
+                                self.prompt_prepared.set(None);
+                                self.batch_prepared.set(None);
+                                self.prepared.set(None);
+                                self.model_choices.set(None);
+                                if destination == ReceiptDestination::Prompt {
+                                    let prefix = self.composer.peek().trim().to_owned();
+                                    self.composer.set(
+                                        [prefix, blocks.join("\n\n")]
+                                            .into_iter()
+                                            .filter(|s| !s.is_empty())
+                                            .collect::<Vec<_>>()
+                                            .join("\n\n"),
+                                    );
+                                    self.batch.set(None);
+                                    self.input.set(None);
+                                } else {
+                                    self.input.set(None);
+                                    self.batch.set(Some((
+                                        "รายการจากใบเสร็จ · ตรวจภาพและรายละเอียดทุกใบก่อนบันทึก".into(),
+                                        drafts,
+                                    )));
+                                }
+                                self.guidance.set(format!(
+                                    "อ่านได้ {successes} ใบ ตรวจช่องที่ขาดและยอดกับภาพก่อนบันทึก"
+                                ));
+                            }
+                        }
+                    }
                     Err(error) => self.notice.set(Some((true, error.to_string()))),
                 }
             }
             self.scan_cancel.set(None);
+            self.scan_progress.set(String::new());
             self.busy.set(false);
         });
     }
 
+    pub fn clear_receipts(mut self) {
+        if *self.busy.peek() {
+            return;
+        }
+        self.receipts.set(Vec::new());
+        let text = without_receipt_blocks(&self.composer.peek());
+        self.composer.set(text);
+        self.batch_prepared.set(None);
+        self.prepared.set(None);
+        if let Some((_, drafts)) = self.batch.write().as_mut() {
+            drafts.retain(|d| d.input.receipt.is_none());
+        }
+        if self
+            .batch
+            .peek()
+            .as_ref()
+            .is_some_and(|(_, d)| d.is_empty())
+        {
+            self.batch.set(None);
+            if *self.page.peek() == Page::Manual
+                && let Some(today) = self.view.peek().as_ref().map(|v| v.today)
+            {
+                self.input.set(Some(EntryInput::empty(today)));
+            }
+        }
+        self.guidance.set(String::new());
+    }
     pub fn cancel_scan(self) {
         if let Some(cancel) = self.scan_cancel.peek().as_ref() {
             cancel.store(true, Ordering::Relaxed);
@@ -218,11 +402,27 @@ impl UiState {
         // to the root, otherwise unmounting that child cancels the refresh and
         // leaves the entire app busy even though the transaction was saved.
         let created_account = matches!(&command, Command::CreateAccount { .. });
+        let recurring_change = matches!(
+            &command,
+            Command::AddRecurring(_)
+                | Command::CreateReceivable(_)
+                | Command::ReceiveRepayment(_)
+                | Command::SetRecurringInstallments { .. }
+                | Command::StopRecurring { .. }
+                | Command::PayRecurring(_)
+                | Command::LinkRecurring { .. }
+        );
         dioxus::dioxus_core::spawn_forever(async move {
             let result = gateway.0.request(command).await;
             match result {
+                Ok(Response::Preferences(_)) => {}
+                Ok(Response::ReceivableReview(review)) => self.receivable_review.set(Some(review)),
                 Ok(Response::Dashboard(view)) => self.view.set(Some(view)),
                 Ok(Response::Resolved(resolution)) => self.apply_resolution(resolution),
+                Ok(Response::PreparedRecurringPayment(prepared)) => {
+                    self.recurring_prepared.set(Some(prepared))
+                }
+                Ok(Response::PreparedPrompt(plan)) => self.prompt_prepared.set(Some(plan)),
                 Ok(Response::Prepared(prepared)) => self.prepared.set(Some(prepared)),
                 Ok(Response::PreparedBatch(prepared)) => self.batch_prepared.set(Some(prepared)),
                 Ok(Response::AccountDeletion(deletion)) => {
@@ -270,15 +470,28 @@ impl UiState {
                         ))),
                     }
                 }
-                Ok(Response::Committed(_)) | Ok(Response::CommittedBatch(_)) => {
-                    if !created_account {
-                        self.batch.set(None);
+                Ok(Response::PromptCommitted)
+                | Ok(Response::Committed(_))
+                | Ok(Response::CommittedBatch(_))
+                | Ok(Response::RecurringChanged) => {
+                    self.receivable_review.set(None);
+                    self.repayment_form.set(false);
+                    self.recurring_prepared.set(None);
+                    if !recurring_change {
+                        if !created_account {
+                            self.prompt_drafts.set(None);
+                            self.prompt_prepared.set(None);
+                            self.batch.set(None);
+                            self.guidance.set(String::new());
+                            self.receipts.set(Vec::new());
+                            self.composer.set(String::new());
+                        }
+                        self.batch_prepared.set(None);
+
+                        self.account_form.set(false);
+                        self.prepared.set(None);
+                        self.input.set(None);
                     }
-                    self.batch_prepared.set(None);
-                    self.receipt.set(None);
-                    self.account_form.set(false);
-                    self.prepared.set(None);
-                    self.input.set(None);
                     match gateway.0.request(Command::Load).await {
                         Ok(Response::Dashboard(view)) => {
                             self.view.set(Some(view));
@@ -309,17 +522,21 @@ impl UiState {
         }
         let today = self.view.peek().as_ref().map(|v| v.today);
         if let Some(today) = today {
+            self.prompt_drafts.set(None);
+            self.prompt_prepared.set(None);
             self.batch.set(None);
             self.batch_prepared.set(None);
             // Cancel interpretation before opening an independent draft. The
             // awaiting task rejects late model output and releases busy itself.
             self.cancel_model();
             self.model_choices.set(None);
-            self.receipt.set(None);
+
             self.input.set(Some(EntryInput::empty(today)));
             self.prepared.set(None);
             self.guidance.set(String::new());
             self.notice.set(None);
+            self.receipts.set(Vec::new());
+            self.composer.set(String::new());
             self.page.set(Page::Manual);
         }
     }
@@ -327,6 +544,7 @@ impl UiState {
         if *self.busy.peek() {
             return;
         }
+        self.notice.set(None);
         self.prepared.set(None);
         if let Some(input) = self.input.write().as_mut() {
             let previous_amount = input.amount.clone();
@@ -337,14 +555,6 @@ impl UiState {
                 receipt.reviewed = false;
             }
         }
-    }
-    pub fn update_receipt(self, update: impl FnOnce(&mut ReceiptInput)) {
-        self.update_entry(|input| {
-            if let Some(receipt) = &mut input.receipt {
-                update(receipt);
-                receipt.reviewed = false;
-            }
-        });
     }
 }
 
@@ -369,6 +579,27 @@ async fn await_model(
                 if operation.cancelled.load(Ordering::Relaxed) {
                     return Ok(None);
                 }
+            }
+        }
+    }
+}
+
+async fn await_receipt<T>(
+    future: crate::UiFuture<T>,
+    cancel: &AtomicBool,
+    seconds: u64,
+) -> Result<T, AppError> {
+    let deadline = tokio::time::sleep(std::time::Duration::from_secs(seconds));
+    tokio::pin!(future, deadline);
+    loop {
+        tokio::select! {
+            result = &mut future => return result,
+            _ = &mut deadline => {
+                cancel.store(true, Ordering::Relaxed);
+                return Err(AppError::Input("หมดเวลาอ่านใบเสร็จ กรุณาลองใหม่".into()));
+            }
+            _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => {
+                if cancel.load(Ordering::Relaxed) { return Err(AppError::Input("ยกเลิกการอ่านใบเสร็จแล้ว".into())); }
             }
         }
     }
@@ -480,12 +711,20 @@ mod tests {
             input: use_signal(|| None),
             prepared: use_signal(|| None),
             guidance: use_signal(String::new),
-            receipt: use_signal(|| None),
+            composer: use_signal(String::new),
+            receipts: use_signal(Vec::new),
+            scan_progress: use_signal(String::new),
             scan_cancel: use_signal(|| None),
             model_operation: use_signal(|| None),
             model_choices: use_signal(|| None),
+            prompt_drafts: use_signal(|| None),
+            prompt_prepared: use_signal(|| None),
             batch: use_signal(|| None),
             batch_prepared: use_signal(|| None),
+            recurring_prepared: use_signal(|| None),
+            receivable_review: use_signal(|| None),
+            repayment_form: use_signal(|| false),
+            repayment_selection: use_signal(|| None),
         }
     }
 
@@ -688,5 +927,353 @@ mod tests {
                 usize::from(matches!(start, ManualStart::StalledModel))
             );
         }
+    }
+    #[component]
+    fn RecurringBatchHarness() -> Element {
+        let view = use_context::<Dashboard>();
+        let mut store = use_test_state();
+        let today = view.today;
+        store.batch = use_signal(|| {
+            Some((
+                "prompt".into(),
+                vec![ModelDraft {
+                    input: EntryInput {
+                        amount: "90.00".into(),
+                        note: "สมาชิก".into(),
+                        ..EntryInput::empty(today)
+                    },
+                    guidance: String::new(),
+                }],
+            ))
+        });
+        use_context_provider(|| store);
+        let (source, drafts) = store.batch.read().clone().expect("batch");
+        rsx! { crate::batch_entry::BatchReview { source, drafts, view } }
+    }
+
+    #[test]
+    fn selecting_recurring_in_prompt_updates_the_review_without_replacing_amount() {
+        use dioxus::dioxus_core::{AttributeValue, Mutation};
+        use ledger_domain::*;
+        use std::{any::Any, rc::Rc};
+        let plan = RecurringExpense::new(
+            "00000000-0000-0000-0000-000000000002".parse().expect("id"),
+            AccountName::new("สมาชิก").expect("name"),
+            PositiveMoney::new("100.00".parse().expect("money")).expect("positive"),
+            Category::OtherExpense,
+            None,
+            MonthlyDue::new(1, "2026-09".parse().expect("month"))
+                .expect("due")
+                .with_installments(Some(2))
+                .expect("count"),
+        )
+        .expect("plan");
+        let mut state = LedgerState::default();
+        state.recurring.push(plan.clone());
+        let view = dashboard(state, "2026-09-24".parse().expect("date")).expect("view");
+        set_event_converter(Box::new(dioxus::html::SerializedHtmlEventConverter));
+        let mut dom = VirtualDom::new(RecurringBatchHarness);
+        dom.insert_any_root_context(Box::new(view));
+        dom.insert_any_root_context(Box::new(Gateway(Arc::new(DelayedRefresh {
+            calls: Arc::new(AtomicUsize::new(0)),
+        }))));
+        let changes = dom.rebuild_to_vec();
+        let select = changes
+            .edits
+            .iter()
+            .find_map(|edit| match edit {
+                Mutation::SetAttribute {
+                    name: "id",
+                    value: AttributeValue::Text(value),
+                    id,
+                    ..
+                } if value == "batch-recurring-0-plan" => Some(*id),
+                _ => None,
+            })
+            .expect("plan dropdown");
+        let data = dioxus::html::SerializedFormData::new(plan.id().to_string(), vec![]);
+        let event = Event::new(
+            Rc::new(PlatformEventData::new(Box::new(data))) as Rc<dyn Any>,
+            true,
+        );
+        dom.runtime().handle_event("change", event, select);
+        dom.render_immediate(&mut dioxus::dioxus_core::NoOpMutations);
+        let html = dioxus_ssr::render(&dom);
+        assert!(html.contains("batch-recurring-0-period"), "{html}");
+        assert!(html.contains("value=\"90.00\""), "{html}");
+        assert!(!html.contains("ยังขาด: หมวดหมู่"), "{html}");
+    }
+    struct ReceiptGateway {
+        calls: Arc<AtomicUsize>,
+        stalled: bool,
+    }
+    impl UiGateway for ReceiptGateway {
+        fn request(&self, _: Command) -> UiFuture<Response> {
+            self.calls.fetch_add(1000, Ordering::SeqCst);
+            Box::pin(async {
+                Err(AppError::Input(
+                    "upload must not commit or invoke AI".into(),
+                ))
+            })
+        }
+        fn save_csv(&self, _: CsvExport) -> UiFuture<Option<String>> {
+            Box::pin(async { Ok(None) })
+        }
+        fn scan_receipt(
+            &self,
+            file: dioxus::html::FileData,
+            _: Arc<AtomicBool>,
+        ) -> UiFuture<(ReceiptImage, String)> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            let stalled = self.stalled;
+            Box::pin(async move {
+                if stalled {
+                    return std::future::pending().await;
+                }
+                if file.name() == "bad.png" {
+                    return Err(AppError::Input("รูปเสีย".into()));
+                }
+                Ok((
+                    ReceiptImage::new(b"\x89PNG\r\n\x1a\n".to_vec())?,
+                    "Coffee 80.00\nGrand Total 80.00".into(),
+                ))
+            })
+        }
+    }
+    #[derive(Clone, Copy)]
+    struct ReceiptTest {
+        manual: bool,
+        cancel: bool,
+        oversized: bool,
+    }
+    #[component]
+    fn ReceiptHarness() -> Element {
+        let mut store = use_test_state();
+        let config = use_context::<ReceiptTest>();
+        use_effect(move || {
+            let today = "2026-09-24".parse().expect("date");
+            store.view.set(Some(
+                dashboard(LedgerState::default(), today).expect("view"),
+            ));
+            store.page.set(if config.manual {
+                Page::Manual
+            } else {
+                Page::Chat
+            });
+            store.composer.set("กาแฟ 30".into());
+            if config.manual {
+                let mut input = EntryInput::empty(today);
+                input.amount = "30".into();
+                store.input.set(Some(input));
+            }
+            let files = ["first.png", "bad.png", "second.png"]
+                .map(|name| {
+                    dioxus::html::FileData::new(dioxus::html::SerializedFileData {
+                        path: name.into(),
+                        size: if config.oversized {
+                            MAX_RECEIPT_BATCH_BYTES
+                        } else {
+                            20
+                        },
+                        last_modified: 0,
+                        content_type: Some("image/png".into()),
+                        contents: None,
+                    })
+                })
+                .to_vec();
+            store.scan_receipts(
+                files,
+                if config.manual {
+                    ReceiptDestination::Manual
+                } else {
+                    ReceiptDestination::Prompt
+                },
+            );
+            if config.cancel {
+                spawn(async move {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                    store.cancel_scan();
+                });
+            }
+        });
+        let composer = store.composer.read().clone();
+        let count = store.receipts.read().len();
+        let errors = store
+            .receipts
+            .read()
+            .iter()
+            .filter(|a| a.review.is_err())
+            .count();
+        let batch = store
+            .batch
+            .read()
+            .as_ref()
+            .map(|(_, d)| d.len())
+            .unwrap_or(0);
+        let manual = *store.page.read() == Page::Manual;
+        let busy = *store.busy.read();
+        let notice = store.notice.read().clone();
+        rsx! { div { "busy={busy};images={count};errors={errors};drafts={batch};manual={manual};{composer}" if let Some((_, notice)) = notice { "{notice}" } } }
+    }
+    async fn scan_harness(config: ReceiptTest) -> (String, usize) {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let mut dom = VirtualDom::new(ReceiptHarness);
+        dom.insert_any_root_context(Box::new(config));
+        dom.insert_any_root_context(Box::new(Gateway(Arc::new(ReceiptGateway {
+            calls: calls.clone(),
+            stalled: config.cancel,
+        }))));
+        dom.rebuild_in_place();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                dom.wait_for_work().await;
+                dom.render_immediate(&mut dioxus::dioxus_core::NoOpMutations);
+                let html = dioxus_ssr::render(&dom);
+                if html.contains("busy=false")
+                    && (html.contains("images=3")
+                        || html.contains("หยุดอ่าน")
+                        || html.contains("128 MB"))
+                {
+                    break;
+                }
+            }
+        })
+        .await
+        .expect("scan releases UI");
+        (dioxus_ssr::render(&dom), calls.load(Ordering::SeqCst))
+    }
+    #[tokio::test(flavor = "current_thread")]
+    async fn multiple_uploads_append_prompt_and_report_each_failed_image_without_saving() {
+        let (html, calls) = scan_harness(ReceiptTest {
+            manual: false,
+            cancel: false,
+            oversized: false,
+        })
+        .await;
+        assert_eq!(calls, 3);
+        assert!(html.contains("images=3;errors=1;drafts=0"), "{html}");
+        assert!(html.contains("กาแฟ 30"));
+        assert!(html.contains("[ใบเสร็จ 1]"));
+        assert!(html.contains("[ใบเสร็จ 3]"));
+        assert!(!html.contains("[ใบเสร็จ 2]"));
+    }
+    #[tokio::test(flavor = "current_thread")]
+    async fn manual_upload_opens_drafts_and_preserves_the_existing_unsaved_entry() {
+        let (html, _) = scan_harness(ReceiptTest {
+            manual: true,
+            cancel: false,
+            oversized: false,
+        })
+        .await;
+        assert!(
+            html.contains("images=3;errors=1;drafts=3;manual=true"),
+            "{html}"
+        );
+        assert!(!html.contains("[ใบเสร็จ"));
+    }
+    #[tokio::test(flavor = "current_thread")]
+    async fn cancelling_stalled_ocr_releases_ui_and_keeps_original_text() {
+        let (html, calls) = scan_harness(ReceiptTest {
+            manual: false,
+            cancel: true,
+            oversized: false,
+        })
+        .await;
+        assert_eq!(calls, 1);
+        assert!(
+            html.contains("images=0;errors=0;drafts=0;manual=false;กาแฟ 30"),
+            "{html}"
+        );
+    }
+    #[tokio::test(flavor = "current_thread")]
+    async fn oversized_batches_are_rejected_before_platform_work() {
+        let (html, calls) = scan_harness(ReceiptTest {
+            manual: false,
+            cancel: false,
+            oversized: true,
+        })
+        .await;
+        assert_eq!(calls, 0);
+        assert!(html.contains("128 MB"));
+    }
+    #[component]
+    fn ReceiptDropHarness() -> Element {
+        let mut store = use_test_state();
+        use_context_provider(|| store);
+        let view = use_hook(|| {
+            dashboard(LedgerState::default(), "2026-09-24".parse().expect("date")).expect("view")
+        });
+        let initial = view.clone();
+        use_hook(move || {
+            store.view.set(Some(initial));
+            store.page.set(Page::Chat);
+        });
+        rsx! { crate::entry::QuickEntryPage { view } }
+    }
+    #[tokio::test(flavor = "current_thread")]
+    async fn dropping_multiple_files_on_composer_runs_ocr_and_preserves_editable_blocks() {
+        use dioxus::dioxus_core::Mutation;
+        use dioxus::html::{PlatformEventData, set_event_converter};
+        use std::{any::Any, rc::Rc};
+        let calls = Arc::new(AtomicUsize::new(0));
+        let mut dom = VirtualDom::new(ReceiptDropHarness);
+        dom.insert_any_root_context(Box::new(Gateway(Arc::new(ReceiptGateway {
+            calls: calls.clone(),
+            stalled: false,
+        }))));
+        dom.insert_any_root_context(Box::new(crate::HostInfo {
+            art: Arc::new(crate::ArtAssets::bundled()),
+            isolated: true,
+            receipt_ocr_available: true,
+            preview_label: "test",
+        }));
+        set_event_converter(Box::new(dioxus::html::SerializedHtmlEventConverter));
+        let edits = dom.rebuild_to_vec();
+        let target = edits
+            .edits
+            .iter()
+            .find_map(|e| match e {
+                Mutation::NewEventListener { name, id } if name == "drop" => Some(*id),
+                _ => None,
+            })
+            .expect("composer drop target");
+        let initial = dioxus_ssr::render(&dom);
+        assert!(initial.contains("multiple"));
+        assert!(!initial.contains("receipt-scanner"));
+        let data = dioxus::html::SerializedDragData {
+            mouse: Default::default(),
+            data_transfer: dioxus::html::SerializedDataTransfer {
+                items: vec![],
+                effect_allowed: "all".into(),
+                drop_effect: "copy".into(),
+                files: ["first.png", "second.png"]
+                    .map(|name| dioxus::html::SerializedFileData {
+                        path: name.into(),
+                        size: 20,
+                        last_modified: 0,
+                        content_type: Some("image/png".into()),
+                        contents: None,
+                    })
+                    .to_vec(),
+            },
+        };
+        let event = Event::new(
+            Rc::new(PlatformEventData::new(Box::new(data))) as Rc<dyn Any>,
+            true,
+        );
+        dom.runtime().handle_event("drop", event, target);
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                dom.wait_for_work().await;
+                dom.render_immediate(&mut dioxus::dioxus_core::NoOpMutations);
+                if dioxus_ssr::render(&dom).contains("[ใบเสร็จ 2]") {
+                    break;
+                }
+            }
+        })
+        .await
+        .expect("drop produces both blocks");
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+        assert!(dioxus_ssr::render(&dom).contains("[ใบเสร็จ 1]"));
     }
 }

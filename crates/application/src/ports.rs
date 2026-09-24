@@ -1,10 +1,31 @@
 use crate::{AccountDeletion, AppError, StorageError};
 use ledger_domain::{Account, EntryDate, EntryId, JournalEntry, SubmissionId};
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LedgerState {
+    pub currency: ledger_domain::Currency,
+    pub currency_locked: bool,
+    pub thai_tax_enabled: bool,
+    pub receivables: Vec<ledger_domain::Receivable>,
     pub accounts: Vec<Account>,
     pub entries: Vec<JournalEntry>,
+    pub recurring: Vec<ledger_domain::RecurringExpense>,
+    pub settlements: Vec<crate::RecurringSettlement>,
+}
+
+impl Default for LedgerState {
+    fn default() -> Self {
+        Self {
+            currency: ledger_domain::Currency::Thb,
+            currency_locked: false,
+            thai_tax_enabled: true,
+            receivables: Vec::new(),
+            accounts: Vec::new(),
+            entries: Vec::new(),
+            recurring: Vec::new(),
+            settlements: Vec::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -16,6 +37,39 @@ pub enum CommitOutcome {
 /// Each mutation is atomic and must recheck invariants against current data.
 /// A snapshot is consistent across both collections. No partially saved postings.
 pub trait LedgerRepository {
+    fn preferences(&mut self) -> Result<crate::UserPreferences, StorageError>;
+    fn set_preferences(&mut self, preferences: crate::UserPreferences) -> Result<(), StorageError>;
+    fn set_thai_tax_enabled(&mut self, enabled: bool) -> Result<(), StorageError>;
+    fn set_currency(&mut self, currency: ledger_domain::Currency) -> Result<(), StorageError>;
+    fn commit_prompt(&mut self, plan: &crate::PromptPlan) -> Result<(), StorageError>;
+    fn create_receivable(
+        &mut self,
+        prepared: &crate::PreparedReceivable,
+    ) -> Result<CommitOutcome, StorageError>;
+    fn set_recurring_installments(
+        &mut self,
+        expected: &ledger_domain::RecurringExpense,
+        count: Option<u32>,
+    ) -> Result<(), StorageError>;
+    fn add_recurring(
+        &mut self,
+        schedule: &ledger_domain::RecurringExpense,
+    ) -> Result<(), StorageError>;
+    fn stop_recurring(
+        &mut self,
+        expected: &ledger_domain::RecurringExpense,
+        month: ledger_domain::Month,
+    ) -> Result<(), StorageError>;
+    fn pay_recurring(
+        &mut self,
+        prepared: &crate::PreparedRecurringPayment,
+    ) -> Result<CommitOutcome, StorageError>;
+    fn link_recurring(
+        &mut self,
+        expected: &ledger_domain::RecurringExpense,
+        month: ledger_domain::Month,
+        entry: EntryId,
+    ) -> Result<(), StorageError>;
     /// All entries save atomically, including validation and idempotent retries.
     fn commit_batch(
         &mut self,
@@ -42,9 +96,29 @@ pub trait Clock {
     fn today(&self) -> Result<EntryDate, AppError>;
 }
 pub trait IdSource {
+    fn receivable_id(&self) -> Result<ledger_domain::ReceivableId, AppError>;
+    fn recurring_id(&self) -> Result<ledger_domain::RecurringId, AppError>;
     fn account_id(&self) -> Result<ledger_domain::AccountId, AppError>;
     fn entry_id(&self) -> Result<EntryId, AppError>;
     fn submission_id(&self) -> Result<SubmissionId, AppError>;
+}
+
+impl<T: IdSource + ?Sized> IdSource for &T {
+    fn receivable_id(&self) -> Result<ledger_domain::ReceivableId, AppError> {
+        (**self).receivable_id()
+    }
+    fn recurring_id(&self) -> Result<ledger_domain::RecurringId, AppError> {
+        (**self).recurring_id()
+    }
+    fn account_id(&self) -> Result<ledger_domain::AccountId, AppError> {
+        (**self).account_id()
+    }
+    fn entry_id(&self) -> Result<EntryId, AppError> {
+        (**self).entry_id()
+    }
+    fn submission_id(&self) -> Result<SubmissionId, AppError> {
+        (**self).submission_id()
+    }
 }
 
 /// Called against the locked, current state by every durable repository adapter.
@@ -78,6 +152,7 @@ pub fn validate_append(state: &LedgerState, entry: &JournalEntry) -> Result<(), 
     }
     let mut prospective = state.clone();
     prospective.entries.push(entry.clone());
+    crate::validate_receivables(&prospective)?;
     let latest = prospective
         .entries
         .iter()

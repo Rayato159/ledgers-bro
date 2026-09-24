@@ -156,6 +156,9 @@ impl ModelWorker {
         operation: ModelOperation,
     ) -> Result<Response, AppError> {
         check_cancel(&operation)?;
+        if ledger_application::is_receipt_prompt(&source) {
+            return ledger.request(Command::Resolve(source)).await;
+        }
         if source.trim().is_empty() || source.chars().count() > 1000 {
             return Err(model_error("พิมพ์รายการไม่เกิน 1,000 ตัวอักษร"));
         }
@@ -164,10 +167,19 @@ impl ModelWorker {
             Err(error @ (AppError::Input(_) | AppError::Rule(_))) => {
                 // The model contract describes alternatives for ONE transaction.
                 // Never let failed multi-entry parsing fall back to saving a prefix.
-                if source.contains("และ") || source.contains('\n') || source.contains("ตามลำดับ")
+                if ledger_application::is_prompt_action(&source)
+                    || source.contains(';')
+                    || source.contains("และ")
+                    || source.contains("แล้ว")
+                    || source.contains('\n')
+                    || source.contains("ตามลำดับ")
                 {
                     return Err(error);
                 }
+                let Response::Dashboard(view) = ledger.request(Command::Load).await? else {
+                    return Err(AppError::WorkerStopped);
+                };
+                let source = ledger_application::normalize_prompt_currency(&source, view.currency)?;
                 ledger_application::check_model_source(&source)?;
                 let output = self.propose(source.clone(), operation.clone()).await?;
                 check_cancel(&operation)?;

@@ -27,8 +27,11 @@ class MainActivity : WryActivity() {
     private val receipts by lazy { OnDeviceReceiptInput(this) }
     @Keep fun beginReceipt(id: Long): Boolean = receipts.begin(id)
     @Keep fun receiptState(id: Long): Int = receipts.state(id)
-    @Keep fun receiptText(id: Long): String = receipts.text(id)
-    @Keep fun receiptPreview(id: Long): ByteArray = receipts.preview(id)
+    @Keep fun receiptCount(id: Long): Int = receipts.count(id)
+    @Keep fun receiptName(id: Long, index: Int): String = receipts.name(id, index)
+    @Keep fun receiptItemError(id: Long, index: Int): Int = receipts.itemError(id, index)
+    @Keep fun receiptText(id: Long, index: Int): String = receipts.text(id, index)
+    @Keep fun receiptPreview(id: Long, index: Int): ByteArray = receipts.preview(id, index)
     @Keep fun receiptError(id: Long): Int = receipts.error(id)
     @Keep fun cancelReceipt(id: Long) = receipts.cancel(id)
     @Keep fun clearReceipt(id: Long) = receipts.clear(id)
@@ -108,7 +111,7 @@ class MainActivity : WryActivity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == OnDeviceReceiptInput.REQUEST) {
-            receipts.result(resultCode, data?.data)
+            receipts.result(resultCode, data)
             return
         }
         if (requestCode != CSV_REQUEST) return

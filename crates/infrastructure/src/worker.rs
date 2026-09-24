@@ -16,6 +16,12 @@ impl Clock for SystemClock {
 }
 pub struct RandomIds;
 impl IdSource for RandomIds {
+    fn receivable_id(&self) -> Result<ReceivableId, AppError> {
+        Ok(ReceivableId::from_uuid(Uuid::new_v4())?)
+    }
+    fn recurring_id(&self) -> Result<RecurringId, AppError> {
+        Ok(RecurringId::from_uuid(Uuid::new_v4())?)
+    }
     fn account_id(&self) -> Result<AccountId, AppError> {
         Ok(AccountId::from_uuid(Uuid::new_v4())?)
     }

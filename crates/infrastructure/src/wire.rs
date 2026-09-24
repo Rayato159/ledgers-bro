@@ -8,6 +8,20 @@ use std::collections::BTreeMap;
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum StoredKind {
+    ReceivableOpening {
+        receivable: String,
+        amount: i64,
+    },
+    Lending {
+        receivable: String,
+        account: String,
+        amount: i64,
+    },
+    Repayment {
+        receivable: String,
+        account: String,
+        amount: i64,
+    },
     Opening {
         account: String,
         balance: i64,
@@ -35,6 +49,28 @@ pub(crate) enum StoredKind {
 impl StoredKind {
     pub fn from_entry(entry: &JournalEntry) -> Self {
         match *entry.kind() {
+            EntryKind::ReceivableOpening { receivable, amount } => Self::ReceivableOpening {
+                receivable: receivable.to_string(),
+                amount: amount.money().minor(),
+            },
+            EntryKind::Lending {
+                receivable,
+                account,
+                amount,
+            } => Self::Lending {
+                receivable: receivable.to_string(),
+                account: account.to_string(),
+                amount: amount.money().minor(),
+            },
+            EntryKind::Repayment {
+                receivable,
+                account,
+                amount,
+            } => Self::Repayment {
+                receivable: receivable.to_string(),
+                account: account.to_string(),
+                amount: amount.money().minor(),
+            },
             EntryKind::Opening { account, balance } => Self::Opening {
                 account: account.to_string(),
                 balance: balance.minor(),
@@ -79,6 +115,31 @@ impl StoredKind {
     ) -> Result<JournalEntry, StorageError> {
         let amount = |n| PositiveMoney::new(Money::from_minor(n)?);
         let kind = match self {
+            Self::ReceivableOpening {
+                receivable,
+                amount: n,
+            } => EntryKind::ReceivableOpening {
+                receivable: receivable.parse()?,
+                amount: amount(n)?,
+            },
+            Self::Lending {
+                receivable,
+                account,
+                amount: n,
+            } => EntryKind::Lending {
+                receivable: receivable.parse()?,
+                account: account.parse()?,
+                amount: amount(n)?,
+            },
+            Self::Repayment {
+                receivable,
+                account,
+                amount: n,
+            } => EntryKind::Repayment {
+                receivable: receivable.parse()?,
+                account: account.parse()?,
+                amount: amount(n)?,
+            },
             Self::Opening { account, balance } => EntryKind::Opening {
                 account: account.parse()?,
                 balance: Money::from_minor(balance)?,

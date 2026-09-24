@@ -10,6 +10,10 @@ pub struct AccountBalance {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Dashboard {
+    pub currency: Currency,
+    pub currency_locked: bool,
+    pub thai_tax_enabled: bool,
+    pub receivables: Vec<Receivable>,
     pub today: EntryDate,
     pub accounts: Vec<AccountBalance>,
     pub assets: Money,
@@ -20,6 +24,8 @@ pub struct Dashboard {
     pub category_expenses: BTreeMap<Category, Money>,
     pub entries: Vec<JournalEntry>,
     pub reversed: BTreeSet<EntryId>,
+    pub recurring: Vec<RecurringExpense>,
+    pub settlements: Vec<crate::RecurringSettlement>,
 }
 
 /// Net worth uses signed ledger balances. A credit card's negative balance is debt,
@@ -36,6 +42,7 @@ pub fn dashboard(state: LedgerState, today: EntryDate) -> Result<Dashboard, Doma
         })
         .collect::<BTreeSet<_>>();
     let mut income: i128 = 0;
+    let mut receivable_assets: i128 = 0;
     let mut expenses: i128 = 0;
     let mut categories: BTreeMap<Category, i128> = BTreeMap::new();
     for entry in &state.entries {
@@ -43,6 +50,9 @@ pub fn dashboard(state: LedgerState, today: EntryDate) -> Result<Dashboard, Doma
             continue;
         }
         for posting in entry.postings() {
+            if posting.target() == PostingTarget::System(SystemBook::Receivable) {
+                receivable_assets += i128::from(posting.amount().minor());
+            }
             if let PostingTarget::Account(id) = posting.target() {
                 let balance = balances
                     .get_mut(&id)
@@ -81,7 +91,12 @@ pub fn dashboard(state: LedgerState, today: EntryDate) -> Result<Dashboard, Doma
             balance: checked_money(balance)?,
         });
     }
+    assets += receivable_assets;
     Ok(Dashboard {
+        currency: state.currency,
+        currency_locked: state.currency_locked,
+        thai_tax_enabled: state.thai_tax_enabled,
+        receivables: state.receivables,
         today,
         accounts,
         assets: checked_money(assets)?,
@@ -95,6 +110,8 @@ pub fn dashboard(state: LedgerState, today: EntryDate) -> Result<Dashboard, Doma
             .collect::<Result<_, DomainError>>()?,
         entries: state.entries.into_iter().rev().collect(),
         reversed,
+        recurring: state.recurring,
+        settlements: state.settlements,
     })
 }
 

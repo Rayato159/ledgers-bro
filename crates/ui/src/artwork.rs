@@ -105,6 +105,12 @@ pub fn ArtIcon(name: &'static str, size: u32) -> Element {
             circle { cx: "28", cy: "30", r: "16", fill: "var(--art-primary)" }
             path { d: "M22 18v24m5-26v4m0 19v5M19 20h11q11 4 0 10H22h9q11 6 0 10H19", fill: "none" }
         },
+        "calendar" => rsx! {
+            rect { x: "9", y: "14", width: "39", height: "36", rx: "6", fill: "var(--art-paper)" }
+            path { d: "M9 25h39M19 9v11M37 9v11", fill: "none" }
+            rect { x: "16", y: "31", width: "10", height: "10", rx: "3", fill: "var(--art-primary)" }
+            path { d: "m31 37 4 4 7-9", fill: "none" }
+        },
         "receipt" => rsx! {
             path { d: "M13 7h30v44l-5-3-5 3-5-3-5 3-5-3-5 3Z", fill: "var(--art-paper)" }
             path { d: "M20 16h16M20 23h11M20 30h16M20 38h8", fill: "none" }

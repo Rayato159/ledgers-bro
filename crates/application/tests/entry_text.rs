@@ -186,3 +186,37 @@ fn transfers_keep_destination_and_never_gain_an_expense_category() {
     assert_eq!(drafts[0].input.category, None);
     assert!(missing_entry_fields(&drafts[0].input).is_empty());
 }
+
+#[test]
+fn screenshot_and_conversational_connectors_preserve_each_account_and_date() {
+    for connector in ["แล้วก็", "แล้ว", "และก็", "และ", "\n"] {
+        let drafts = batch(&format!(
+            "เมื่อวานซื้อกาแฟ 50 บาท บันทึกลง เงินสด {connector}วันนี้ได้เงินค่าจ้างวาดรูป 200 บาท บันทึกลงกรุงไทย"
+        ));
+        assert_eq!(drafts.len(), 2, "{connector}");
+        assert_eq!(drafts[0].input.amount, "50.00");
+        assert_eq!(drafts[0].input.date, "2025-12-31");
+        assert_eq!(drafts[0].input.account, Some(accounts()[0].id()));
+        assert_eq!(drafts[1].input.kind, TransactionKind::Income);
+        assert_eq!(drafts[1].input.amount, "200.00");
+        assert_eq!(drafts[1].input.date, "2026-01-01");
+        assert_eq!(drafts[1].input.account, Some(accounts()[1].id()));
+        assert_eq!(missing_entry_fields(&drafts[1].input), ["หมวดหมู่"]);
+    }
+    assert!(resolve("ซื้อกาแฟ50บาท บันทึกลงเงินสด วันนี้ได้เงิน200บาท บันทึกลงกรุงไทย").is_err());
+}
+
+#[test]
+fn fully_specified_conversation_is_ready_to_preview_and_save() {
+    let drafts = batch(
+        "เมื่อวานซื้อกาแฟ 50 บาท บันทึกลง เงินสด หมวด อาหาร แล้วก็วันนี้ได้เงินค่าจ้างวาดรูป 200 บาท บันทึกลงกรุงไทย หมวด ฟรีแลนซ์",
+    );
+    assert_eq!(drafts.len(), 2);
+    assert!(
+        drafts
+            .iter()
+            .all(|d| missing_entry_fields(&d.input).is_empty())
+    );
+    assert_eq!(drafts[0].input.category, Some(Category::Food));
+    assert_eq!(drafts[1].input.category, Some(Category::Freelance));
+}

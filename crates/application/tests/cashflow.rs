@@ -51,6 +51,12 @@ fn six_months_cross_year_and_ignore_transfers_openings_future_and_reversals() {
         .expect("entry")
     };
     let mut state = LedgerState {
+        currency: Currency::Thb,
+        currency_locked: false,
+        thai_tax_enabled: true,
+        receivables: vec![],
+        recurring: vec![],
+        settlements: vec![],
         accounts: vec![
             Account::new(a, AccountName::new("a").expect("name"), AccountKind::Cash),
             Account::new(b, AccountName::new("b").expect("name"), AccountKind::Bank),

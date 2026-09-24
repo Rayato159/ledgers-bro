@@ -22,8 +22,9 @@ class OnDeviceReceiptInput(private val activity: Activity) {
     @Volatile private var id = 0L
     @Volatile private var status = 4
     @Volatile private var failure = 0
-    @Volatile private var outputText = ""
-    @Volatile private var outputPreview = byteArrayOf()
+    private data class Scan(val name: String, val text: String = "", val preview: ByteArray = byteArrayOf(), val error: Int = 0)
+    @Volatile private var output: List<Scan> = emptyList()
+    private var bytesRead = 0L
     private val busy = AtomicBoolean(false)
     private val cancelled = AtomicBoolean(false)
     private val engineLock = Any()
@@ -31,10 +32,13 @@ class OnDeviceReceiptInput(private val activity: Activity) {
     private var pendingPicker: Long? = null
 
     fun state(request: Long) = if (request == id) status else 4
-    fun text(request: Long) = if (request == id && status == 3) outputText else ""
-    fun preview(request: Long) = if (request == id && status == 3) outputPreview else byteArrayOf()
+    fun count(request: Long) = if (request == id && status == 3) output.size else 0
+    fun name(request: Long, index: Int) = if (request == id) output.getOrNull(index)?.name ?: "" else ""
+    fun text(request: Long, index: Int) = if (request == id) output.getOrNull(index)?.text ?: "" else ""
+    fun preview(request: Long, index: Int) = if (request == id) output.getOrNull(index)?.preview ?: byteArrayOf() else byteArrayOf()
+    fun itemError(request: Long, index: Int) = if (request == id) output.getOrNull(index)?.error ?: 7 else 7
     fun error(request: Long) = if (request == id) failure else 0
-    fun clear(request: Long) { if (request == id) { outputText = ""; outputPreview = byteArrayOf() } }
+    fun clear(request: Long) { if (request == id) { output = emptyList() } }
 
     fun begin(request: Long): Boolean {
         if (busy.get() || pendingPicker != null) return false
@@ -48,6 +52,7 @@ class OnDeviceReceiptInput(private val activity: Activity) {
                 // Some providers label HEIC as application/octet-stream. Validate bytes below.
                 putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("image/jpeg", "image/png", "image/heic", "image/heif", "application/octet-stream"))
                 putExtra(Intent.EXTRA_LOCAL_ONLY, true)
+                putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
             }
             pendingPicker = request
             @Suppress("DEPRECATION")
@@ -56,14 +61,36 @@ class OnDeviceReceiptInput(private val activity: Activity) {
         } catch (_: Exception) { pendingPicker = null; failure = 7; status = 5; false }
     }
 
-    fun result(resultCode: Int, uri: Uri?) {
+    fun result(resultCode: Int, data: Intent?) {
         val request = pendingPicker ?: return
         pendingPicker = null
         if (request != id || cancelled.get()) return
-        if (resultCode != Activity.RESULT_OK || uri == null) { status = 4; return }
+        if (resultCode != Activity.RESULT_OK || data == null) { status = 4; return }
+        val clip = data.clipData
+        if (clip != null && clip.itemCount > 8) { failure = 9; status = 5; return }
+        val uris = if (clip != null) (0 until clip.itemCount).map { clip.getItemAt(it).uri }.distinct() else listOfNotNull(data.data)
+        if (uris.isEmpty()) { status = 4; return }
         if (!busy.compareAndSet(false, true)) { failure = 7; status = 5; return }
         status = 2
-        Thread({ process(request, uri) }, "ledger-receipt").start()
+        Thread({
+            try {
+                bytesRead = 0
+                val scans = uris.mapIndexed { index, uri ->
+                    checkActive()
+                    val name = try {
+                        activity.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
+                            if (it.moveToFirst()) it.getString(0)?.take(200) else null
+                        }
+                    } catch (_: Exception) { null }
+                    process(uri, name ?: "ใบเสร็จ ${index + 1}")
+                }
+                if (request == id && !cancelled.get()) { output = scans; status = 3 }
+            } catch (_: InterruptedException) {
+                if (request == id) status = 4
+            } catch (_: Exception) {
+                if (request == id && !cancelled.get()) { failure = 7; status = 5 }
+            } finally { busy.set(false) }
+        }, "ledger-receipts").start()
     }
 
     fun cancel(request: Long) {
@@ -75,13 +102,14 @@ class OnDeviceReceiptInput(private val activity: Activity) {
     fun destroy() { cancel(id); pendingPicker = null }
     private fun checkActive() { if (cancelled.get()) throw InterruptedException() }
 
-    private fun process(request: Long, uri: Uri) {
+    private fun process(uri: Uri, name: String): Scan {
+        var result = Scan(name, error = 7)
         var bitmap: Bitmap? = null
         val timer = Timer("receipt-deadline", true)
         val timedOut = AtomicBoolean(false)
         timer.schedule(object : TimerTask() {
             override fun run() {
-                timedOut.set(true); cancelled.set(true)
+                timedOut.set(true)
                 synchronized(engineLock) { engine?.stop() }
             }
         }, 45_000)
@@ -94,6 +122,8 @@ class OnDeviceReceiptInput(private val activity: Activity) {
                     val read = input.read(buffer)
                     if (read < 0) break
                     if (output.size() + read > MAX_BYTES) throw ReceiptFailure(1)
+                    bytesRead += read
+                    if (bytesRead > 128L * 1024 * 1024) throw ReceiptFailure(9)
                     output.write(buffer, 0, read)
                 }
                 output.toByteArray()
@@ -134,24 +164,24 @@ class OnDeviceReceiptInput(private val activity: Activity) {
             if (text.isBlank()) throw ReceiptFailure(4)
             if (text.toByteArray(Charsets.UTF_8).size > 65536) throw ReceiptFailure(2)
             checkActive()
-            if (request == id) { outputText = text; outputPreview = preview; status = 3 }
+            result = Scan(name, text, preview)
         } catch (error: ReceiptFailure) {
-            if (request == id && !cancelled.get()) { failure = error.code; status = 5 }
+            result = Scan(name, error = error.code)
         } catch (_: InterruptedException) {
-            if (request == id) status = 4
+            throw InterruptedException()
         } catch (_: ImageDecoder.DecodeException) {
-            if (request == id && !cancelled.get()) { failure = 8; status = 5 }
+            result = Scan(name, error = 8)
         } catch (_: Exception) {
-            if (request == id && !cancelled.get()) { failure = 2; status = 5 }
+            result = Scan(name, error = 2)
         } catch (_: OutOfMemoryError) {
-            if (request == id) { failure = 2; status = 5 }
+            result = Scan(name, error = 2)
         } finally {
             timer.cancel()
             synchronized(engineLock) { engine?.recycle(); engine = null }
             bitmap?.recycle()
-            if (timedOut.get() && request == id) { failure = 6; status = 5 }
-            busy.set(false)
+            if (timedOut.get()) result = Scan(name, error = 6)
         }
+        return result
     }
 
     private fun prepareModels(): File {

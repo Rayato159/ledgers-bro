@@ -23,9 +23,9 @@
 
 ทำซ้ำกับโฟลเดอร์ใหม่ (example ปฏิเสธการเขียนทับไฟล์เดิม):
 
-```powershell
+```sh
 cargo run -p ledger-infrastructure --example export_accounting_samples --locked --offline -- .preview/accounting-exports-new
-.\scripts\verify-accounting-exports.ps1 -Directory .preview/accounting-exports-new
+cargo test -p ledger-application --test accounting_export --locked
 ```
 
 CSV ไม่มีฟอนต์ฝัง; UTF-8 ทำให้ข้อความไทยคงอยู่ โปรแกรมที่เปิดเป็นผู้เลือกฟอนต์ ถ้า Excel รุ่นเก่าเปิดแล้วอ่านผิด ให้ **Data → From Text/CSV → UTF-8 → comma** แล้วตรวจวันที่/ID เป็น text เมื่อจำเป็น ไฟล์ส่งออกนี้เป็นรายงาน ไม่ใช่ไฟล์สำรองกู้คืนฐานข้อมูลทั้งหมด

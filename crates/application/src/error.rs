@@ -3,6 +3,30 @@ use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum StorageError {
+    #[error(
+        "Currency is locked after the first account, bill, or receivable. Use a new ledger for a different currency."
+    )]
+    CurrencyLocked,
+    #[error("ข้อมูลเปลี่ยนหลังจากตรวจ prompt กรุณาตรวจทั้งชุดใหม่ก่อนยืนยัน")]
+    PromptChanged,
+    #[error("ข้อมูลลูกหนี้เปลี่ยนไปแล้ว กรุณาโหลดใหม่และตรวจอีกครั้ง")]
+    ReceivableChanged,
+    #[error("ยอดชำระเกินเงินต้นค้าง หรือการยกเลิกจะทำให้ยอดหนี้ไม่ถูกต้อง กรุณาตรวจรายการชำระก่อน")]
+    ReceivableOverpayment,
+    #[error("วันที่รับชำระต้องไม่ก่อนวันที่ตั้งยอดหนี้")]
+    ReceivableDate,
+    #[error("บัญชีนี้มีรายการให้ยืมหรือรับชำระหนี้ กรุณาเก็บบัญชีไว้เพื่อรักษาประวัติลูกหนี้")]
+    ReceivableAccountInUse,
+    #[error("เพิ่มสัญญาลูกหนี้ได้สูงสุด 500 รายการ")]
+    ReceivableLimit,
+    #[error("จำนวนงวดใหม่ต้องครอบคลุมงวดที่เคยบันทึกจ่ายไว้ ประวัติการจ่ายจะไม่ถูกตัดทิ้ง")]
+    InstallmentsConflict,
+    #[error("แผนรายจ่ายเปลี่ยนไปแล้ว กรุณาโหลดใหม่แล้วตรวจอีกครั้ง")]
+    RecurringChanged,
+    #[error("งวดนี้จ่ายแล้ว หรือรายการจ่ายถูกผูกกับงวดอื่นแล้ว กรุณาโหลดใหม่")]
+    RecurringPaid,
+    #[error("เพิ่มแผนรายจ่ายประจำได้สูงสุด 500 แผน")]
+    RecurringLimit,
     #[error(transparent)]
     Rule(#[from] DomainError),
     #[error("เปิดหรือบันทึกฐานข้อมูลไม่ได้ กรุณาลองใหม่ ข้อมูลเดิมจะไม่ถูกแทนที่")]

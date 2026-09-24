@@ -1,4 +1,11 @@
-use crate::{HostInfo, artwork::*, components::*, receipt::ReceiptScanner, state::*};
+use crate::{
+    HostInfo,
+    artwork::*,
+    components::*,
+    receipt::{ReceiptAttachments, ReceiptDestination, ReceiptUpload},
+    state::*,
+};
+use dioxus::html::HasFileData;
 use dioxus::prelude::*;
 use ledger_application::*;
 use ledger_domain::*;
@@ -7,8 +14,9 @@ use ledger_domain::*;
 pub fn QuickEntryPage(view: Dashboard) -> Element {
     let mut store = use_context::<UiState>();
     let host = use_context::<HostInfo>();
-    let mut text = use_signal(String::new);
-    let mut previous_text = use_signal(String::new);
+    let mut text = store.composer;
+    let mut previous_text = use_signal(|| text.peek().clone());
+    let mut dragging = use_signal(|| false);
     let capturing = use_signal(|| false);
     // Chips and voice input also update the composer. They must invalidate the
     // previous confirmation just like typing, even without a DOM input event.
@@ -16,12 +24,14 @@ pub fn QuickEntryPage(view: Dashboard) -> Element {
         let current = text.read().clone();
         if *previous_text.peek() != current {
             previous_text.set(current);
+            store.prompt_drafts.set(None);
+            store.prompt_prepared.set(None);
             store.batch.set(None);
             store.batch_prepared.set(None);
             store.model_choices.set(None);
             store.prepared.set(None);
             store.input.set(None);
-            store.receipt.set(None);
+
             store.guidance.set(String::new());
         }
     });
@@ -37,39 +47,36 @@ pub fn QuickEntryPage(view: Dashboard) -> Element {
     let input = store.input.read().clone();
     let prepared = store.prepared.read().clone();
     rsx! {
-        section { class: "page-heading", div { h1 { "บันทึกด่วน" } p { class: "muted", "พิมพ์ พูด หรือสแกนใบเสร็จ แล้วตรวจให้ตรงก่อนบันทึก" } } }
-        button { class: "manual-entry-shortcut", disabled: *capturing.read() || (*store.busy.read() && store.model_operation.read().is_none()), onclick: move |_| store.new_entry(),
-            Icon { name: "edit", size: 24 }
-            div { strong { "กรอกเอง" } span { "เลือกยอด บัญชี และหมวดได้เอง ไม่ต้องใช้ AI" } }
-            Icon { name: "arrow", size: 20 }
-        }
+        section { class: "page-heading", div { h1 { {crate::i18n::text("เพิ่มรายการ", &[])} } p { class: "muted", {crate::i18n::text("พิมพ์ พูด หรือสแกนใบเสร็จ แล้วตรวจให้ตรงก่อนบันทึก", &[])} } } }
+        crate::navigation::EntryMode { manual: false }
+        crate::receivables::RepaymentShortcut {}
         div { class: "entry-layout",
             section { class: "card chat-card",
-                div { class: "chat-greeting illustrated-greeting", img { class: "phone-mascot", src: host.art.phone.clone(), alt: "ทานูกิถือโทรศัพท์พร้อมจดรายการ" } div { strong { "จดไว้ เดี๋ยวช่วยจัดให้" } p { "เล่าเรื่องเงินวันนี้ให้ฟัง\nหรือหยิบใบเสร็จมาให้ช่วยอ่าน" } } }
-                p { class: "field-hint", "กดตัวอย่างเพื่อเติมข้อความ แล้วแก้เป็นรายการของเรา" }
-                fieldset { class: "prompt-chips input-methods", disabled: *capturing.read() || *store.busy.read(),
-                    button { class: "sample-chip", onclick: move |_| text.set("กาแฟ 80".into()), "กาแฟ 80" }
-                    button { class: "sample-chip", onclick: move |_| text.set(expense_sample.clone()), "จ่ายค่าอาหาร" }
-                    button { class: "sample-chip", onclick: move |_| text.set(income_sample.clone()), "รับเงินเดือน" }
-                    button { class: "sample-chip", onclick: move |_| text.set("ซื้อไก่ทอดไป 30 บาท และได้เงินจาก Facebook 400 บาท บันทึกลงเงินสด และ กรุงไทยตามลำดับ".into()), "หลายรายการ" }
-                    button { class: "sample-chip", onclick: move |_| text.set("สรุป เดือนนี้".into()), "สรุปเดือนนี้" }
-                }
-                form { class: "chat-compose", onsubmit: move |event| { event.prevent_default(); if !*capturing.peek() { store.resolve_text(text()); } },
-                    label { r#for: "quick-text", class: "sr-only", "พิมพ์รายการแบบด่วน" }
-                    textarea { id: "quick-text", placeholder: "เช่น เมื่อวานซื้อกาแฟ 80 บาท จ่ายเงินสด", rows: "3", maxlength: 1000, required: true, value: "{text}", disabled: *store.busy.read() || *capturing.read(), oninput: move |event| { text.set(event.value()); store.batch.set(None); store.batch_prepared.set(None); store.model_choices.set(None); store.prepared.set(None); store.input.set(None); store.receipt.set(None); store.guidance.set(String::new()); } }
+                div { class: "chat-greeting illustrated-greeting", img { class: "phone-mascot", src: host.art.phone.clone(), alt: crate::i18n::text("ทานูกิถือโทรศัพท์พร้อมจดรายการ", &[]) } div { strong { {crate::i18n::text("จดไว้ เดี๋ยวช่วยจัดให้", &[])} } p { {crate::i18n::text("เล่าเรื่องเงินวันนี้ให้ฟัง\nหรือหยิบใบเสร็จมาให้ช่วยอ่าน", &[])} } } }
+                form { class: if dragging() { "chat-compose receipt-drag-over" } else { "chat-compose" },
+                    ondragover: move |event| { event.prevent_default(); if !*store.busy.peek() && !*capturing.peek() { dragging.set(true); } },
+                    ondragleave: move |_| dragging.set(false),
+                    ondrop: move |event| { event.prevent_default(); dragging.set(false); if !*capturing.peek() && host.receipt_ocr_available { store.scan_receipts(event.files(), ReceiptDestination::Prompt); } },
+                    onsubmit: move |event| { event.prevent_default(); if !*capturing.peek() { store.resolve_text(text()); } },
+                    label { r#for: "quick-text", class: "sr-only", {crate::i18n::text("พิมพ์รายการแบบด่วน", &[])} }
+                    textarea { id: "quick-text", placeholder: crate::i18n::text("เช่น เมื่อวานซื้อกาแฟ 80 บาท จ่ายเงินสด", &[]), rows: if store.receipts.read().is_empty() { "3" } else { "10" }, maxlength: MAX_RECEIPT_PROMPT_CHARS, required: true, value: "{text}", disabled: *store.busy.read() || *capturing.read(), oninput: move |event| { text.set(event.value()); store.prompt_drafts.set(None); store.prompt_prepared.set(None); store.batch.set(None); store.batch_prepared.set(None); store.model_choices.set(None); store.prepared.set(None); store.input.set(None); store.guidance.set(String::new()); } }
+                    div { class: "composer-receipt-toolbar",
+                        ReceiptUpload { destination: ReceiptDestination::Prompt, disabled: *capturing.read() }
+                        span { class: "field-hint", if dragging() { {crate::i18n::text("วางรูปใบเสร็จที่นี่", &[])} } else { {crate::i18n::text("ลากรูปมาวางได้ · สูงสุด 8 รูป", &[])} } }
+                    }
+                    ReceiptAttachments {}
                     crate::voice::VoiceInput { text, capturing }
-                    button { class: "primary", r#type: "submit", disabled: *capturing.read() || *store.busy.read() || text.read().trim().is_empty(), "อ่านรายการ" Icon { name: "arrow", size: 17 } }
+                    button { class: "primary", r#type: "submit", disabled: *capturing.read() || *store.busy.read() || text.read().trim().is_empty(), {crate::i18n::text("อ่านรายการ", &[])} Icon { name: "arrow", size: 17 } }
                 }
                 if store.model_operation.read().is_some() { crate::model::ModelProgress {} }
-                else if !store.guidance.read().is_empty() { div { class: "assistant-message", role: "status", "{store.guidance}" } }
-                fieldset { class: "input-methods receipt-method", disabled: *capturing.read(), ReceiptScanner {} }
-                details { class: "model-disclosure", summary { Icon { name: "chat", size: 19 } "AI ในเครื่อง" } crate::model::ModelSettings { capturing } }
-                div { class: "chat-help", strong { "ตัวอย่างรูปแบบที่รองรับ" } code { "จ่าย 80 จาก เงินสด หมวด อาหาร" } code { "โอน 1000 จาก ธนาคาร ไป เงินสด" } code { "… วันที่ เมื่อวาน โน้ต \"ข้าวกลางวัน\"" } p { "การจ่ายหนี้บัตรใช้โอนไปบัญชีบัตรเครดิต ดอกเบี้ยหรือค่าธรรมเนียมให้บันทึกเป็นรายจ่ายแยก" } }
+                else if !store.guidance.read().is_empty() { div { class: "assistant-message", role: "status", "{crate::i18n::tr(&store.guidance.read())}" } }
+                p { class: "field-hint receipt-privacy", {crate::i18n::text("JPG / PNG / HEIC / HEIF · รูปละไม่เกิน 32 MB · อ่านในเครื่อง ภาพใช้ตรวจชั่วคราว ไม่ส่งขึ้น Cloud", &[])} }
+                details { class: "model-disclosure", summary { Icon { name: "chat", size: 19 } {crate::i18n::text("AI ในเครื่อง", &[])} } crate::model::ModelSettings { capturing } }
+
             }
             section { class: "card entry-editor",
-                if view.accounts.is_empty() {
-                    EmptyState { title: "เพิ่มบัญชีก่อนเริ่มจด", body: "แอปต้องรู้ว่าเงินเข้าหรือออกจากบัญชีไหน จะได้คำนวณยอดถูก" }
-                    button { class: "primary", onclick: move |_| store.account_form.set(true), "เพิ่มบัญชีแรก" }
+                if let Some((source, drafts)) = store.prompt_drafts.read().clone() {
+                    crate::prompt_review::PromptReview { source, drafts, view: view.clone() }
                 } else if let Some((source, drafts)) = store.batch.read().clone() {
                     crate::batch_entry::BatchReview { source, drafts, view: view.clone() }
                 } else if let Some(prepared) = prepared {
@@ -79,11 +86,48 @@ pub fn QuickEntryPage(view: Dashboard) -> Element {
                 } else if let Some(input) = input {
                     EntryForm { input, view: view.clone() }
                 } else {
-                    div { class: "draft-empty", div { class: "draft-illustration", ArtIcon { name: "receipt", size: 88 } } h2 { "รายการรอตรวจจะอยู่ตรงนี้" } p { "เลือกใบเสร็จหรือพิมพ์รายการทางซ้าย\nยังไม่มีอะไรถูกบันทึก จนกว่าจะยืนยัน" }
-                        div { class: "category-art-preview", for category in [Category::Food, Category::Snacks, Category::Salary] { span { title: category.label(), ArtIcon { name: category_art(category), size: 44 } } } }
+                    div { class: "draft-empty", div { class: "draft-illustration", ArtIcon { name: "receipt", size: 88 } } h2 { {crate::i18n::text("รายการรอตรวจจะอยู่ตรงนี้", &[])} } p { {crate::i18n::text("เลือกใบเสร็จหรือพิมพ์รายการทางซ้าย\nยังไม่มีอะไรถูกบันทึก จนกว่าจะยืนยัน", &[])} }
+                        div { class: "category-art-preview", for category in [Category::Food, Category::Snacks, Category::Salary] { span { title: crate::i18n::tr(category.label()), ArtIcon { name: category_art(category), size: 44 } } } }
                     }
                 }
             }
+        }
+        section { class: "card prompt-suggestions",
+                div { class: "prompt-examples-heading",
+                    div { h2 { {crate::i18n::text("เริ่มจากเรื่องไหนดี?", &[])} } p { {crate::i18n::text("เลือกตัวอย่าง แล้วแก้ให้เป็นเรื่องเงินของเรา", &[])} } }
+                    span { class: "prompt-examples-badge", {crate::i18n::text("ลองได้เลย", &[])} }
+                }
+                if crate::i18n::english() { p { class: "field-hint", "Prompts and voice currently use Thai. Manual forms work in either language." } }
+                fieldset { class: "prompt-example-grid input-methods", disabled: *capturing.read() || *store.busy.read(),
+                    legend { class: "sr-only", {crate::i18n::text("ตัวอย่างข้อความบันทึกด่วน", &[])} }
+                    for (title, sample, icon, tone) in [
+                        ("กาแฟแก้วโปรด", "กาแฟ 80".to_owned(), "snacks", "peach"),
+                        ("จ่ายค่าอาหาร", expense_sample.clone(), "food", "peach"),
+                        ("เงินเดือนเข้าแล้ว", income_sample.clone(), "salary", "mint"),
+                        ("หลายรายการในครั้งเดียว", "ซื้อไก่ทอดไป 30 บาท และได้เงินจาก Facebook 400 บาท บันทึกลงเงินสด และ กรุงไทยตามลำดับ".into(), "receipt", "lilac"),
+                        ("ตั้งบิลประจำเดือน", format!("เพิ่มรายจ่ายประจำ ชื่อ ค่าเช่าห้อง ยอด 4500 ทุกวันที่ 5 จาก {first_account} หมวด ค่าเช่า"), "calendar", "blue"),
+                        ("เดือนนี้เป็นยังไง", "สรุป เดือนนี้".into(), "investment", "mint"),
+                    ] {
+                        crate::prompt_examples::PromptExample { title, sample: sample.clone(), icon, tone,
+                            selected: *text.read() == crate::prompt_examples::currency_example(&sample), disabled: *capturing.read() || *store.busy.read(),
+                            onselect: move |sample| text.set(sample),
+                        }
+                    }
+                }
+                details { class: "chat-help prompt-catalog", summary { {crate::i18n::text("คำสั่งบันทึกทั้งหมด · กดเพื่อดูตัวอย่าง", &[])} }
+                    p { {crate::i18n::text("หลายคำสั่งใช้ขึ้นบรรทัดใหม่ ครั้งละไม่เกิน 8 คำสั่ง ชื่อที่มีคำว่า และ ให้ใส่เครื่องหมายคำพูด", &[])} }
+                    div { class: "prompt-example-grid prompt-catalog-grid",
+                        for kind in PromptKind::ALL {
+                            { let (icon, tone) = crate::prompt_examples::example_art(kind); rsx! {
+                                crate::prompt_examples::PromptExample { title: crate::i18n::tr(kind.label()), sample: kind.example(), icon, tone, compact: true,
+                                    selected: *text.read() == crate::prompt_examples::currency_example(kind.example()), disabled: *capturing.read() || *store.busy.read(),
+                                    onselect: move |sample| text.set(sample),
+                                }
+                            } }
+                        }
+                    }
+                }
+                div { class: "chat-help", strong { {crate::i18n::text("ตัวอย่างรูปแบบที่รองรับ", &[])} } code { {crate::i18n::text("จ่าย 80 จาก เงินสด หมวด อาหาร", &[])} } code { {crate::i18n::text("โอน 1000 จาก ธนาคาร ไป เงินสด", &[])} } code { {crate::i18n::text("… วันที่ เมื่อวาน โน้ต \"ข้าวกลางวัน\"", &[])} } p { {crate::i18n::text("การจ่ายหนี้บัตรใช้โอนไปบัญชีบัตรเครดิต ดอกเบี้ยหรือค่าธรรมเนียมให้บันทึกเป็นรายจ่ายแยก", &[])} } }
         }
     }
 }
@@ -95,20 +139,29 @@ pub fn ManualEntryPage(view: Dashboard) -> Element {
     let prepared = store.prepared.read().clone();
     rsx! {
         section { class: "page-heading",
-            div { h1 { "บันทึกรายการเอง" } p { class: "muted", "กรอกข้อมูล แล้วตรวจให้ตรงก่อนบันทึก" } }
-            button { class: "text-button", disabled: *store.busy.read(), onclick: move |_| store.page.set(Page::Chat), Icon { name: "chat", size: 20 } "ใช้บันทึกด่วน" }
+            div { h1 { {crate::i18n::text("เพิ่มรายการ", &[])} } p { class: "muted", {crate::i18n::text("กรอกข้อมูล แล้วตรวจให้ตรงก่อนบันทึก", &[])} } }
+
         }
+        crate::navigation::EntryMode { manual: true }
+        crate::receivables::RepaymentShortcut {}
         section { class: "card entry-editor manual-entry-editor",
-            if view.accounts.is_empty() {
-                EmptyState { title: "เพิ่มบัญชีก่อนเริ่มจด", body: "เลือกบัญชีที่จะใช้รับหรือจ่ายเงินก่อน" }
-                button { class: "primary", onclick: move |_| store.account_form.set(true), "เพิ่มบัญชีแรก" }
+            div { class: "composer-receipt-toolbar",
+                ReceiptUpload { destination: ReceiptDestination::Manual }
+                span { class: "field-hint", {crate::i18n::text("เลือกได้หลายรูป แล้วตรวจรายการด้านล่าง · สูงสุด 8 รูป", &[])} }
+            }
+            ReceiptAttachments {}
+            if let Some((source, drafts)) = store.batch.read().clone() {
+                crate::batch_entry::BatchReview { source, drafts, view: view.clone() }
+            } else if view.accounts.is_empty() {
+                EmptyState { title: crate::i18n::text("เพิ่มบัญชีก่อนเริ่มจด", &[]), body: crate::i18n::text("เลือกบัญชีที่จะใช้รับหรือจ่ายเงินก่อน", &[]) }
+                button { class: "primary", onclick: move |_| store.account_form.set(true), {crate::i18n::text("เพิ่มบัญชีแรก", &[])} }
             } else if let Some(prepared) = prepared {
                 Confirmation { prepared, view: view.clone() }
             } else if let Some(input) = input {
                 EntryForm { input, view: view.clone() }
             } else {
-                EmptyState { title: "พร้อมจดรายการถัดไป", body: "เพิ่มรายรับ รายจ่าย หรือโอนเงินได้ด้วยตัวเอง" }
-                button { class: "primary full-width", disabled: *store.busy.read(), onclick: move |_| store.new_entry(), Icon { name: "plus", size: 20 } "เพิ่มรายการใหม่" }
+                EmptyState { title: crate::i18n::text("พร้อมจดรายการถัดไป", &[]), body: crate::i18n::text("เพิ่มรายรับ รายจ่าย หรือโอนเงินได้ด้วยตัวเอง", &[]) }
+                button { class: "primary full-width", disabled: *store.busy.read(), onclick: move |_| store.new_entry(), Icon { name: "plus", size: 20 } {crate::i18n::text("เพิ่มรายการใหม่", &[])} }
             }
         }
     }
@@ -116,7 +169,7 @@ pub fn ManualEntryPage(view: Dashboard) -> Element {
 
 #[component]
 fn EntryForm(input: EntryInput, view: Dashboard) -> Element {
-    let store = use_context::<UiState>();
+    let mut store = use_context::<UiState>();
     let missing = missing_entry_fields(&input);
     let can_preview = missing.is_empty();
     let kind = input.kind;
@@ -132,41 +185,48 @@ fn EntryForm(input: EntryInput, view: Dashboard) -> Element {
         .map(|id| id.to_string())
         .unwrap_or_default();
     rsx! {
-        div { class: "section-heading", h2 { "รายละเอียดรายการ" } span { class: "status-pill", "ยังไม่บันทึก" } }
-        div { class: "kind-tabs", role: "group", "aria-label": "ชนิดรายการ",
+        div { class: "section-heading", h2 { {crate::i18n::text("รายละเอียดรายการ", &[])} } span { class: "status-pill", {crate::i18n::text("ยังไม่บันทึก", &[])} } }
+        div { class: "kind-tabs", role: "group", "aria-label": crate::i18n::text("ชนิดรายการ", &[]),
             for (target, label) in [(TransactionKind::Expense, "รายจ่าย"), (TransactionKind::Income, "รายรับ"), (TransactionKind::Transfer, "โอนเงิน")] {
-                button { class: if target == kind { "selected" } else { "" }, "aria-pressed": target == kind, disabled: *store.busy.read() || (has_receipt && target == TransactionKind::Transfer), onclick: move |_| store.update_entry(|i| { i.kind = target; i.category = None; i.destination = None; }), "{label}" }
+                button { class: if target == kind { "selected" } else { "" }, "aria-pressed": target == kind, disabled: *store.busy.read() || (has_receipt && target == TransactionKind::Transfer), onclick: move |_| store.update_entry(|i| { i.kind = target; i.category = None; i.destination = None; i.recurring = None; }), "{crate::i18n::tr(&label)}" }
             }
         }
-        form { onsubmit: move |event| { event.prevent_default(); let input = store.input.read().clone(); if let Some(input) = input { store.send(Command::Preview(input)); } },
-            label { r#for: "amount", "จำนวนเงิน (บาท)" } input { id: "amount", class: "amount-input", inputmode: "decimal", required: true, maxlength: 18, placeholder: "0.00", value: input.amount.clone(), disabled: *store.busy.read(), oninput: move |event| store.update_entry(|i| i.amount = event.value()) }
-            label { r#for: "entry-account", if kind == TransactionKind::Income { "เงินเข้าบัญชี" } else { "จากบัญชี" } }
+        form { novalidate: true, onsubmit: move |event| { event.prevent_default(); let input = store.input.read().clone(); if let Some(input) = input {
+                let fields = missing_entry_fields(&input);
+                if fields.is_empty() { store.send(Command::Preview(input)); }
+                else { store.notice.set(Some((true, crate::i18n::text("กรุณาเติมข้อมูลก่อนบันทึก: {0}", &[crate::i18n::field_list(&fields)])))); }
+            } },
+            if kind == TransactionKind::Expense {
+                crate::recurring_picker::RecurringPicker { id: "entry-recurring", input: input.clone(), view: view.clone(), onchange: move |updated| store.update_entry(|input| *input = updated) }
+            }
+            label { r#for: "amount", {crate::i18n::text("จำนวนเงิน (บาท)", &[])} } input { id: "amount", class: "amount-input", inputmode: "decimal", required: true, maxlength: 18, placeholder: "0.00", value: input.amount.clone(), disabled: *store.busy.read(), oninput: move |event| store.update_entry(|i| i.amount = event.value()) }
+            label { r#for: "entry-account", if kind == TransactionKind::Income { {crate::i18n::text("เงินเข้าบัญชี", &[])} } else { {crate::i18n::text("จากบัญชี", &[])} } }
             select { id: "entry-account", required: true, value: account_value, disabled: *store.busy.read(), onchange: move |event| store.update_entry(|i| i.account = event.value().parse().ok()),
-                option { value: "", disabled: true, "เลือกบัญชี" }
-                for item in &view.accounts { if !item.account.is_archived() { option { value: "{item.account.id()}", "{item.account.name().as_str()} · {item.account.kind().label()}" } } }
+                option { value: "", selected: input.account.is_none(), {crate::i18n::text("เลือกบัญชี", &[])} }
+                for item in &view.accounts { if !item.account.is_archived() { option { value: "{item.account.id()}", selected: input.account == Some(item.account.id()), "{item.account.name().as_str()} · {crate::i18n::tr(item.account.kind().label())}" } } }
             }
             if kind == TransactionKind::Transfer {
-                label { r#for: "destination", "ไปบัญชี" }
+                label { r#for: "destination", {crate::i18n::text("ไปบัญชี", &[])} }
                 select { id: "destination", required: true, value: destination_value, disabled: *store.busy.read(), onchange: move |event| store.update_entry(|i| i.destination = event.value().parse().ok()),
-                    option { value: "", disabled: true, "เลือกบัญชีปลายทาง" }
-                    for item in &view.accounts { if !item.account.is_archived() && Some(item.account.id()) != input.account { option { value: "{item.account.id()}", "{item.account.name().as_str()}" } } }
+                    option { value: "", selected: input.destination.is_none(), {crate::i18n::text("เลือกบัญชีปลายทาง", &[])} }
+                    for item in &view.accounts { if !item.account.is_archived() && Some(item.account.id()) != input.account { option { value: "{item.account.id()}", selected: input.destination == Some(item.account.id()), "{item.account.name().as_str()}" } } }
                 }
-                p { class: "field-hint", "การโอนและการจ่ายยอดหนี้บัตรไม่เพิ่มรายรับรายจ่าย" }
+                p { class: "field-hint", {crate::i18n::text("การโอนและการจ่ายยอดหนี้บัตรไม่เพิ่มรายรับรายจ่าย", &[])} }
             } else {
-                fieldset { class: "category-field", legend { "หมวดหมู่" }
+                fieldset { class: "category-field", legend { {crate::i18n::text("หมวดหมู่", &[])} }
                     div { class: "category-grid", for category in categories { { let category = *category; rsx! {
                         button { r#type: "button", class: if input.category == Some(category) { "category-tile selected" } else { "category-tile" },
                             "aria-pressed": input.category == Some(category), disabled: *store.busy.read(), onclick: move |_| store.update_entry(|i| i.category = Some(category)),
-                            ArtIcon { name: category_art(category), size: 42 } span { "{category.label()}" }
+                            ArtIcon { name: category_art(category), size: 42 } span { "{crate::i18n::tr(category.label())}" }
                         }
                     } } } }
                 }
             }
-            label { r#for: "entry-date", "วันที่รายการ" } input { id: "entry-date", r#type: "date", required: true, min: "1900-01-01", max: "{view.today}", value: input.date, disabled: *store.busy.read(), onchange: move |event| store.update_entry(|i| i.date = event.value()) }
-            if let Some(receipt) = input.receipt.clone() { crate::receipt_editor::ReceiptEditor { receipt, total: input.amount.clone() } }
-            label { r#for: "entry-note", "รายละเอียดเพิ่มเติม (ไม่จำเป็น)" } textarea { id: "entry-note", maxlength: 500, rows: "3", placeholder: "เช่น ข้าวกลางวัน", value: input.note, disabled: *store.busy.read(), oninput: move |event| store.update_entry(|i| i.note = event.value()) }
-            if !can_preview { p { class: "batch-question", role: "status", "ยังขาด: {missing.join(\" · \")} — เติมข้อมูลเหล่านี้ก่อนบันทึก" } }
-            button { class: "primary full-width", r#type: "submit", disabled: *store.busy.read() || !can_preview, "ตรวจรายการก่อนบันทึก" Icon { name: "arrow", size: 18 } }
+            label { r#for: "entry-date", {crate::i18n::text("วันที่รายการ", &[])} } input { id: "entry-date", r#type: "date", required: true, min: "1900-01-01", max: "{view.today}", value: input.date, disabled: *store.busy.read(), onchange: move |event| store.update_entry(|i| i.date = event.value()) }
+            if let Some(receipt) = input.receipt.clone() { crate::receipt_editor::ReceiptEditor { receipt, total: input.amount.clone(), id: "entry-receipt", onchange: move |receipt| store.update_entry(|input| input.receipt = Some(receipt)) } }
+            label { r#for: "entry-note", {crate::i18n::text("รายละเอียดเพิ่มเติม (ไม่จำเป็น)", &[])} } textarea { id: "entry-note", maxlength: 500, rows: "3", placeholder: crate::i18n::text("เช่น ข้าวกลางวัน", &[]), value: input.note, disabled: *store.busy.read(), oninput: move |event| store.update_entry(|i| i.note = event.value()) }
+            if !can_preview { p { class: "batch-question", role: "status", {crate::i18n::text("ยังขาด: {0} — เติมข้อมูลเหล่านี้ก่อนบันทึก", &[crate::i18n::field_list(&missing)])} } }
+            button { class: "primary full-width", r#type: "submit", disabled: *store.busy.read(), if can_preview { {crate::i18n::text("ตรวจรายการก่อนบันทึก", &[])} } else { {crate::i18n::text("ตรวจข้อมูลที่ยังขาด", &[])} } Icon { name: "arrow", size: 18 } }
         }
     }
 }
@@ -175,7 +235,7 @@ fn EntryForm(input: EntryInput, view: Dashboard) -> Element {
 fn Confirmation(prepared: PreparedEntry, view: Dashboard) -> Element {
     let mut store = use_context::<UiState>();
     let Some((label, amount, account)) = entry_label(&prepared.entry) else {
-        return rsx! { p { role: "alert", "ไม่สามารถแสดงรายการนี้ได้" } };
+        return rsx! { p { role: "alert", {crate::i18n::text("ไม่สามารถแสดงรายการนี้ได้", &[])} } };
     };
     let account = account_label(&view, account);
     let destination = match prepared.entry.kind() {
@@ -192,13 +252,14 @@ fn Confirmation(prepared: PreparedEntry, view: Dashboard) -> Element {
     let prepared_for_save = prepared.clone();
     rsx! {
         div { class: "confirmation",
-            span { class: "confirm-symbol", Icon { name: "check", size: 30 } } h2 { "ตรงกับรายการของเราไหม?" }
-            strong { class: "confirm-amount", "฿{money_label(amount)}" }
-            dl { div { dt { "รายการ" } dd { "{label}" } } div { dt { "บัญชี" } dd { "{account}" } } if let Some(destination) = destination { div { dt { "ปลายทาง" } dd { "{destination}" } } } div { dt { "วันที่" } dd { "{prepared.entry.date()}" } } if !prepared.entry.note().as_str().is_empty() { div { class: "confirmation-note", dt { "รายละเอียด" } dd { "{prepared.entry.note().as_str()}" } } } }
-            if salary { p { class: "inline-warning", "นี่คือยอดเงินที่รับเข้าบัญชี ยังไม่ใช้แทนเงินเดือนก่อนหักสำหรับคำนวณภาษี" } }
-            p { class: "field-hint", "ยังไม่ได้บันทึก กดยืนยันเมื่อรายละเอียดถูกต้อง" }
-            button { class: "primary full-width", disabled: *store.busy.read(), onclick: move |_| store.send(Command::Commit(prepared_for_save.clone())), if *store.busy.read() { "กำลังบันทึก…" } else { "ยืนยันบันทึก" } }
-            button { class: "text-button full-width", disabled: *store.busy.read(), onclick: move |_| store.prepared.set(None), "กลับไปแก้ไข" }
+            span { class: "confirm-symbol", Icon { name: "check", size: 30 } } h2 { {crate::i18n::text("ตรงกับรายการของเราไหม?", &[])} }
+            strong { class: "confirm-amount", "{crate::i18n::currency_prefix()}{money_label(amount)}" }
+            dl { div { dt { {crate::i18n::text("รายการ", &[])} } dd { "{crate::i18n::tr(&label)}" } } div { dt { {crate::i18n::text("บัญชี", &[])} } dd { "{account}" } } if let Some(destination) = destination { div { dt { {crate::i18n::text("ปลายทาง", &[])} } dd { "{destination}" } } } div { dt { {crate::i18n::text("วันที่", &[])} } dd { "{prepared.entry.date()}" } } if !prepared.entry.note().as_str().is_empty() { div { class: "confirmation-note", dt { {crate::i18n::text("รายละเอียด", &[])} } dd { "{prepared.entry.note().as_str()}" } } } }
+            if let Some(link) = &prepared.recurring { p { class: "batch-question", {crate::i18n::text("ผูกกับ {0} · {1} · จะนับจ่ายหนึ่งงวดโดยไม่ลงรายจ่ายซ้ำ", &[link.schedule.name().as_str().to_string(), crate::recurring_picker::installment_label(&link.schedule, link.month).to_string()])} } }
+            if salary { p { class: "inline-warning", {crate::i18n::text("นี่คือยอดเงินที่รับเข้าบัญชี ยังไม่ใช้แทนเงินเดือนก่อนหักสำหรับคำนวณภาษี", &[])} } }
+            p { class: "field-hint", {crate::i18n::text("ยังไม่ได้บันทึก กดยืนยันเมื่อรายละเอียดถูกต้อง", &[])} }
+            button { class: "primary full-width", disabled: *store.busy.read(), onclick: move |_| store.send(Command::Commit(prepared_for_save.clone())), if *store.busy.read() { {crate::i18n::text("กำลังบันทึก…", &[])} } else { {crate::i18n::text("ยืนยันบันทึก", &[])} } }
+            button { class: "text-button full-width", disabled: *store.busy.read(), onclick: move |_| store.prepared.set(None), {crate::i18n::text("กลับไปแก้ไข", &[])} }
         }
     }
 }

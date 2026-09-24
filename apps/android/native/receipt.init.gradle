@@ -3,7 +3,7 @@ def ledgerRoot = System.getenv('LEDGER_ANDROID_PROJECT_ROOT')
 if (!ledgerRoot) throw new GradleException('Missing Ledgers Bro project root')
 def ledgerAbi = System.getenv('LEDGER_ANDROID_ABI')
 if (!(ledgerAbi in ['x86_64', 'arm64-v8a'])) {
-    throw new GradleException('Use scripts/build-android.ps1 to select the Android ABI')
+    throw new GradleException('Use scripts/build-android.py to select the Android ABI')
 }
 gradle.beforeProject { project ->
     project.plugins.withId('com.android.application') {

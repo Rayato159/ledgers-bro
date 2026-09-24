@@ -74,6 +74,7 @@ impl Category {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SystemBook {
+    Receivable,
     Equity,
     Income,
     Expense,
@@ -99,6 +100,20 @@ impl Posting {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EntryKind {
+    ReceivableOpening {
+        receivable: crate::ReceivableId,
+        amount: PositiveMoney,
+    },
+    Lending {
+        receivable: crate::ReceivableId,
+        account: AccountId,
+        amount: PositiveMoney,
+    },
+    Repayment {
+        receivable: crate::ReceivableId,
+        account: AccountId,
+        amount: PositiveMoney,
+    },
     Opening {
         account: AccountId,
         balance: Money,
@@ -140,6 +155,25 @@ impl JournalEntry {
         kind: EntryKind,
     ) -> Result<Self, DomainError> {
         let (first, second, amount) = match kind {
+            EntryKind::ReceivableOpening { amount, .. } => (
+                PostingTarget::System(SystemBook::Receivable),
+                PostingTarget::System(SystemBook::Equity),
+                amount.money(),
+            ),
+            EntryKind::Lending {
+                account, amount, ..
+            } => (
+                PostingTarget::System(SystemBook::Receivable),
+                PostingTarget::Account(account),
+                amount.money(),
+            ),
+            EntryKind::Repayment {
+                account, amount, ..
+            } => (
+                PostingTarget::Account(account),
+                PostingTarget::System(SystemBook::Receivable),
+                amount.money(),
+            ),
             EntryKind::Opening { account, balance } => (
                 PostingTarget::Account(account),
                 PostingTarget::System(SystemBook::Equity),
@@ -206,7 +240,9 @@ impl JournalEntry {
     pub fn reverse(id: EntryId, original: &Self, note: Note) -> Result<Self, DomainError> {
         if matches!(
             original.kind,
-            EntryKind::Opening { .. } | EntryKind::Reversal { .. }
+            EntryKind::Opening { .. }
+                | EntryKind::ReceivableOpening { .. }
+                | EntryKind::Reversal { .. }
         ) || id == original.id
         {
             return Err(DomainError::InvalidReversal);

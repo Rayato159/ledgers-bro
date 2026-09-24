@@ -8,6 +8,8 @@ use std::{
     sync::{Arc, atomic::AtomicBool},
 };
 
+pub type ReceiptScan = (String, Result<(ReceiptImage, String), AppError>);
+
 pub type UiFuture<T> = Pin<Box<dyn Future<Output = Result<T, AppError>> + Send>>;
 pub trait UiGateway: Send + Sync {
     fn model_availability(&self) -> UiFuture<ModelAvailability> {
@@ -49,7 +51,7 @@ pub trait UiGateway: Send + Sync {
     fn uses_native_receipt_picker(&self) -> bool {
         false
     }
-    fn pick_receipt(&self, _cancel: Arc<AtomicBool>) -> UiFuture<Option<(ReceiptImage, String)>> {
+    fn pick_receipts(&self, _cancel: Arc<AtomicBool>) -> UiFuture<Vec<ReceiptScan>> {
         Box::pin(async {
             Err(AppError::Input("เครื่องนี้ยังเลือกภาพแบบนี้ไม่ได้".into()))
         })

@@ -1,7 +1,7 @@
 //! Android document selection and on-device OCR. No accounting authority.
 use crate::platform::on_activity;
 use ledger_application::{AppError, MAX_OCR_TEXT_BYTES, MAX_RECEIPT_BYTES, ReceiptImage};
-use ledger_ui::UiFuture;
+use ledger_ui::{ReceiptScan, UiFuture};
 use std::{
     sync::{
         Arc,
@@ -11,7 +11,7 @@ use std::{
 };
 static NEXT_SCAN: AtomicI64 = AtomicI64::new(1);
 
-pub fn pick(cancel: Arc<AtomicBool>) -> UiFuture<Option<(ReceiptImage, String)>> {
+pub fn pick(cancel: Arc<AtomicBool>) -> UiFuture<Vec<ReceiptScan>> {
     Box::pin(async move {
         let id = NEXT_SCAN.fetch_add(1, Ordering::Relaxed);
         let (started, vm, activity) = on_activity(move |env, activity| {
@@ -62,14 +62,14 @@ fn collect_result(
     activity: &jni::objects::JObject<'_>,
     id: i64,
     cancel: &AtomicBool,
-) -> Result<Option<(ReceiptImage, String)>, AppError> {
+) -> Result<Vec<ReceiptScan>, AppError> {
     let mut processing_started = None;
     let picker_deadline = Instant::now() + Duration::from_secs(300);
     loop {
         if cancel.load(Ordering::Relaxed)
-            || Instant::now() >= picker_deadline
+            || (processing_started.is_none() && Instant::now() >= picker_deadline)
             || processing_started
-                .is_some_and(|start: Instant| start.elapsed() > Duration::from_secs(60))
+                .is_some_and(|start: Instant| start.elapsed() > Duration::from_secs(480))
         {
             return Err(AppError::Input(
                 if cancel.load(Ordering::Relaxed) {
@@ -81,31 +81,19 @@ fn collect_result(
             ));
         }
         std::thread::sleep(Duration::from_millis(150));
-        let (state, text, bytes, error) = env
-            .with_local_frame(16, |env| -> jni::errors::Result<_> {
+        let (state, error) = env
+            .with_local_frame(8, |env| -> jni::errors::Result<_> {
                 let args = [id.into()];
                 let state = env
                     .call_method(activity, "receiptState", "(J)I", &args)?
                     .i()?;
-                let mut text = String::new();
-                let mut bytes = Vec::new();
-                let mut error = 0;
-                if state == 3 {
-                    let value = env
-                        .call_method(activity, "receiptText", "(J)Ljava/lang/String;", &args)?
-                        .l()?;
-                    text = env.get_string(&value.into())?.into();
-                    let value = env
-                        .call_method(activity, "receiptPreview", "(J)[B", &args)?
-                        .l()?;
-                    bytes = env.convert_byte_array(jni::objects::JByteArray::from(value))?;
-                    env.call_method(activity, "clearReceipt", "(J)V", &args)?;
-                } else if state == 5 {
-                    error = env
-                        .call_method(activity, "receiptError", "(J)I", &args)?
-                        .i()?;
-                }
-                Ok((state, text, bytes, error))
+                let error = if state == 5 {
+                    env.call_method(activity, "receiptError", "(J)I", &args)?
+                        .i()?
+                } else {
+                    0
+                };
+                Ok((state, error))
             })
             .map_err(|_| AppError::Input("ติดต่อระบบอ่านใบเสร็จไม่สำเร็จ ลองใหม่อีกครั้ง".into()))?;
         match state {
@@ -114,20 +102,73 @@ fn collect_result(
                 processing_started.get_or_insert_with(Instant::now);
             }
             3 => {
-                if bytes.len() > MAX_RECEIPT_BYTES || text.len() > MAX_OCR_TEXT_BYTES {
-                    return Err(AppError::Input(
-                        "รูปหรือข้อความยาวเกินไป กรุณาครอปเฉพาะใบเสร็จ".into(),
-                    ));
-                }
-                if cancel.load(Ordering::Relaxed) {
-                    return Ok(None);
-                }
-                return Ok(Some((ReceiptImage::new(bytes)?, text)));
+                let result = read_scans(env, activity, id);
+                let _ = env.call_method(activity, "clearReceipt", "(J)V", &[id.into()]);
+                return if cancel.load(Ordering::Relaxed) {
+                    Ok(Vec::new())
+                } else {
+                    result
+                };
             }
-            4 => return Ok(None),
+            4 => return Ok(Vec::new()),
             _ => return Err(AppError::Input(error_message(error).into())),
         }
     }
+}
+fn read_scans(
+    env: &mut jni::JNIEnv<'_>,
+    activity: &jni::objects::JObject<'_>,
+    id: i64,
+) -> Result<Vec<ReceiptScan>, AppError> {
+    let bridge_error = |_| AppError::Input("อ่านผลใบเสร็จจาก Android ไม่สำเร็จ".into());
+    let count = env
+        .call_method(activity, "receiptCount", "(J)I", &[id.into()])
+        .and_then(|v| v.i())
+        .map_err(bridge_error)?;
+    if !(1..=8).contains(&count) {
+        return Err(AppError::Input(error_message(9).into()));
+    }
+    let mut results = Vec::new();
+    let mut total = 0usize;
+    for index in 0..count {
+        let (name, text, bytes, error) = env
+            .with_local_frame(16, |env| -> jni::errors::Result<_> {
+                let args = [id.into(), index.into()];
+                let name = env
+                    .call_method(activity, "receiptName", "(JI)Ljava/lang/String;", &args)?
+                    .l()?;
+                let name: String = env.get_string(&name.into())?.into();
+                let error = env
+                    .call_method(activity, "receiptItemError", "(JI)I", &args)?
+                    .i()?;
+                if error != 0 {
+                    return Ok((name, String::new(), Vec::new(), error));
+                }
+                let value = env
+                    .call_method(activity, "receiptText", "(JI)Ljava/lang/String;", &args)?
+                    .l()?;
+                let text: String = env.get_string(&value.into())?.into();
+                let value = env
+                    .call_method(activity, "receiptPreview", "(JI)[B", &args)?
+                    .l()?;
+                let bytes = env.convert_byte_array(jni::objects::JByteArray::from(value))?;
+                Ok((name, text, bytes, error))
+            })
+            .map_err(bridge_error)?;
+        total += bytes.len();
+        if total > ledger_application::MAX_RECEIPT_BATCH_BYTES as usize {
+            return Err(AppError::Input(error_message(9).into()));
+        }
+        let result = if error != 0 {
+            Err(AppError::Input(error_message(error).into()))
+        } else if bytes.len() > MAX_RECEIPT_BYTES || text.len() > MAX_OCR_TEXT_BYTES {
+            Err(AppError::Input(error_message(2).into()))
+        } else {
+            ReceiptImage::new(bytes).map(|image| (image, text))
+        };
+        results.push((name, result));
+    }
+    Ok(results)
 }
 fn error_message(code: i32) -> &'static str {
     match code {
@@ -137,6 +178,7 @@ fn error_message(code: i32) -> &'static str {
         4 => "ยังอ่านข้อความไม่เจอ ลองถ่ายใบเสร็จให้ตรงและมีแสงเพียงพอ",
         5 => "การรับรูปใบเสร็จรุ่นนี้ต้องใช้ Android 9 ขึ้นไป",
         6 => "หมดเวลาอ่านภาพ ลองครอปเฉพาะใบเสร็จแล้วเลือกอีกครั้ง",
+        9 => "เลือกได้ครั้งละไม่เกิน 8 รูป รวมไม่เกิน 128 MB กรุณาแบ่งเป็นชุดเล็กลง",
         8 => "Android เครื่องนี้ถอดรหัสภาพนี้ไม่ได้ ลองแปลงเป็น JPG/PNG แล้วเลือกใหม่",
         _ => "อ่านใบเสร็จไม่สำเร็จ ลองเลือกรูปใหม่ แอปไม่ได้ส่งภาพขึ้น Cloud",
     }

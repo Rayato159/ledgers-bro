@@ -38,29 +38,53 @@ impl UiGateway for DesktopGateway {
         file: dioxus::html::FileData,
         cancel: Arc<AtomicBool>,
     ) -> UiFuture<(ReceiptImage, String)> {
+        scan_receipt_path(
+            self.ocr.clone(),
+            file.path(),
+            cancel,
+            Arc::new(std::sync::atomic::AtomicU64::new(0)),
+        )
+    }
+    fn uses_native_receipt_picker(&self) -> bool {
+        true
+    }
+    fn pick_receipts(&self, cancel: Arc<AtomicBool>) -> UiFuture<Vec<ledger_ui::ReceiptScan>> {
         let ocr = self.ocr.clone();
-        let (tx, rx) = futures_channel::oneshot::channel();
-        let spawned = std::thread::Builder::new()
-            .name("receipt-ocr".into())
-            .spawn(move || {
-                let result = (|| {
-                    let path = file.path();
-                    let input = std::fs::File::open(path)
-                        .map_err(|_| AppError::Input("เปิดรูปใบเสร็จไม่ได้".into()))?;
-                    let mut bytes = Vec::new();
-                    input
-                        .take((MAX_RECEIPT_BYTES + 1) as u64)
-                        .read_to_end(&mut bytes)
-                        .map_err(|_| AppError::Input("อ่านรูปใบเสร็จไม่ได้".into()))?;
-                    let image = ReceiptImage::new(bytes)?;
-                    ocr.scan(&image, &cancel)
-                })();
-                let _ = tx.send(result);
-            });
         Box::pin(async move {
-            spawned.map_err(|_| AppError::Input("เริ่มอ่านใบเสร็จไม่ได้".into()))?;
-            rx.await
-                .map_err(|_| AppError::Input("ตัวอ่านใบเสร็จหยุดทำงาน กรุณาลองใหม่".into()))?
+            let Some(files) = rfd::AsyncFileDialog::new()
+                .set_title("เลือกใบเสร็จได้หลายรูป")
+                .add_filter("Receipt images", &["jpg", "jpeg", "png", "heic", "heif"])
+                .pick_files()
+                .await
+            else {
+                return Ok(Vec::new());
+            };
+            if files.len() > ledger_application::MAX_RECEIPT_IMAGES {
+                return Err(AppError::Input("เลือกได้ครั้งละไม่เกิน 8 รูป".into()));
+            }
+            let budget = Arc::new(std::sync::atomic::AtomicU64::new(0));
+            let mut results = Vec::new();
+            let mut total = 0u64;
+            for file in files {
+                if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                    break;
+                }
+                let result = scan_receipt_path(
+                    ocr.clone(),
+                    file.path().to_owned(),
+                    cancel.clone(),
+                    budget.clone(),
+                )
+                .await;
+                if let Ok((image, _)) = &result {
+                    total += image.bytes().len() as u64;
+                }
+                if total > ledger_application::MAX_RECEIPT_BATCH_BYTES {
+                    return Err(AppError::Input("รูปใบเสร็จรวมต้องไม่เกิน 128 MB".into()));
+                }
+                results.push((file.file_name(), result));
+            }
+            Ok(results)
         })
     }
     fn request(&self, command: Command) -> UiFuture<Response> {
@@ -86,6 +110,42 @@ impl UiGateway for DesktopGateway {
     }
 }
 
+fn scan_receipt_path(
+    ocr: TesseractOcr,
+    path: PathBuf,
+    cancel: Arc<AtomicBool>,
+    budget: Arc<std::sync::atomic::AtomicU64>,
+) -> UiFuture<(ReceiptImage, String)> {
+    let (tx, rx) = futures_channel::oneshot::channel();
+    let spawned = std::thread::Builder::new()
+        .name("receipt-ocr".into())
+        .spawn(move || {
+            let result = (|| {
+                let input = std::fs::File::open(path)
+                    .map_err(|_| AppError::Input("เปิดรูปใบเสร็จไม่ได้".into()))?;
+                let mut bytes = Vec::new();
+                input
+                    .take((MAX_RECEIPT_BYTES + 1) as u64)
+                    .read_to_end(&mut bytes)
+                    .map_err(|_| AppError::Input("อ่านรูปใบเสร็จไม่ได้".into()))?;
+                let consumed =
+                    budget.fetch_add(bytes.len() as u64, std::sync::atomic::Ordering::Relaxed);
+                if consumed.saturating_add(bytes.len() as u64)
+                    > ledger_application::MAX_RECEIPT_BATCH_BYTES
+                {
+                    return Err(AppError::Input("รูปใบเสร็จรวมต้องไม่เกิน 128 MB".into()));
+                }
+                ocr.scan(&ReceiptImage::new(bytes)?, &cancel)
+            })();
+            let _ = tx.send(result);
+        });
+    Box::pin(async move {
+        spawned.map_err(|_| AppError::Input("เริ่มอ่านใบเสร็จไม่ได้".into()))?;
+        rx.await
+            .map_err(|_| AppError::Input("ตัวอ่านใบเสร็จหยุดทำงาน กรุณาลองใหม่".into()))?
+    })
+}
+
 fn main() {
     if let Err(error) = launch() {
         eprintln!("Ledgers Bro: {error}");
@@ -104,8 +164,10 @@ fn launch() -> Result<(), Box<dyn std::error::Error>> {
     let mut inspect_port = None;
     let mut ocr_directory = None;
     let mut model_directory = None;
+    let mut mobile_preview = false;
     while let Some(arg) = args.next() {
         match arg.as_str() {
+            "--mobile-preview" => mobile_preview = true,
             "--model-dir" => {
                 model_directory = Some(PathBuf::from(
                     args.next().ok_or("--model-dir requires a directory")?,
@@ -166,8 +228,12 @@ fn launch() -> Result<(), Box<dyn std::error::Error>> {
     let mut config = Config::new()
         .with_window(
             WindowBuilder::new()
-                .with_title("Ledgers Bro · สมุดบัญชีของเรา")
-                .with_inner_size(LogicalSize::new(1280.0, 950.0))
+                .with_title("Ledgers Bro")
+                .with_inner_size(if mobile_preview {
+                    LogicalSize::new(430.0, 860.0)
+                } else {
+                    LogicalSize::new(1280.0, 950.0)
+                })
                 .with_min_inner_size(LogicalSize::new(360.0, 640.0)),
         )
         .with_data_directory(directory.join(match inspect_port {

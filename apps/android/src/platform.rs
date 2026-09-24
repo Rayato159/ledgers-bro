@@ -160,7 +160,7 @@ impl UiGateway for AndroidGateway {
     fn uses_native_receipt_picker(&self) -> bool {
         true
     }
-    fn pick_receipt(&self, cancel: Arc<AtomicBool>) -> UiFuture<Option<(ReceiptImage, String)>> {
+    fn pick_receipts(&self, cancel: Arc<AtomicBool>) -> UiFuture<Vec<ledger_ui::ReceiptScan>> {
         crate::receipt::pick(cancel)
     }
 }

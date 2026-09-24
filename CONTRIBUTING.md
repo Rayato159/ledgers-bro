@@ -1,4 +1,8 @@
-# Code conventions
+# Contributing
+
+Bug reports and focused pull requests are welcome. Include steps to reproduce, platform details, and synthetic examples; never post real ledgers, receipts, credentials, or signing keys. Run the checks in [README](README.md) before submitting code changes. Contributions to project-owned code use the [MIT License](LICENSE); preserve third-party notices and attribution.
+
+## Code conventions
 
 ## Layers
 
@@ -21,7 +25,7 @@
 - Run `cargo fmt` and Clippy with `-D warnings`. Workspace lints forbid unsafe code and deny production `unwrap`, `expect`, `panic!`, `todo!`, `unimplemented!`, and debug macros.
 - Test fixture files may explicitly allow `expect`/`panic`. Do not suppress production lints globally.
 - Typed errors with `Result`. Do not disclose SQL, statements, raw model outputs, or financial notes in logs/error messages.
-- THB uses bounded `i64` satang. Accumulate with a wider integer and validate. No floating-point accounting; chart geometry may use floats derived from final amounts.
+- Supported currencies use bounded `i64` minor units (two decimal places; THB uses satang). A ledger has one immutable currency after its first account, bill, or receivable. Accumulate with a wider integer and validate. No floating-point accounting; chart geometry may use floats derived from final amounts.
 - Calendar dates are Gregorian internally. Relative phrases resolve on submission. Never guess account, amount, category, or tax eligibility.
 - Use closed enums for mutually exclusive transaction types. Keep persistence/model DTOs outside the domain.
 

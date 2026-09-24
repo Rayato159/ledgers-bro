@@ -31,8 +31,11 @@ macro_rules! identity {
 identity!(AccountId);
 identity!(EntryId);
 identity!(SubmissionId);
+identity!(RecurringId);
+identity!(ReceivableId);
 
-/// THB in satang. The bound applies to individual and aggregated amounts.
+/// Integer minor units (1/100) for supported two-decimal ledger currencies.
+/// The bound applies to individual and aggregated amounts.
 /// No float conversion is provided; presentation must preserve exact cents.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Money(i64);
