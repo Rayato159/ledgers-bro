@@ -18,6 +18,87 @@ pub struct CreditCardSummary {
     pub outstanding: Money,
     pub overdue: Money,
     pub prepaid: Money,
+    pub charges: Vec<CreditCharge>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreditCharge {
+    pub entry: JournalEntry,
+    pub dates: Option<CreditStatementDates>,
+    pub charged: Money,
+    pub paid: Money,
+    pub outstanding: Money,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreditPaymentBreakdown {
+    pub card: AccountId,
+    pub items: Vec<(JournalEntry, Money)>,
+    pub prepaid: Money,
+}
+
+/// Attribution at the payment's position in the journal. Never infer card links
+/// from a free-text expense note, and never allocate to later purchases.
+pub fn credit_payment_breakdown(
+    view: &Dashboard,
+    payment: EntryId,
+) -> Result<Option<CreditPaymentBreakdown>, DomainError> {
+    let mut entries: Vec<_> = view
+        .entries
+        .iter()
+        .filter(|e| {
+            e.date() <= view.today
+                && !view.reversed.contains(&e.id())
+                && !matches!(e.kind(), EntryKind::Reversal { .. })
+        })
+        .collect();
+    entries.reverse();
+    entries.sort_by_key(|e| e.date());
+    let Some(index) = entries.iter().position(|e| e.id() == payment) else {
+        return Ok(None);
+    };
+    let EntryKind::Transfer { to, amount, .. } = entries[index].kind() else {
+        return Ok(None);
+    };
+    if !view
+        .accounts
+        .iter()
+        .any(|a| a.account.id() == *to && a.account.kind() == AccountKind::CreditCard)
+    {
+        return Ok(None);
+    }
+    let mut credits = 0_i128;
+    let mut debits = Vec::new();
+    for entry in &entries[..index] {
+        for posting in entry
+            .postings()
+            .iter()
+            .filter(|p| p.target() == PostingTarget::Account(*to))
+        {
+            let minor = i128::from(posting.amount().minor());
+            if minor >= 0 {
+                credits += minor;
+            } else {
+                debits.push((*entry, -minor));
+            }
+        }
+    }
+    let mut remaining = i128::from(amount.money().minor());
+    let mut items = Vec::new();
+    for (entry, debit) in debits {
+        let previous = credits.min(debit);
+        credits -= previous;
+        let allocated = remaining.min(debit - previous);
+        remaining -= allocated;
+        if allocated > 0 {
+            items.push((entry.clone(), money(allocated)?));
+        }
+    }
+    Ok(Some(CreditPaymentBreakdown {
+        card: *to,
+        items,
+        prepaid: money(remaining)?,
+    }))
 }
 
 /// Prepare a card settlement as a transfer, not a second expense. Keep an
@@ -122,17 +203,25 @@ pub fn credit_cards(view: &Dashboard) -> Result<Vec<CreditCardSummary>, DomainEr
                             .map(|c| c.statement_for(entry.date()))
                             .transpose()?
                     };
-                    charges.push((dates, -minor));
+                    charges.push((entry.clone(), dates, -minor));
                 }
             }
         }
         let mut bills: BTreeMap<Option<CreditStatementDates>, (i128, i128)> = BTreeMap::new();
-        for (dates, charged) in charges {
+        let mut charge_details = Vec::with_capacity(charges.len());
+        for (entry, dates, charged) in charges {
             let paid = charged.min(credits);
             credits -= paid;
             let bill = bills.entry(dates).or_default();
             bill.0 += charged;
             bill.1 += paid;
+            charge_details.push(CreditCharge {
+                entry,
+                dates,
+                charged: money(charged)?,
+                paid: money(paid)?,
+                outstanding: money(charged - paid)?,
+            });
         }
         let mut outstanding = Money::ZERO;
         let mut overdue = Money::ZERO;
@@ -162,6 +251,7 @@ pub fn credit_cards(view: &Dashboard) -> Result<Vec<CreditCardSummary>, DomainEr
             outstanding,
             overdue,
             prepaid: money(credits)?,
+            charges: charge_details,
         });
     }
     Ok(result)

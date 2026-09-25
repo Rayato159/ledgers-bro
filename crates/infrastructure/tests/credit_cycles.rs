@@ -308,3 +308,60 @@ fn dedicated_settlement_pays_partial_then_full_without_double_counting() {
         None
     );
 }
+
+#[test]
+fn payment_drilldown_reconciles_partial_opening_prepaid_and_reversed_entries() {
+    let mut app = App::new(SqliteLedger::in_memory().expect("db"), Today, RandomIds);
+    let bank = account(&mut app, "Synthetic bank", AccountKind::Bank, "1000");
+    let card = account(&mut app, "Synthetic card", AccountKind::CreditCard, "100");
+    let purchase = expense(&mut app, card, "70.50", "2026-09-25");
+    let first = pay(&mut app, bank, card, "120.25");
+    let second = pay(&mut app, bank, card, "100");
+    let later = expense(&mut app, card, "30", "2026-09-25");
+    let v = view(&mut app);
+    let detail = credit_payment_breakdown(&v, first)
+        .expect("details")
+        .expect("payment");
+    assert_eq!(detail.items.len(), 2);
+    assert!(matches!(
+        detail.items[0].0.kind(),
+        EntryKind::Opening { .. }
+    ));
+    assert_eq!(detail.items[0].1.to_string(), "100.00");
+    assert_eq!(detail.items[1].0.id(), purchase);
+    assert_eq!(detail.items[1].1.to_string(), "20.25");
+    assert_eq!(detail.prepaid, Money::ZERO);
+    let detail = credit_payment_breakdown(&v, second)
+        .expect("details")
+        .expect("payment");
+    assert_eq!(detail.items.len(), 1);
+    assert_eq!(detail.items[0].1.to_string(), "50.25");
+    assert_eq!(detail.prepaid.to_string(), "49.75");
+    assert!(detail.items.iter().all(|(entry, _)| entry.id() != later));
+    for card in credit_cards(&v).expect("cards") {
+        assert_eq!(
+            card.charges
+                .iter()
+                .try_fold(Money::ZERO, |sum, c| sum.checked_add(c.outstanding))
+                .expect("sum"),
+            card.outstanding
+        );
+    }
+    let mut input = EntryInput::empty(v.today);
+    input.account = Some(bank);
+    input.amount = "10".into();
+    input.category = Some(Category::OtherExpense);
+    input.note = "Pay Synthetic card".into();
+    let unlinked = commit(&mut app, input);
+    assert!(
+        credit_payment_breakdown(&view(&mut app), unlinked)
+            .expect("unlinked")
+            .is_none()
+    );
+    app.execute(Command::Reverse(first)).expect("reverse");
+    assert!(
+        credit_payment_breakdown(&view(&mut app), first)
+            .expect("reversed")
+            .is_none()
+    );
+}

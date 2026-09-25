@@ -30,12 +30,28 @@ pub(crate) fn ProgressRing(done: i64, total: i64, label: String) -> Element {
 }
 
 #[component]
-pub(crate) fn AmountBar(label: String, amount: Money, maximum: i64, tone: &'static str) -> Element {
+pub(crate) fn AmountBar(
+    label: String,
+    amount: Money,
+    maximum: i64,
+    tone: &'static str,
+    percent_of: Option<i64>,
+) -> Element {
     let width = percentage(amount.minor(), maximum);
     rsx! { div { class: "debt-amount-bar", "data-tone": tone,
-        div { span { "{label}" } strong { "{crate::i18n::currency_prefix()}{money_label(amount)}" } }
+        div { span { "{label}" } strong { "{crate::i18n::currency_prefix()}{money_label(amount)}"
+            if let Some(total) = percent_of { span { class: "amount-percentage", {ratio_label(amount.minor(), total)} } }
+        } }
         div { class: "debt-bar-track", "aria-hidden": "true", span { style: "width:{width}%;" } }
     } }
+}
+
+pub(crate) fn ratio_label(amount: i64, total: i64) -> String {
+    if total <= 0 {
+        "—".into()
+    } else {
+        format!("{:.2}%", amount as f64 / total as f64 * 100.0)
+    }
 }
 
 #[component]
@@ -223,6 +239,7 @@ pub(crate) fn CreditDebtChart(view: Dashboard) -> Element {
                 div { class: "section-heading", h2 { id: "credit-chart-detail-title", "{card.account.name().as_str()}" } button { class: "icon-button", "aria-label": text("ปิดหน้าต่าง", &[]), onclick: move |_| selected.set(None), Icon { name: "close", size: 20 } } }
                 p { {text("ยอดรอชำระทั้งหมด", &[])} } strong { "{crate::i18n::currency_prefix()}{money_label(card.outstanding)}" }
                 p { class: "field-hint", {text("รวมยอดยกมาและรอบที่ยังไม่ตัดบิล หักยอดที่ชำระแล้ว · ไม่รวมยอดจ่ายเกินเป็นหนี้", &[])} }
+                crate::entry_breakdown::CreditChargeDetails { charges: card.charges.clone() }
             }
         }
     }

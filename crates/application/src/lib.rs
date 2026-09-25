@@ -62,3 +62,7 @@ pub use preferences::*;
 
 mod model_catalog;
 pub use model_catalog::*;
+mod update;
+pub use update::*;
+mod alerts;
+pub use alerts::*;

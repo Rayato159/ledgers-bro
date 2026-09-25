@@ -106,7 +106,11 @@ async fn run_voice_session(
 }
 
 #[component]
-pub(crate) fn VoiceInput(text: Signal<String>, mut capturing: Signal<bool>) -> Element {
+pub(crate) fn VoiceInput(
+    text: Signal<String>,
+    mut capturing: Signal<bool>,
+    #[props(default)] compact: bool,
+) -> Element {
     let mut store = use_context::<UiState>();
     let gateway = store.gateway.read().clone();
     let supported = gateway.0.supports_voice();
@@ -176,7 +180,7 @@ pub(crate) fn VoiceInput(text: Signal<String>, mut capturing: Signal<bool>) -> E
         _ => "",
     };
     rsx! {
-        div { class: "voice-input",
+        div { class: if compact { "voice-input compact-voice" } else { "voice-input" },
             div { class: "voice-actions",
                 if active {
                     if listening {
@@ -197,10 +201,11 @@ pub(crate) fn VoiceInput(text: Signal<String>, mut capturing: Signal<bool>) -> E
                     button { r#type: "button", class: "soft-button voice-button",
                         disabled: !supported || *store.busy.read(),
                         "aria-describedby": "voice-help",
+                        title: crate::i18n::tr(if supported { "พูดรายการ" } else { "รุ่นเดสก์ท็อปยังไม่มีตัวถอดเสียงในเครื่อง ทดลองปุ่มไมค์ในแอป Android ที่รองรับได้" }),
                         onclick: move |_| start.call(false), Icon { name: "mic", size: 21 }
-                        if text.read().trim().is_empty() { {crate::i18n::tr("พูดรายการ")} } else { {crate::i18n::tr("พูดแทนข้อความ")} }
+                        span { class: if compact { "sr-only" } else { "" }, if text.read().trim().is_empty() { {crate::i18n::tr("พูดรายการ")} } else { {crate::i18n::tr("พูดแทนข้อความ")} } }
                     }
-                    span { class: "local-badge", {crate::i18n::tr("ภาษาไทย · ในเครื่อง")} }
+                    if !compact { span { class: "local-badge", {crate::i18n::tr("ภาษาไทย · ในเครื่อง")} } }
                 }
             }
             if active {
@@ -212,7 +217,7 @@ pub(crate) fn VoiceInput(text: Signal<String>, mut capturing: Signal<bool>) -> E
                 button { r#type: "button", class: "soft-button", disabled: *store.busy.read(), onclick: move |_| start.call(true), Icon { name: "download", size: 20 } {crate::i18n::tr("ดาวน์โหลดภาษาไทยออฟไลน์")} }
                 p { class: "field-hint", {crate::i18n::tr("ใช้เน็ตเพื่อดาวน์โหลดโมเดลของ Android ครั้งแรก ระบบอาจขอให้ยืนยัน ขนาดขึ้นกับบริการเสียงของเครื่อง")} }
             }
-            p { id: "voice-help", class: "field-hint",
+            p { id: "voice-help", class: if compact { "sr-only" } else { "field-hint" },
                 if supported {
                     {crate::i18n::tr("เช่น “กาแฟ 80” • ต้องมีตัวถอดเสียงภาษาไทยออฟไลน์ของ Android แอปไม่เก็บไฟล์เสียงและไม่สลับไปใช้ Cloud")}
                 } else {

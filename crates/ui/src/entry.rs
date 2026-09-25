@@ -12,16 +12,15 @@ use ledger_domain::*;
 
 #[component]
 pub fn QuickEntryPage(view: Dashboard) -> Element {
-    let mut tab = use_signal(|| 0usize);
-    let mut had_review = use_signal(|| false);
     let mut store = use_context::<UiState>();
     let host = use_context::<HostInfo>();
     let mut text = store.composer;
     let mut previous_text = use_signal(|| text.peek().clone());
     let mut dragging = use_signal(|| false);
     let capturing = use_signal(|| false);
-    // Chips and voice input also update the composer. They must invalidate the
-    // previous confirmation just like typing, even without a DOM input event.
+    let mut examples = use_signal(|| false);
+    let mut reviewing = use_signal(|| false);
+    let mut had_review = use_signal(|| false);
     use_effect(move || {
         let current = text.read().clone();
         if *previous_text.peek() != current {
@@ -33,13 +32,10 @@ pub fn QuickEntryPage(view: Dashboard) -> Element {
             store.model_choices.set(None);
             store.prepared.set(None);
             store.input.set(None);
-
             store.guidance.set(String::new());
         }
     });
     use_drop(move || store.cancel_model());
-    let input = store.input.read().clone();
-    let prepared = store.prepared.read().clone();
     use_effect(move || {
         let ready = store.prompt_drafts.read().is_some()
             || store.batch.read().is_some()
@@ -47,75 +43,67 @@ pub fn QuickEntryPage(view: Dashboard) -> Element {
             || store.model_choices.read().is_some()
             || store.input.read().is_some();
         if ready && !*had_review.peek() {
-            tab.set(1);
+            reviewing.set(true);
+        }
+        if !ready {
+            reviewing.set(false);
         }
         had_review.set(ready);
     });
     rsx! {
-        section { class: "page-heading", div { h1 { {crate::i18n::text("เพิ่มรายการ", &[])} } p { class: "muted", {crate::i18n::text("พิมพ์ พูด หรือสแกนใบเสร็จ แล้วตรวจให้ตรงก่อนบันทึก", &[])} } } }
+        section { class: "page-heading", h1 { {crate::i18n::tr("เพิ่มรายการ")} } }
         crate::navigation::EntryToolbar { manual: false }
-        PageTabs { id: "quick-entry", tabs: vec![("chat", "เขียนรายการ"), ("check", "ตรวจรายการ"), ("settings", "AI ในเครื่อง"), ("list", "ตัวอย่างคำสั่ง")], selected: tab }
-        div { class: "entry-categories",
-            PagePanel { id: "quick-entry", index: 0, selected: tab(),
-            section { class: "card chat-card",
-                div { class: "chat-greeting illustrated-greeting", img { class: "phone-mascot", src: host.art.phone.clone(), alt: "Ren" } div { strong { {crate::i18n::text("จดไว้ เดี๋ยวช่วยจัดให้", &[])} } p { {crate::i18n::text("เล่าเรื่องเงินวันนี้ให้ฟัง\nหรือหยิบใบเสร็จมาให้ช่วยอ่าน", &[])} } } }
-                form { class: if dragging() { "chat-compose receipt-drag-over" } else { "chat-compose" },
-                    ondragover: move |event| { event.prevent_default(); if !*store.busy.peek() && !*capturing.peek() { dragging.set(true); } },
-                    ondragleave: move |_| dragging.set(false),
-                    ondrop: move |event| { event.prevent_default(); dragging.set(false); if !*capturing.peek() && host.receipt_ocr_available { store.scan_receipts(event.files(), ReceiptDestination::Prompt); } },
-                    onsubmit: move |event| { event.prevent_default(); if !*capturing.peek() { store.resolve_text(text()); } },
-                    label { r#for: "quick-text", class: "sr-only", {crate::i18n::text("พิมพ์รายการแบบด่วน", &[])} }
-                    textarea { id: "quick-text", placeholder: crate::i18n::text("เช่น เมื่อวานซื้อกาแฟ 80 บาท จ่ายเงินสด", &[]), rows: if store.receipts.read().is_empty() { "3" } else { "10" }, maxlength: MAX_RECEIPT_PROMPT_CHARS, required: true, value: "{text}", disabled: *store.busy.read() || *capturing.read(), oninput: move |event| { text.set(event.value()); store.prompt_drafts.set(None); store.prompt_prepared.set(None); store.batch.set(None); store.batch_prepared.set(None); store.model_choices.set(None); store.prepared.set(None); store.input.set(None); store.guidance.set(String::new()); } }
-                    div { class: "composer-receipt-toolbar",
-                        ReceiptUpload { destination: ReceiptDestination::Prompt, disabled: *capturing.read() }
-                        span { class: "field-hint", if dragging() { {crate::i18n::text("วางรูปใบเสร็จที่นี่", &[])} } else { {crate::i18n::text("ลากรูปมาวางได้ · สูงสุด 8 รูป", &[])} } }
-                    }
-                    ReceiptAttachments {}
-                    crate::voice::VoiceInput { text, capturing }
-                    button { class: "primary", r#type: "submit", disabled: *capturing.read() || *store.busy.read() || text.read().trim().is_empty(), {crate::i18n::text("อ่านรายการ", &[])} Icon { name: "arrow", size: 17 } }
-                }
-                if store.model_operation.read().is_some() { crate::model::ModelProgress {} }
-                else if !store.guidance.read().is_empty() { div { class: "assistant-message", role: "status", "{crate::i18n::tr(&store.guidance.read())}" } }
-                p { class: "field-hint receipt-privacy", {crate::i18n::text("JPG / PNG / HEIC / HEIF · รูปละไม่เกิน 32 MB · อ่านในเครื่อง ภาพใช้ตรวจชั่วคราว ไม่ส่งขึ้น Cloud", &[])} }
-            }
-            }
-            PagePanel { id: "quick-entry", index: 1, selected: tab(),
-            section { class: "card entry-editor",
-                if let Some((source, drafts)) = store.prompt_drafts.read().clone() {
-                    crate::prompt_review::PromptReview { source, drafts, view: view.clone() }
-                } else if let Some((source, drafts)) = store.batch.read().clone() {
-                    crate::batch_entry::BatchReview { source, drafts, view: view.clone() }
-                } else if let Some(prepared) = prepared {
-                    Confirmation { prepared, view: view.clone() }
-                } else if let Some((source, drafts)) = store.model_choices.read().clone() {
-                    crate::model::ModelChoices { source, drafts, view: view.clone() }
-                } else if let Some(input) = input {
-                    EntryForm { input, view: view.clone() }
-                } else {
-                    div { class: "draft-empty", div { class: "draft-illustration", ArtIcon { name: "receipt", size: 88 } } h2 { {crate::i18n::text("รายการรอตรวจจะอยู่ตรงนี้", &[])} } p { {crate::i18n::text("เลือกใบเสร็จหรือพิมพ์รายการทางซ้าย\nยังไม่มีอะไรถูกบันทึก จนกว่าจะยืนยัน", &[])} }
-                        div { class: "category-art-preview", for category in [Category::Food, Category::Snacks, Category::Salary] { span { title: crate::i18n::tr(category.label()), ArtIcon { name: category_art(category), size: 44 } } } }
-                    }
+        section { class: "chat-workspace",
+            form { class: if dragging() { "chat-compose compact-compose receipt-drag-over" } else { "chat-compose compact-compose" },
+                ondragover: move |e| { e.prevent_default(); if !*store.busy.peek() && !*capturing.peek() { dragging.set(true); } },
+                ondragleave: move |_| dragging.set(false),
+                ondrop: move |e| { e.prevent_default(); dragging.set(false); if !*capturing.peek() && host.receipt_ocr_available { store.scan_receipts(e.files(), ReceiptDestination::Prompt); } },
+                onsubmit: move |e| { e.prevent_default(); if !*capturing.peek() { store.resolve_text(text()); } },
+                label { r#for: "quick-text", class: "sr-only", {crate::i18n::tr("พิมพ์รายการแบบด่วน")} }
+                textarea { id: "quick-text", placeholder: crate::i18n::tr("เช่น เมื่อวานซื้อกาแฟ 80 บาท จ่ายเงินสด"), rows: "5", maxlength: MAX_RECEIPT_PROMPT_CHARS, required: true, value: "{text}", disabled: *store.busy.read() || *capturing.read(), oninput: move |e| text.set(e.value()) }
+                ReceiptAttachments {}
+                div { class: "composer-tools",
+                    ReceiptUpload { destination: ReceiptDestination::Prompt, disabled: *capturing.read(), compact: true }
+                    crate::voice::VoiceInput { text, capturing, compact: true }
+                    button { r#type: "button", class: "icon-button", title: crate::i18n::tr("ตัวอย่างคำสั่ง"), "aria-label": crate::i18n::tr("ตัวอย่างคำสั่ง"), "aria-haspopup": "dialog", disabled: *capturing.read() || *store.busy.read(), onclick: move |_| examples.set(true), Icon { name: "list", size: 20 } }
+                    crate::model::ModelSettings { capturing, compact: true }
+                    button { class: "primary composer-send", r#type: "submit", title: crate::i18n::tr("อ่านรายการ"), "aria-label": crate::i18n::tr("อ่านรายการ"), disabled: *capturing.read() || *store.busy.read() || text.read().trim().is_empty(), Icon { name: "arrow", size: 20 } }
                 }
             }
-            }
+            if store.model_operation.read().is_some() { crate::model::ModelProgress {} }
+            else if !store.guidance.read().is_empty() { p { class: "assistant-message", role: "status", "{crate::i18n::tr(&store.guidance.read())}" } }
+            if had_review() { button { class: "soft-button", disabled: *store.busy.read(), onclick: move |_| reviewing.set(true), Icon { name: "check", size: 18 } {crate::i18n::tr("ตรวจรายการ")} } }
         }
-        PagePanel { id: "quick-entry", index: 2, selected: tab(), section { class: "card recurring-card", crate::model::ModelSettings { capturing } } }
-        PagePanel { id: "quick-entry", index: 3, selected: tab(),
-        details { class: "chat-help prompt-catalog", summary { {crate::i18n::text("คำสั่งบันทึกทั้งหมด · กดเพื่อดูตัวอย่าง", &[])} }
-            if crate::i18n::english() { p { class: "field-hint", "Prompts and voice currently use Thai. Manual forms work in either language." } }
-            p { {crate::i18n::text("หลายคำสั่งใช้ขึ้นบรรทัดใหม่ ครั้งละไม่เกิน 8 คำสั่ง ชื่อที่มีคำว่า และ ให้ใส่เครื่องหมายคำพูด", &[])} }
-            div { class: "prompt-example-grid prompt-catalog-grid",
-                for kind in PromptKind::ALL {
+        if examples() {
+            dialog { id: "prompt-examples-dialog", class: "account-dialog prompt-examples-dialog", "aria-labelledby": "prompt-examples-title",
+                onmounted: move |_| { let _ = document::eval("document.getElementById('prompt-examples-dialog').showModal()"); },
+                oncancel: move |e| { e.prevent_default(); examples.set(false); },
+                div { class: "section-heading", h2 { id: "prompt-examples-title", {crate::i18n::tr("ตัวอย่างคำสั่ง")} } button { class: "icon-button", "aria-label": crate::i18n::tr("ปิดหน้าต่าง"), onclick: move |_| examples.set(false), Icon { name: "close", size: 20 } } }
+                p { class: "field-hint", {crate::i18n::tr("หลายคำสั่งใช้ขึ้นบรรทัดใหม่ ครั้งละไม่เกิน 8 คำสั่ง ชื่อที่มีคำว่า และ ให้ใส่เครื่องหมายคำพูด")} }
+                div { class: "prompt-example-grid prompt-catalog-grid", for kind in PromptKind::ALL {
                     { let (icon, tone) = crate::prompt_examples::example_art(kind); rsx! {
                         crate::prompt_examples::PromptExample { title: crate::i18n::tr(kind.label()), sample: kind.example(), icon, tone, compact: true,
                             selected: *text.read() == crate::prompt_examples::currency_example(kind.example()), disabled: *capturing.read() || *store.busy.read(),
-                            onselect: move |sample| { text.set(sample); tab.set(0); },
+                            onselect: move |sample| { text.set(sample); examples.set(false); },
                         }
                     } }
+                } }
+            }
+        }
+        if reviewing() {
+            dialog { id: "prompt-review-dialog", class: "account-dialog prompt-review-dialog", "aria-labelledby": "prompt-review-title",
+                onmounted: move |_| { let _ = document::eval("document.getElementById('prompt-review-dialog').showModal()"); },
+                oncancel: move |e| { e.prevent_default(); if !*store.busy.peek() { reviewing.set(false); } },
+                div { class: "section-heading", h2 { id: "prompt-review-title", {crate::i18n::tr("ตรวจรายการ")} } button { class: "icon-button", disabled: *store.busy.read(), "aria-label": crate::i18n::tr("ปิดหน้าต่าง"), onclick: move |_| reviewing.set(false), Icon { name: "close", size: 20 } } }
+                if let Some((true, error)) = store.notice.read().clone() { p { class: "form-error", role: "alert", "{crate::i18n::tr(&error)}" } }
+                div { class: "entry-editor",
+                    if let Some((source, drafts)) = store.prompt_drafts.read().clone() { crate::prompt_review::PromptReview { source, drafts, view: view.clone() } }
+                    else if let Some((source, drafts)) = store.batch.read().clone() { crate::batch_entry::BatchReview { source, drafts, view: view.clone() } }
+                    else if let Some(prepared) = store.prepared.read().clone() { Confirmation { prepared, view: view.clone() } }
+                    else if let Some((source, drafts)) = store.model_choices.read().clone() { crate::model::ModelChoices { source, drafts, view: view.clone() } }
+                    else if let Some(input) = store.input.read().clone() { EntryForm { input, view: view.clone() } }
                 }
             }
-            div { class: "chat-help", strong { {crate::i18n::text("ตัวอย่างรูปแบบที่รองรับ", &[])} } code { {crate::i18n::text("จ่าย 80 จาก เงินสด หมวด อาหาร", &[])} } code { {crate::i18n::text("โอน 1000 จาก ธนาคาร ไป เงินสด", &[])} } code { {crate::i18n::text("… วันที่ เมื่อวาน โน้ต \"ข้าวกลางวัน\"", &[])} } p { {crate::i18n::text("การจ่ายหนี้บัตรใช้โอนไปบัญชีบัตรเครดิต ดอกเบี้ยหรือค่าธรรมเนียมให้บันทึกเป็นรายจ่ายแยก", &[])} } }
-        }
         }
     }
 }

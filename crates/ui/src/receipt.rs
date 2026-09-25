@@ -35,7 +35,11 @@ pub enum ReceiptDestination {
 }
 
 #[component]
-pub fn ReceiptUpload(destination: ReceiptDestination, #[props(default)] disabled: bool) -> Element {
+pub fn ReceiptUpload(
+    destination: ReceiptDestination,
+    #[props(default)] disabled: bool,
+    #[props(default)] compact: bool,
+) -> Element {
     let store = use_context::<UiState>();
     let host = use_context::<crate::HostInfo>();
     let unsupported_currency = crate::i18n::currency() != ledger_domain::Currency::Thb;
@@ -51,7 +55,7 @@ pub fn ReceiptUpload(destination: ReceiptDestination, #[props(default)] disabled
         if unsupported_currency { span { class: "field-hint", "Receipt OCR: THB only" } }
         if native {
             button { class: "receipt-upload-inline soft-button", r#type: "button", disabled, onclick: move |_| store.pick_receipts(destination),
-                Icon { name: "camera", size: 22 } {crate::i18n::text("เพิ่มใบเสร็จ", &[])}
+                Icon { name: "camera", size: 22 } span { class: if compact { "sr-only" } else { "" }, {crate::i18n::text("เพิ่มใบเสร็จ", &[])} }
             }
         } else {
             label { class: if disabled { "receipt-upload-inline soft-button disabled" } else { "receipt-upload-inline soft-button" },
@@ -61,7 +65,7 @@ pub fn ReceiptUpload(destination: ReceiptDestination, #[props(default)] disabled
                     onclick: move |_| { let _ = document::eval(&format!("document.getElementById('{id}').value = ''")); },
                     onchange: move |event| store.scan_receipts(event.files(), destination),
                 }
-                Icon { name: "camera", size: 22 } {crate::i18n::text("เพิ่มใบเสร็จ", &[])}
+                Icon { name: "camera", size: 22 } span { class: if compact { "sr-only" } else { "" }, {crate::i18n::text("เพิ่มใบเสร็จ", &[])} }
             }
         }
     }

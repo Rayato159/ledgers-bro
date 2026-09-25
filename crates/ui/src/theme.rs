@@ -18,27 +18,35 @@ const PALETTES: [(&str, u32); 5] = [
 ];
 
 pub fn persist(mut store: UiState, mut theme: Theme, mut locale: Locale, next: UserPreferences) {
-    if *store.busy.peek() {
+    if next == *theme.0.peek() {
         return;
     }
-    store.busy.set(true);
-    let gateway = store.gateway.peek().clone();
-    crate::state::spawn_session(async move {
-        match gateway.0.request(Command::SetPreferences(next)).await {
-            Ok(Response::Preferences(saved)) => {
-                theme.0.set(saved);
-                locale.0.set(if saved.english {
-                    Language::English
-                } else {
-                    Language::Thai
-                });
+    crate::confirmation::ask(
+        tr("บันทึกการตั้งค่าที่เลือก"),
+        move |_| {
+            if *store.busy.peek() {
+                return;
             }
-            _ => store
-                .notice
-                .set(Some((true, "บันทึกการตั้งค่าไม่ได้ กรุณาลองอีกครั้ง".into()))),
-        }
-        store.busy.set(false);
-    });
+            store.busy.set(true);
+            let gateway = store.gateway.peek().clone();
+            crate::state::spawn_session(async move {
+                match gateway.0.request(Command::SetPreferences(next)).await {
+                    Ok(Response::Preferences(saved)) => {
+                        theme.0.set(saved);
+                        locale.0.set(if saved.english {
+                            Language::English
+                        } else {
+                            Language::Thai
+                        });
+                    }
+                    _ => store
+                        .notice
+                        .set(Some((true, "บันทึกการตั้งค่าไม่ได้ กรุณาลองอีกครั้ง".into()))),
+                }
+                store.busy.set(false);
+            });
+        },
+    );
 }
 
 #[component]
@@ -54,7 +62,11 @@ pub fn ThemePicker() -> Element {
         div { class: "setting-row",
             div { class: "setting-copy", h3 { {tr("โหมดการแสดงผล")} } p { {tr("เลือกบรรยากาศที่สบายตา")} } }
             div { class: "setting-control",
-                select { "aria-label": tr("โหมดการแสดงผล"), value: if saved.dark { "dark" } else { "light" }, disabled: *store.busy.read(), onchange: move |e| persist(store, theme, locale, UserPreferences { dark: e.value() == "dark", ..*theme.0.peek() }),
+                select { id: "theme-mode", "aria-label": tr("โหมดการแสดงผล"), value: if saved.dark { "dark" } else { "light" }, disabled: *store.busy.read(), onchange: move |e| {
+                    let current = if theme.0.peek().dark { "dark" } else { "light" };
+                    let _ = document::eval(&format!("document.getElementById('theme-mode').value='{current}'"));
+                    persist(store, theme, locale, UserPreferences { dark: e.value() == "dark", ..*theme.0.peek() });
+                },
                     option { value: "light", selected: !saved.dark, {tr("สว่าง")} }
                     option { value: "dark", selected: saved.dark, {tr("มืด")} }
                 }
@@ -88,7 +100,7 @@ pub fn ThemePicker() -> Element {
         if parsed.is_none() { p { class: "field-hint", role: "status", {tr("ใส่สีแบบ #RRGGBB เช่น #BDA0FF")} } }
         div { class: "setting-row",
             div { class: "setting-copy", h3 { {tr("ไล่สี Gradient")} } p { {tr("ใช้สีหลักคู่กับสีข้างเคียง หรือปิดเพื่อใช้สีเดียว")} } }
-            input { class: "settings-switch", r#type: "checkbox", role: "switch", "aria-label": tr("ไล่สี Gradient"), checked: saved.gradient, disabled: *store.busy.read(), onchange: move |e| persist(store, theme, locale, UserPreferences { gradient: e.checked(), ..*theme.0.peek() }) }
+            button { class: "preference-switch", r#type: "button", role: "switch", "aria-label": tr("ไล่สี Gradient"), "aria-checked": saved.gradient, disabled: *store.busy.read(), onclick: move |_| persist(store, theme, locale, UserPreferences { gradient: !saved.gradient, ..*theme.0.peek() }), span { class: "preference-switch-track", "aria-hidden": "true", span { class: "preference-switch-thumb" } } }
         }
     }
 }

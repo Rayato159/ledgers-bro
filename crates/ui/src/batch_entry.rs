@@ -72,7 +72,7 @@ pub(crate) fn BatchReview(source: String, drafts: Vec<ModelDraft>, view: Dashboa
                   let categories = if input.kind == TransactionKind::Income { &Category::INCOME[..] } else { &Category::EXPENSE[..] };
                   rsx! {
                     fieldset { class: "batch-item", disabled: *store.busy.read(),
-                        legend { {crate::i18n::text("รายการที่ {0} · {1}", &[format!("{}", index + 1), label.to_string()])} }
+                        legend { {crate::i18n::text("รายการที่ {0} · {1}", &[format!("{}", index + 1), crate::i18n::tr(label)])} }
                         if !missing.is_empty() { p { class: "batch-question", role: "status", {crate::i18n::text("ยังขาด: {0} — เติมช่องด้านล่างให้ครบก่อนบันทึก", &[crate::i18n::field_list(&missing)])} } }
                         if !draft.guidance.is_empty() { p { class: "field-hint", "{draft.guidance}" } }
                         label { r#for: "batch-kind-{index}", {crate::i18n::text("ชนิดรายการ", &[])} }

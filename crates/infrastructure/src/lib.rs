@@ -17,3 +17,7 @@ pub use receipt_image::ReceiptImageNormalizer;
 pub use receipt_ocr::TesseractOcr;
 pub use sqlite::SqliteLedger;
 pub use worker::*;
+mod update;
+pub use update::AppUpdater;
+mod alerts;
+pub use alerts::AlertStore;

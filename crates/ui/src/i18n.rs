@@ -112,7 +112,9 @@ pub fn LanguagePicker() -> Element {
             label { r#for: "display-language", {tr("ภาษา")} }
             select { id: "display-language", value: if theme.0.read().english { "en" } else { "th" }, disabled: *store.busy.read(),
                 onchange: move |e| {
-                    let next = ledger_application::UserPreferences { english: e.value() == "en", ..*theme.0.peek() };
+                  let next = ledger_application::UserPreferences { english: e.value() == "en", ..*theme.0.peek() };
+                  let current = if theme.0.peek().english { "en" } else { "th" };
+                  let _ = document::eval(&format!("document.getElementById('display-language').value='{current}'"));
                     crate::theme::persist(store, theme, locale, next);
                 },
                 option { value: "th", selected: !theme.0.read().english, "ไทย — Thai" }

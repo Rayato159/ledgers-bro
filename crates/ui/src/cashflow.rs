@@ -217,6 +217,7 @@ pub(crate) fn CashflowDetailsDialog(
                                             strong { "{crate::i18n::currency_prefix()}{money_label(amount)}" }
                                             p { class: "muted", "{entry.date()} · {account_label(&view, account)}" }
                                             if !entry.note().as_str().is_empty() { p { class: "flow-entry-note", "{entry.note().as_str()}" } }
+                                            crate::entry_breakdown::EntryBreakdown { view: view.clone(), entry: entry.clone() }
                                         }
                                     }
                                 } }

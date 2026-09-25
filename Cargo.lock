@@ -2802,7 +2802,7 @@ checksum = "7a79a3332a6609480d7d0c9eab957bca6b455b91bb84e66d19f5ff66294b85b8"
 
 [[package]]
 name = "ledger-application"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "chrono",
  "csv",
@@ -2815,7 +2815,7 @@ dependencies = [
 
 [[package]]
 name = "ledger-domain"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "chrono",
  "thiserror 2.0.20",
@@ -2824,7 +2824,7 @@ dependencies = [
 
 [[package]]
 name = "ledger-infrastructure"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "argon2",
  "chrono",
@@ -2839,6 +2839,7 @@ dependencies = [
  "rand_core 0.6.4",
  "reqwest",
  "rusqlite",
+ "semver",
  "serde",
  "serde_json",
  "sha2",
@@ -2850,7 +2851,7 @@ dependencies = [
 
 [[package]]
 name = "ledger-ui"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "base64",
  "chrono",
@@ -2864,7 +2865,7 @@ dependencies = [
 
 [[package]]
 name = "ledgers-bro"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "dioxus",
  "dioxus-ssr",
@@ -2875,11 +2876,13 @@ dependencies = [
  "ledger-infrastructure",
  "ledger-ui",
  "rfd 0.15.4",
+ "windows",
+ "winreg",
 ]
 
 [[package]]
 name = "ledgers-bro-android"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "dioxus",
  "futures-channel",
@@ -6488,6 +6491,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23b97319f7b8343df12cc98938e5c3eb436064524c8d2b4e30a1d3a36eecdf81"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "winreg"
+version = "0.55.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cb5a765337c50e9ec252c2069be9bf91c7df47afb103b642ba3a53bf8101be97"
+dependencies = [
+ "cfg-if",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

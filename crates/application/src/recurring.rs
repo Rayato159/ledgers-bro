@@ -23,11 +23,13 @@ pub fn revised_recurring(
 ) -> Result<(RecurringExpense, RecurringExpense), StorageError> {
     let effective = replacement.due().start();
     if !state.recurring.contains(expected)
-        || !expected.occurs_in(effective)
         || replacement.stopped_from().is_some()
         || state.recurring.iter().any(|s| s.id() == replacement.id())
     {
         return Err(StorageError::RecurringChanged);
+    }
+    if !expected.occurs_in(effective) {
+        return Err(StorageError::RecurringEditOutsidePlan);
     }
     // Include reversed payments too: editing must never change the meaning of
     // an existing settlement or make a reversal reopen a different obligation.

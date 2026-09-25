@@ -170,6 +170,7 @@ pub fn TransactionsPage(view: Dashboard) -> Element {
 pub fn TransactionRows(view: Dashboard, limit: usize, allow_cancel: bool) -> Element {
     let store = use_context::<UiState>();
     let mut cancelling = use_signal(|| None::<EntryId>);
+    let mut inspecting = use_signal(|| None::<EntryId>);
     let entries: Vec<_> = view
         .entries
         .iter()
@@ -200,16 +201,44 @@ pub fn TransactionRows(view: Dashboard, limit: usize, allow_cancel: bool) -> Ele
                     let destination = match entry.kind() { EntryKind::Transfer { to, .. } => format!(" → {}", account_label(&view, *to)), _ => String::new() };
                     rsx! { article { class: if cancelled { "transaction-row cancelled" } else { "transaction-row" }, key: "{id}",
                         span { class: if income { "row-icon incoming" } else { "row-icon" }, ArtIcon { name: icon_name, size: 37 } }
-                        div { class: "transaction-description", strong { "{title}" } small { "{entry.date()} · {crate::i18n::tr(&label)} · {account_name}{destination}" } if note.contains('\n') { details { class: "saved-entry-details", summary { {crate::i18n::text("ดูรายละเอียด", &[])} } div { class: "entry-note-body", "{note}" } } } if let Some(tax) = entry.income_tax() { crate::income_tax::IncomeTaxSummary { tax } } if cancelled { span { class: "cancel-tag", {crate::i18n::text("ยกเลิกแล้ว", &[])} } } }
-                        strong { class: if income { "entry-amount positive" } else { "entry-amount" }, "{sign}{crate::i18n::currency_prefix()}{money_label(amount)}" }
-                        if allow_cancel && !cancelled {
-                            if cancelling() == Some(id) {
-                                div { class: "cancel-confirm", span { {crate::i18n::text("ยกเลิกรายการนี้?", &[])} } button { class: "danger-button", disabled: *store.busy.read(), onclick: move |_| { store.send(Command::Reverse(id)); cancelling.set(None); }, {crate::i18n::text("ยืนยันยกเลิก", &[])} } button { class: "text-button", onclick: move |_| cancelling.set(None), {crate::i18n::text("กลับ", &[])} } }
-                            } else { button { class: "text-button cancel-action", disabled: *store.busy.read(), onclick: move |_| cancelling.set(Some(id)), {crate::i18n::text("ยกเลิก", &[])} } }
+                        div { class: "transaction-description",
+                            div { class: "transaction-title-line",
+                                button { class: "transaction-title", title: "{title}", "aria-haspopup": "dialog", onclick: move |_| inspecting.set(Some(id)), strong { "{title}" } }
+                                if cancelled { span { class: "cancel-tag", {crate::i18n::text("ยกเลิกแล้ว", &[])} } }
+                                else if allow_cancel { button { class: "text-button cancel-action", disabled: *store.busy.read(), onclick: move |_| cancelling.set(Some(id)), {crate::i18n::tr("ยกเลิก")} } }
+                            }
+                            small { title: "{entry.date()} · {crate::i18n::tr(label)} · {account_name}{destination}", "{entry.date()} · {crate::i18n::tr(label)} · {account_name}{destination}" }
                         }
+                        strong { class: if income { "entry-amount positive" } else { "entry-amount" }, "{sign}{crate::i18n::currency_prefix()}{money_label(amount)}" }
                     } }
                 }
             }
         }
+        if let Some(id) = cancelling() {
+            dialog { id: "cancel-entry-dialog", class: "account-dialog", "aria-label": crate::i18n::tr("ยกเลิกรายการนี้?"),
+                onmounted: move |_| { let _ = document::eval("document.getElementById('cancel-entry-dialog').showModal()"); },
+                oncancel: move |e| { e.prevent_default(); cancelling.set(None); },
+                h2 { {crate::i18n::tr("ยกเลิกรายการนี้?")} }
+                div { class: "dialog-actions",
+                    button { class: "danger-button", disabled: (store.busy)(), onclick: move |_| { store.send(Command::Reverse(id)); cancelling.set(None); }, {crate::i18n::tr("ยืนยันยกเลิก")} }
+                    button { class: "soft-button", onclick: move |_| cancelling.set(None), {crate::i18n::tr("กลับ")} }
+                }
+            }
+        }
+        if let Some(id) = inspecting() { if let Some(entry) = view.entries.iter().find(|e| e.id() == id) {
+            dialog { id: "transaction-details", class: "account-dialog", "aria-labelledby": "transaction-details-title",
+                onmounted: move |_| { let _ = document::eval("document.getElementById('transaction-details').showModal()"); },
+                oncancel: move |e| { e.prevent_default(); inspecting.set(None); },
+                div { class: "section-heading", h2 { id: "transaction-details-title", {crate::i18n::tr("ดูรายละเอียด")} } button { class: "icon-button", "aria-label": crate::i18n::tr("ปิดหน้าต่าง"), onclick: move |_| inspecting.set(None), Icon { name: "close", size: 20 } } }
+                if let Some((label, amount, account)) = entry_label(entry) {
+                    p { "{entry.date()} · {crate::i18n::tr(label)} · {account_label(&view, account)}" }
+                    strong { "{crate::i18n::currency_prefix()}{money_label(amount)}" }
+                }
+                if view.reversed.contains(&id) { p { class: "cancel-tag", {crate::i18n::tr("ยกเลิกแล้ว")} } }
+                p { class: "entry-note-body", "{entry.note().as_str()}" }
+                if let Some(tax) = entry.income_tax() { crate::income_tax::IncomeTaxSummary { tax } }
+                crate::entry_breakdown::EntryBreakdown { view: view.clone(), entry: entry.clone() }
+            }
+        } }
     }
 }

@@ -1,5 +1,7 @@
 # Original modern fantasy cast
 
+Historical artwork from 0.1.2. The current application uses [Lookhin's uncle crab](../uncle-crab/README.md); the files here are retained as design history.
+
 Created with Codex's built-in image generator for Ledgers Bro 0.1.2. The user's final direction was **new original kawaii anime characters**, followed by **Modern Fantasy outfits**. The user's black-haired original mascot and the earlier tanuki are not the identity reference for this cast.
 
 The generated Lumi portrait establishes the common linework and fashion vocabulary: soft pencil/digital ink grain, gentle pastel cel shading, charcoal urban jackets, ivory high collars, asymmetric short capes, silver constellation details and compact footwear. Each illustration was generated separately on a transparent background and inspected before use.

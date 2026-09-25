@@ -22,12 +22,14 @@ pub const LOCAL_MODEL_BYTES: u64 = 396_705_472;
 enum Work {
     Status,
     Install(LocalModelId),
+    Delete(LocalModelId),
     Settings,
     Propose(String),
 }
 enum Answer {
     Status(ModelAvailability),
     Installed,
+    Deleted,
     Settings(ModelSettingsSnapshot),
     Proposal(String),
 }
@@ -74,6 +76,13 @@ impl ModelWorker {
                         let spec = selected.info();
                         let path = directory.join(spec.filename);
                         match envelope.work {
+                            Work::Delete(id) => {
+                                if id == selected {
+                                    model = None;
+                                }
+                                remove_model(&directory, id)?;
+                                Ok(Answer::Deleted)
+                            }
                             Work::Status => Ok(Answer::Status(
                                 if verified(&path, &spec, &envelope.operation).is_ok() {
                                     ModelAvailability::Installed
@@ -164,6 +173,15 @@ impl ModelWorker {
         {
             Answer::Status(status) => Ok(status),
             _ => Err(model_error("อ่านสถานะ AI ไม่สำเร็จ")),
+        }
+    }
+    pub async fn delete(&self, id: LocalModelId) -> Result<(), AppError> {
+        match self
+            .request(Work::Delete(id), ModelOperation::default())
+            .await?
+        {
+            Answer::Deleted => Ok(()),
+            _ => Err(model_error("ลบโมเดลไม่สำเร็จ")),
         }
     }
     pub async fn install(&self, operation: ModelOperation) -> Result<(), AppError> {
@@ -385,4 +403,22 @@ fn settings_snapshot(directory: &Path, selected: LocalModelId) -> ModelSettingsS
             .collect(),
         device: device_snapshot(directory),
     }
+}
+
+fn remove_model(directory: &Path, id: LocalModelId) -> Result<(), AppError> {
+    let path = directory.join(id.info().filename);
+    if !path.exists() {
+        return Ok(());
+    }
+    let root = directory
+        .canonicalize()
+        .map_err(|_| model_error("เปิดโฟลเดอร์โมเดลไม่ได้"))?;
+    let resolved = path
+        .canonicalize()
+        .map_err(|_| model_error("ตรวจไฟล์โมเดลไม่ได้"))?;
+    if resolved.parent() != Some(root.as_path()) || !resolved.is_file() {
+        return Err(model_error("ไฟล์โมเดลอยู่นอกโฟลเดอร์ที่อนุญาต"));
+    }
+    std::fs::remove_file(&path)
+        .map_err(|_| model_error("ลบโมเดลไม่สำเร็จ กรุณาปิดการใช้งานโมเดลแล้วลองใหม่"))
 }

@@ -34,8 +34,8 @@ pub(crate) fn ModelProgress() -> Element {
             p { {crate::i18n::text("{0} วินาที · ประมวลผลบนเครื่องนี้", &[format!("{}", elapsed)])} }
             if tokens > 0 { small { {crate::i18n::text("กำลังเรียบเรียงคำตอบ…", &[])} } }
             if elapsed >= 10 { p { class: "field-hint", {crate::i18n::text("ครั้งแรกอาจใช้เวลาสักครู่ โดยเฉพาะบน Emulator ยกเลิกแล้วกรอกเองได้", &[])} } }
-            button { class: "soft-button", onclick: move |_| store.cancel_model(), {crate::i18n::text("ยกเลิกการอ่านรายการ", &[])} }
-            button { class: "text-button", onclick: move |_| store.new_entry(), Icon { name: "edit", size: 20 } {crate::i18n::text("ยกเลิกแล้วกรอกเอง", &[])} }
+            button { r#type: "button", class: "soft-button", onclick: move |_| store.cancel_model(), {crate::i18n::text("ยกเลิกการอ่านรายการ", &[])} }
+            button { r#type: "button", class: "text-button", onclick: move |_| store.new_entry(), Icon { name: "edit", size: 20 } {crate::i18n::text("ยกเลิกแล้วกรอกเอง", &[])} }
         }
     }
 }
@@ -58,7 +58,11 @@ fn fit_label(fit: ModelFit) -> &'static str {
 }
 
 #[component]
-pub(crate) fn ModelSettings(capturing: Signal<bool>) -> Element {
+pub(crate) fn ModelSettings(
+    capturing: Signal<bool>,
+    #[props(default = false)] allow_delete: bool,
+    #[props(default = false)] compact: bool,
+) -> Element {
     let mut store = use_context::<UiState>();
     let mut snapshot = use_signal(|| None::<ModelSettingsSnapshot>);
     let mut selected = use_signal(|| LocalModelId::Small);
@@ -87,23 +91,26 @@ pub(crate) fn ModelSettings(capturing: Signal<bool>) -> Element {
     let downloaded = data
         .as_ref()
         .is_some_and(|s| s.downloaded.contains(&selected()));
+    let action_icon = if downloaded { "check" } else { "download" };
     let fit = data
         .as_ref()
         .map(|s| model_fit(&spec, &s.device, !downloaded))
         .unwrap_or(ModelFit::Unknown);
     rsx! {
-        div { class: "model-settings",
+        div { class: if compact { "model-settings compact-model" } else { "model-settings" },
+            if !compact {
             h2 { {crate::i18n::tr("เลือก AI ในเครื่อง")} }
             p { class: "field-hint", {crate::i18n::tr("ข้อความประมวลผลในเครื่อง โมเดลที่เลือกใช้ร่วมกันทุกผู้ใช้บนอุปกรณ์นี้")} }
             if let Some(data) = &data {
                 p { {crate::i18n::tr("โมเดลที่ใช้อยู่")} strong { " · {data.selected.info().name}" } }
             }
-            label { r#for: "local-model-choice", {crate::i18n::tr("โมเดล")} }
+            }
+            label { class: if compact { "sr-only" } else { "" }, r#for: "local-model-choice", {crate::i18n::tr("โมเดล")} }
             select { id: "local-model-choice", value: selected().code(), disabled: checking() || operation.read().is_some() || *store.busy.read(),
                 onchange: move |e| { if let Some(id) = LocalModelId::from_code(&e.value()) { selected.set(id); message.set(String::new()); } },
-                for id in LocalModelId::ALL { option { value: id.code(), "{id.info().name} · {gib(id.info().bytes)}" } }
+                for id in LocalModelId::ALL { option { value: id.code(), "{id.info().name}" } }
             }
-            div { class: "model-device-summary",
+            if !compact { div { class: "model-device-summary",
                 p { {crate::i18n::tr("ขนาดดาวน์โหลด")} strong { "{gib(spec.bytes)}" } }
                 p { {crate::i18n::tr("RAM ที่โมเดลต้องใช้โดยประมาณ")} strong { "{gib(spec.working_memory_bytes)}" } }
                 if let Some(data) = &data {
@@ -111,29 +118,61 @@ pub(crate) fn ModelSettings(capturing: Signal<bool>) -> Element {
                     p { {crate::i18n::tr("พื้นที่ว่างสำหรับโมเดล")} strong { "{optional_gib(data.device.free_disk)}" } }
                 }
             }
+            if compact && let Some(data) = &data && data.selected != selected() {
+                p { class: "compact-model-note", {crate::i18n::tr("โมเดลที่ใช้อยู่")} " · {data.selected.info().name}" }
+            }
+            if compact && fit.blocked() {
+                p { class: "compact-model-note model-fit-note", "data-warning": true, {crate::i18n::tr(fit_label(fit))} }
+            }
             p { class: "model-fit-note", "data-warning": fit != ModelFit::FitsEstimate, {crate::i18n::tr(fit_label(fit))} }
             p { class: "field-hint", {crate::i18n::tr("รุ่นนี้ประมวลผลด้วย CPU โมเดลใหญ่จะช้าลง ค่าหน่วยความจำเป็นการประเมิน ไม่ใช่การรับประกันความเร็วหรือความแม่นยำ")} }
+            }
             if let Some(active) = operation.read().clone() {
                 ModelDownloadProgress { operation: active, total: spec.bytes }
-                button { class: "soft-button", onclick: move |_| { if let Some(active) = operation.peek().as_ref() { active.cancelled.store(true, Ordering::Relaxed); message.set(crate::i18n::tr("กำลังยกเลิกการดาวน์โหลด…")); } }, {crate::i18n::tr("ยกเลิกดาวน์โหลด")} }
+                button { r#type: "button", class: "soft-button", onclick: move |_| { if let Some(active) = operation.peek().as_ref() { active.cancelled.store(true, Ordering::Relaxed); message.set(crate::i18n::tr("กำลังยกเลิกการดาวน์โหลด…")); } }, {crate::i18n::tr("ยกเลิกดาวน์โหลด")} }
             } else {
                 div { class: "model-settings-actions",
-                    button { class: "primary", disabled: checking() || data.is_none() || fit.blocked() || *capturing.read() || *store.busy.read(), onclick: move |_| confirmation.set(true),
-                        if downloaded { {crate::i18n::tr("ตรวจไฟล์และใช้โมเดลนี้")} } else { {crate::i18n::tr("ดาวน์โหลดและใช้โมเดลนี้")} }
+                    button { r#type: "button", class: if compact { "icon-button" } else { "primary" }, title: crate::i18n::tr(if downloaded { "ตรวจไฟล์และใช้โมเดลนี้" } else { "ดาวน์โหลดและใช้โมเดลนี้" }), disabled: checking() || data.is_none() || fit.blocked() || *capturing.read() || *store.busy.read(), onclick: move |_| confirmation.set(true),
+                        if compact { Icon { name: action_icon, size: 18 } }
+                        span { class: if compact { "sr-only" } else { "" },
+                        if downloaded { {crate::i18n::tr("ตรวจไฟล์และใช้โมเดลนี้")} } else { {crate::i18n::tr("ดาวน์โหลดและใช้โมเดลนี้")} } }
                     }
-                    button { class: "soft-button", disabled: checking() || *store.busy.read(), onclick: move |_| {
+                    if !compact { button { r#type: "button", class: "soft-button", disabled: checking() || *store.busy.read(), onclick: move |_| {
                         checking.set(true);
                         spawn(async move { let gateway = store.gateway.peek().clone();
         match gateway.0.model_settings().await { Ok(value) => snapshot.set(Some(value)), Err(error) => message.set(error.to_string()) } checking.set(false); });
-                    }, {crate::i18n::tr("ตรวจเครื่องอีกครั้ง")} }
+                    }, {crate::i18n::tr("ตรวจเครื่องอีกครั้ง")} } }
                 }
             }
             if checking() { p { role: "status", {crate::i18n::tr("กำลังตรวจ AI ในเครื่อง…")} } }
+            if allow_delete && let Some(data) = &data {
+                section { class: "model-library",
+                    h3 { {crate::i18n::tr("โมเดลที่ดาวน์โหลดแล้ว")} }
+                    p { class: "field-hint", {crate::i18n::tr("ลบเฉพาะไฟล์โมเดล ข้อมูลบัญชียังอยู่ ถ้าลบโมเดลที่ใช้อยู่ให้เลือกโมเดลอื่นหรือดาวน์โหลดใหม่")} }
+                    for id in data.downloaded.iter().copied() {
+                        div { class: "setting-row", strong { "{id.info().name}" }
+                            button { r#type: "button", class: "danger-button", disabled: *store.busy.read(), onclick: move |_| {
+                                crate::confirmation::ask(format!("{}: {}", crate::i18n::tr("ลบโมเดล"), id.info().name), move |_| {
+                                    store.busy.set(true);
+                                    let gateway = store.gateway.peek().clone();
+                                    crate::state::spawn_session(async move {
+                                        let result = gateway.0.delete_model(id).await;
+                                        if result.is_ok() && let Ok(value) = gateway.0.model_settings().await && let Ok(mut target) = snapshot.try_write() { *target = Some(value); }
+                                        if let Ok(mut target) = message.try_write() { *target = match result { Ok(()) => crate::i18n::tr("ลบโมเดลแล้ว"), Err(e) => e.to_string() }; }
+                                        store.busy.set(false);
+                                    });
+                                });
+                            }, Icon { name: "trash", size: 18 } {crate::i18n::tr("ลบโมเดล")} }
+                        }
+                    }
+                }
+            }
             if !message.read().is_empty() { p { class: "field-hint", role: "status", "{message}" } }
-            details { class: "model-licenses", summary { {crate::i18n::tr("โมเดลและสัญญาอนุญาต")} }
+            if !compact { details { class: "model-licenses", summary { {crate::i18n::tr("โมเดลและสัญญาอนุญาต")} }
                 p { "Qwen3 · Q4_K_M · Apache-2.0 · llama.cpp (MIT)" }
                 a { href: spec.source, target: "_blank", rel: "noopener noreferrer", {crate::i18n::tr("ข้อมูลและสัญญาอนุญาตจากผู้เผยแพร่โมเดล")} }
             }
+        }
         }
         if confirmation() {
             dialog { id: "model-install-dialog", class: "account-dialog model-install-dialog", "aria-labelledby": "model-install-title",
@@ -145,7 +184,7 @@ pub(crate) fn ModelSettings(capturing: Signal<bool>) -> Element {
                 p { class: "model-fit-note", "data-warning": fit != ModelFit::FitsEstimate, {crate::i18n::tr(fit_label(fit))} }
                 p { {crate::i18n::tr("โมเดลเดิมจะยังอยู่ การเปลี่ยน AI ไม่เปลี่ยนข้อมูลบัญชี และต้องตรวจรายการก่อนบันทึกเสมอ")} }
                 div { class: "model-settings-actions",
-                    button { class: "primary", disabled: *store.busy.read() || fit.blocked(), onclick: move |_| {
+                    button { r#type: "button", class: "primary", disabled: *store.busy.read() || fit.blocked(), onclick: move |_| {
                         confirmation.set(false);
                         let id = selected(); let active = ModelOperation::default(); operation.set(Some(active.clone())); store.busy.set(true); message.set(String::new());
                         let gateway = store.gateway.peek().clone();
@@ -157,7 +196,7 @@ pub(crate) fn ModelSettings(capturing: Signal<bool>) -> Element {
                             store.busy.set(false);
                         });
                     }, {crate::i18n::tr("ยืนยันใช้โมเดลนี้")} }
-                    button { class: "soft-button", onclick: move |_| confirmation.set(false), {crate::i18n::tr("ยกเลิก")} }
+                    button { r#type: "button", class: "soft-button", onclick: move |_| confirmation.set(false), {crate::i18n::tr("ยกเลิก")} }
                 }
             }
         }
@@ -202,7 +241,7 @@ pub(crate) fn ModelChoices(source: String, drafts: Vec<ModelDraft>, view: Dashbo
                 p { {crate::i18n::text("วันที่: {0}", std::slice::from_ref(&draft.input.date))} }
                 if !draft.input.note.is_empty() { p { "{draft.input.note}" } }
                 p { class: "field-hint", "{draft.guidance}" }
-                button { class: "soft-button", disabled: *store.busy.read(), onclick: move |_| {
+                button { r#type: "button", class: "soft-button", disabled: *store.busy.read(), onclick: move |_| {
                     store.input.set(Some(draft.input.clone()));
                     store.guidance.set(draft.guidance.clone());
                     store.model_choices.set(None);
@@ -211,6 +250,6 @@ pub(crate) fn ModelChoices(source: String, drafts: Vec<ModelDraft>, view: Dashbo
               } }
             }
         }
-        button { class: "text-button", disabled: *store.busy.read(), onclick: move |_| store.new_entry(), {crate::i18n::text("ไม่ตรง · กรอกเอง", &[])} }
+        button { r#type: "button", class: "text-button", disabled: *store.busy.read(), onclick: move |_| store.new_entry(), {crate::i18n::text("ไม่ตรง · กรอกเอง", &[])} }
     }
 }

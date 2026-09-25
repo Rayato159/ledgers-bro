@@ -55,10 +55,10 @@ pub fn EntryToolbar(manual: bool) -> Element {
     let mut store = use_context::<UiState>();
     rsx! {
         div { class: "entry-toolbar",
-            div { class: "entry-mode", role: "group", "aria-label": tr("วิธีเพิ่มรายการ"),
+            div { class: "preferences-tabs entry-mode-tabs", role: "group", "aria-label": tr("วิธีเพิ่มรายการ"),
                 button { r#type: "button", "aria-pressed": !manual,
                     disabled: *store.busy.read(), onclick: move |_| store.page.set(Page::Chat),
-                    Icon { name: "chat", size: 19 } {tr("พิมพ์ prompt")}
+                    Icon { name: "chat", size: 19 } {tr("เขียนรายการ")}
                 }
                 button { r#type: "button", "aria-pressed": manual,
                     disabled: *store.busy.read(), onclick: move |_| {

@@ -5,28 +5,38 @@ use ledger_domain::Currency;
 
 #[component]
 pub fn SettingsPage(view: Dashboard) -> Element {
+    let capturing = use_signal(|| false);
     let store = use_context::<UiState>();
     let mut selected = use_signal(|| view.currency);
     let mut tab = store.settings_tab;
+    use_effect(move || {
+        let index = tab();
+        let _ = document::eval(&format!(
+            "document.getElementById('settings-tab-{index}')?.scrollIntoView({{block:'nearest',inline:'nearest'}})"
+        ));
+    });
     rsx! {
         section { class: "page-heading settings-page-heading", div { h1 { {text("ตั้งค่า", &[])} } p { class: "muted", {text("จัดสมุดบัญชีให้เป็นของเรา", &[])} } } }
         div { class: "preferences-page",
             div { class: "preferences-tabs", role: "tablist", "aria-label": text("หมวดการตั้งค่า", &[]),
                 onkeydown: move |e| {
                     let next = match e.key() {
-                        Key::ArrowDown | Key::ArrowRight => (tab() + 1) % 4,
-                        Key::ArrowUp | Key::ArrowLeft => (tab() + 3) % 4,
-                        Key::Home => 0, Key::End => 3, _ => return,
+                        Key::ArrowDown | Key::ArrowRight => (tab() + 1) % 7,
+                        Key::ArrowUp | Key::ArrowLeft => (tab() + 6) % 7,
+                        Key::Home => 0, Key::End => 6, _ => return,
                     };
                     e.prevent_default(); tab.set(next);
                     let _ = document::eval(&format!("document.getElementById('settings-tab-{next}').focus()"));
                 },
-                for (index, icon, label) in [(0, "settings", "ทั่วไป"), (1, "sun", "หน้าตา"), (2, "file", "ภาษี"), (3,"download","ข้อมูล")] {
+                for (index, icon, label) in [(0, "settings", "ทั่วไป"), (1, "sun", "หน้าตา"), (2, "file", "ภาษี"), (3,"download","ข้อมูล"), (4,"refresh","อัปเดตแอป"), (5,"bell","การแจ้งเตือน"), (6,"settings","AI ในเครื่อง")] {
                     button { id: "settings-tab-{index}", r#type: "button", role: "tab", "aria-selected": tab() == index, "aria-controls": "settings-panel-{index}", tabindex: if tab() == index { "0" } else { "-1" }, onclick: move |_| tab.set(index),
                         Icon { name: icon, size: 19 } {text(label, &[])}
                     }
                 }
             }
+            section { id: "settings-panel-4", class: "preferences-panel", role: "tabpanel", "aria-labelledby": "settings-tab-4", hidden: tab() != 4, crate::updates::UpdateSettings {} }
+            section { id: "settings-panel-5", class: "preferences-panel", role: "tabpanel", "aria-labelledby": "settings-tab-5", hidden: tab() != 5, crate::notifications::NotificationSettings {} }
+            section { id: "settings-panel-6", class: "preferences-panel", role: "tabpanel", "aria-labelledby": "settings-tab-6", hidden: tab() != 6, if tab() == 6 { crate::model::ModelSettings { capturing, allow_delete: true } } }
             section { id: "settings-panel-0", class: "preferences-panel", role: "tabpanel", "aria-labelledby": "settings-tab-0", hidden: tab() != 0, tabindex: "0",
                 h2 { class: "preferences-section-title", {text("ทั่วไป", &[])} }
                 div { class: "settings-group",
@@ -60,7 +70,7 @@ pub fn SettingsPage(view: Dashboard) -> Element {
                 div { class: "settings-group",
                     div { class: "setting-row",
                         div { class: "setting-copy", h3 { {text("เปิดฟีเจอร์ภาษีไทย", &[])} } p { {crate::i18n::literal("เฉพาะภาษีบุคคลธรรมดาไทยและยอด THB ปิดได้หากไม่ใช้ภาษีไทย สกุลเงินอื่นจะปิดไว้เสมอ")} } }
-                        input { class: "settings-switch", r#type: "checkbox", role: "switch", "aria-label": text("เปิดฟีเจอร์ภาษีไทย", &[]), checked: view.thai_tax_enabled, disabled: view.currency != Currency::Thb || *store.busy.read(), onchange: move |e| store.send(Command::SetThaiTaxEnabled(e.checked())) }
+                        button { class: "preference-switch", r#type: "button", role: "switch", "aria-label": text("เปิดฟีเจอร์ภาษีไทย", &[]), "aria-checked": view.thai_tax_enabled, disabled: view.currency != Currency::Thb || *store.busy.read(), onclick: move |_| store.send(Command::SetThaiTaxEnabled(!view.thai_tax_enabled)), span { class: "preference-switch-track", "aria-hidden": "true", span { class: "preference-switch-thumb" } } }
                     }
                     div { class: "setting-row",
                         div { class: "setting-copy", h3 { "Open source" } p { {text("ฟีเจอร์นี้รองรับประเทศไทยเท่านั้น หากต้องการภาษีประเทศอื่น สามารถ clone repo แล้วพัฒนาต่อได้ภายใต้ MIT License", &[])} } }

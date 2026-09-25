@@ -111,7 +111,7 @@ pub(crate) fn PromptReview(source: String, drafts: Vec<PromptDraft>, view: Dashb
                           let display = if value.is_empty() { String::new() } else { prompt_display_value(&state_from_dashboard(&view), field.kind, &value) };
                           let key = field.key;
                           rsx! {
-                            label { r#for: "prompt-{index}-{key}", "{field.label}" if field.required { " *" } }
+                            label { r#for: "prompt-{index}-{key}", "{crate::i18n::tr(field.label)}" if field.required { " *" } }
                             input { id: "prompt-{index}-{key}", value: display,
                                 r#type: match field.kind { PromptFieldType::Date => "date", PromptFieldType::Month => "month", _ => "text" },
                                 inputmode: if field.kind == PromptFieldType::Money { "decimal" } else { "text" },

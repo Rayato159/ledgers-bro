@@ -6,14 +6,22 @@ An open-source, local-first ledger built with **Rust + Dioxus + SQLite**. Thai /
 
 ## Download & install 📦
 
-Download **[0.1.4](https://github.com/Rayato159/ledgers-bro/releases/tag/v0.1.4)**. No Rust or build tools needed to try the packaged apps.
+Download **[0.1.5](https://github.com/Rayato159/ledgers-bro/releases/tag/v0.1.5)**. No Rust or build tools needed to try the packaged apps.
 
 - **Windows x64:** install the `.msi`, or extract the portable `.zip` and open `ledgers-bro.exe` inside it. Keep its `ocr` and `licenses` folders alongside the executable.
 - **Android phone:** use the **arm64** `.apk`. This is an experimental, debug-signed test app, not a Play Store build.
 - **Android emulator:** use the **x86_64** `.apk` for an x86_64 virtual device.
 - **macOS / Linux / iOS:** no ready-to-install packages announced yet.
 
-The release includes SHA-256 checksums. Windows packages include receipt OCR; download the optional local AI model inside the app. Windows packages are not code-signed. Upgrade the existing app in place; do not uninstall the Android app or clear its storage. Version 0.1.4 adds grouped pages, clearer bill editing, expense drilldowns, monthly bill charts and selectable local Qwen3 models. It keeps existing users, passwords and ledger data. The financial ledger remains at schema 10 and the user registry at version 2. See [what changed and how to update](docs/update-0.1.4.md), [local model selection](docs/local-model-selection.md), [local users](docs/local-users-th.md), and [CSV / device migration](docs/data-transfer-th.md). Keep a pre-update backup if you need to roll back. The source code below is for building it yourself. 🛠️
+The release includes SHA-256 checksums. Windows packages include receipt OCR; download the optional local AI model inside the app. Windows packages are not code-signed. Upgrade the existing app in place; do not uninstall the Android app or clear its storage. Version 0.1.5 adds in-app updates, reminders, clearer editing and quick entry, and the original uncle crab mascot. It keeps existing users, passwords and ledger data. The financial ledger remains at schema 10 and the user registry at version 2. See [what changed and how to update](docs/update-0.1.5.md), [local model selection](docs/local-model-selection.md), [local users](docs/local-users-th.md), and [CSV / device migration](docs/data-transfer-th.md). Keep a pre-update backup if you need to roll back. The source code below is for building it yourself. 🛠️
+
+## Version 0.1.5 highlights
+
+- The app's mascot is now Lookhin's original uncle crab: a cheeky, kind, thrifty salaryman. Six colored poses appear in the existing page branding, login and empty states, with matching Windows and Android launcher icons. [Artwork, credits and generation prompts](design/uncle-crab/README.md).
+- Settings can check the latest public GitHub release, download the matching Windows MSI or Android APK, and verify its SHA-256 before opening the system installer. Installation requires OS confirmation. Android also checks the package identity, signing certificate, and version. Update the existing installation to retain data; uninstalling or clearing Android storage removes local data.
+- A bell collects new-version, unpaid-bill, and collection reminders. Notification preferences and read status belong to each local user. Optional device banners omit amounts and debtor names. Reminders currently run while the app is open.
+- Quick entry has Write / Manual tabs, compact receipt and voice controls, a model selector, and prompt examples in a dialog. Parsed entries open as review cards before anything is saved. Downloaded models can be removed in Settings.
+- Editing asks for confirmation and reloads the latest ledger after a successful save. Bill amounts show their percentage of the monthly plan, separate from the count of paid bills. Linked credit-card payments show their allocation to recorded charges; unlinked legacy amounts cannot reconstruct missing purchase details.
 
 ## The receipts 📸
 

@@ -245,9 +245,12 @@ pub(crate) fn CryptoHoldingsDialog(account: Account) -> Element {
                 };
                 let expected = expected.clone();
                 let gateway = store.gateway.peek().clone();
+                crate::confirmation::ask(format!("{}\nBTC: {}\nSOL: {}", expected.name().as_str(), bitcoin(), solana()), move |_| {
+                let gateway = gateway.clone();
+                let expected = expected.clone();
                 store.busy.set(true);
                 error.set(None);
-                spawn(async move {
+                crate::state::spawn_session(async move {
                     match gateway.0.request(Command::SetCryptoHoldings { expected, holdings }).await {
                         Ok(_) => {
                             match gateway.0.request(Command::Load).await {
@@ -262,6 +265,7 @@ pub(crate) fn CryptoHoldingsDialog(account: Account) -> Element {
                         Err(e) => error.set(Some(e.to_string())),
                     }
                     store.busy.set(false);
+                });
                 });
             },
                 div { class: "section-heading", h2 { id: "crypto-title", "{account.name().as_str()}" }

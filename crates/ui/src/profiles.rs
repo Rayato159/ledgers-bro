@@ -207,11 +207,16 @@ fn EditProfile(session: ProfileSession, onclose: EventHandler) -> Element {
                 e.prevent_default();if busy(){return;}
                 if password()!=confirm(){error.set(Some(tr("รหัสผ่านทั้งสองช่องไม่ตรงกัน")));return;}
                 let command=ProfileCommand::Edit {token:session.token.clone(),username:username(),current_password:current(),new_password:(!password().is_empty()).then_some(password())};
+                let mut command = Some(command);
+                let gateway = gateway.clone();
+                crate::confirmation::ask(format!("{}: {}", tr("ชื่อผู้ใช้"), username()), move |_| {
+                let Some(command) = command.take() else { return; };
                 let gateway=gateway.clone();busy.set(true);error.set(None);
                 spawn(async move{
                     let result=gateway.0.profiles(command).await;
                     current.set(String::new());password.set(String::new());confirm.set(String::new());busy.set(false);
                     match result {Ok(ProfileResponse::Authenticated(s))=>{state.session.set(Some(s));onclose.call(());},Err(e)=>error.set(Some(tr(&e.to_string()))),_=>{}}
+                });
                 });
             },
                 div {class:"section-heading",h2 {id:"profile-title",{tr("แก้ไขผู้ใช้")}} button {class:"icon-button",r#type:"button",disabled:busy(),onclick:move |_|onclose.call(()),"aria-label":tr("ปิด"),Icon {name:"close",size:20}}}

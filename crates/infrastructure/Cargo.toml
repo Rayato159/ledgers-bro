@@ -19,6 +19,7 @@ image = { version = "0.25.10", default-features = false, features = ["png", "jpe
 tempfile = "3"
 sysinfo = { version = "=0.37.2", default-features = false, features = ["system", "apple-app-store"] }
 fs2 = "0.4"
+semver = "1"
 llama-cpp-2 = { version = "=0.1.156", default-features = false, features = ["android-static-stdcxx"] }
 encoding_rs = "0.8"
 argon2 = "0.5.3"

@@ -133,11 +133,12 @@ pub(crate) fn RecurringPage(view: Dashboard) -> Element {
                 button { class: "text-button", "aria-label": crate::i18n::text("เดือนถัดไป", &[]), onclick: move |_| { if let Ok(next) = month().shifted(1) { month.set(next); } }, "→" }
             }
             div { class: "debt-summary-visual",
-                crate::debt_visuals::ProgressRing { done: recorded as i64, total: summary.items.len() as i64, label: crate::i18n::text("บันทึกแล้ว", &[]) }
+                crate::debt_visuals::ProgressRing { done: recorded as i64, total: summary.items.len() as i64, label: crate::i18n::tr("จำนวนรายการที่บันทึกแล้ว") }
                 div { class: "debt-summary-bars",
-                    crate::debt_visuals::AmountBar { label: crate::i18n::text("ยอดตามแผน", &[]), amount: summary.planned, maximum, tone: "plan" }
-                    crate::debt_visuals::AmountBar { label: crate::i18n::text("ยอดที่บันทึกแล้ว", &[]), amount: summary.paid, maximum, tone: "paid" }
-                    crate::debt_visuals::AmountBar { label: crate::i18n::text("ยังไม่บันทึกจ่าย", &[]), amount: summary.pending, maximum, tone: "due" }
+                    crate::debt_visuals::AmountBar { label: crate::i18n::text("ยอดตามแผน", &[]), amount: summary.planned, maximum, tone: "plan", percent_of: summary.planned.minor() }
+                    crate::debt_visuals::AmountBar { label: crate::i18n::text("ยอดที่บันทึกแล้ว", &[]), amount: summary.paid, maximum, tone: "paid", percent_of: summary.planned.minor() }
+                    crate::debt_visuals::AmountBar { label: crate::i18n::text("ยังไม่บันทึกจ่าย", &[]), amount: summary.pending, maximum, tone: "due", percent_of: summary.planned.minor() }
+                    p { class: "field-hint", {crate::i18n::tr("เปอร์เซ็นต์ยอดเงินเทียบกับยอดตามแผนของเดือนนี้ ยอดจ่ายจริงอาจต่างจากแผน")} }
                 }
                 div { class: "debt-summary-callout", Icon { name: "calendar", size: 28 }
                     strong { "{overdue}" } span { {crate::i18n::text("รายการเลยกำหนด", &[])} }
@@ -166,6 +167,7 @@ pub(crate) fn RecurringPage(view: Dashboard) -> Element {
                             }
                         }
                         div { class: "recurring-item-actions", strong { "{crate::i18n::currency_prefix()}{money_label(schedule.amount().money())}" }
+                            small { class: "muted", "{crate::debt_visuals::ratio_label(schedule.amount().money().minor(), summary.planned.minor())} " {crate::i18n::tr("ของยอดตามแผน")} }
                             span { class: "obligation-status", "data-overdue": item.paid_entry.is_none() && item.due < view.today, "{occurrence_status(item, &view)}" }
                             div { class: "obligation-buttons",
                                 button { class: "soft-button", disabled: *store.busy.read(), "aria-haspopup": "dialog", onclick: move |_| {
@@ -449,6 +451,25 @@ fn RecurringFields(
     let mut manual_start = use_signal(|| baseline.is_some());
     let is_edit = baseline.is_some();
     let today = view.today;
+    let minimum_month = baseline
+        .as_ref()
+        .map(|s| s.due().start().to_string())
+        .unwrap_or_else(|| "1900-01".into());
+    let maximum_month = baseline
+        .as_ref()
+        .and_then(|s| {
+            let stopped = s.stopped_from().and_then(|m| m.shifted(-1).ok());
+            let finite = s
+                .due()
+                .installments()
+                .and_then(|n| s.due().start().shifted(n as i32 - 1).ok());
+            match (stopped, finite) {
+                (Some(a), Some(b)) => Some(a.min(b)),
+                (a, b) => a.or(b),
+            }
+        })
+        .map(|m| m.to_string())
+        .unwrap_or_else(|| "9999-12".into());
     rsx! {
                     fieldset { disabled: *store.busy.read(), class: "recurring-fields",
                         div { label { r#for: "{prefix}-rec-name", {crate::i18n::text("ชื่อค่าใช้จ่าย", &[])} } input { id: "{prefix}-rec-name", required: true, maxlength: 60, placeholder: crate::i18n::text("เช่น ค่าเช่าห้อง", &[]), value: form.read().name.clone(), oninput: move |e| form.write().name = e.value() } }
@@ -460,7 +481,7 @@ fn RecurringFields(
                             }
                             form.write().day = day;
                         } } }
-                        div { label { r#for: "{prefix}-rec-start", {crate::i18n::tr(if baseline.is_some() { "เริ่มใช้การแก้ไขตั้งแต่งวด (ค.ศ.)" } else { "เริ่มงวดเดือน (ค.ศ.)" })} } input { id: "{prefix}-rec-start", r#type: "month", min: "1900-01", max: "9999-12", required: true, value: form.read().start.clone(), onchange: move |e| {
+                        div { label { r#for: "{prefix}-rec-start", {crate::i18n::tr(if baseline.is_some() { "เริ่มใช้การแก้ไขตั้งแต่งวด (ค.ศ.)" } else { "เริ่มงวดเดือน (ค.ศ.)" })} } input { id: "{prefix}-rec-start", r#type: "month", min: minimum_month, max: maximum_month, required: true, value: form.read().start.clone(), onchange: move |e| {
                 let start = e.value();
                 manual_start.set(true);
                     if let (Some(schedule), Ok(month)) = (&baseline, start.parse::<Month>()) {

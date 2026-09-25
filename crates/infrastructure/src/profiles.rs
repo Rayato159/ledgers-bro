@@ -405,4 +405,13 @@ impl ProfileWorker {
             })?;
         receiver.await.map_err(|_| AppError::WorkerStopped)?
     }
+    pub fn profile_key(&self, token: &str) -> Result<String, AppError> {
+        self.active
+            .lock()
+            .map_err(|_| profile_error())?
+            .as_ref()
+            .filter(|a| a.session.token == token && a.active.load(Ordering::Acquire))
+            .map(|a| a.session.profile.id.clone())
+            .ok_or_else(login_required)
+    }
 }

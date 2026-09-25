@@ -1,4 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+mod system_integration;
 
 use dioxus::{
     desktop::{Config, LogicalSize, WindowBuilder},
@@ -15,12 +16,65 @@ use std::{
 };
 
 struct DesktopGateway {
+    directory: PathBuf,
+    updater: ledger_infrastructure::AppUpdater,
+    alerts: Option<ledger_infrastructure::AlertStore>,
     worker: Option<LedgerWorker>,
     profiles: ledger_infrastructure::ProfileWorker,
     model: ModelWorker,
     ocr: TesseractOcr,
 }
 impl UiGateway for DesktopGateway {
+    fn supports_updates(&self) -> bool {
+        cfg!(all(target_os = "windows", target_arch = "x86_64"))
+    }
+    fn check_update(&self) -> UiFuture<ledger_application::UpdateCheck> {
+        let updater = self.updater.clone();
+        Box::pin(async move { updater.check().await })
+    }
+    fn download_update(
+        &self,
+        release: ledger_application::AppRelease,
+        operation: ledger_application::UpdateOperation,
+    ) -> UiFuture<()> {
+        let updater = self.updater.clone();
+        Box::pin(async move { updater.download(release, operation).await })
+    }
+    fn install_update(&self) -> UiFuture<ledger_application::UpdateInstall> {
+        let updater = self.updater.clone();
+        Box::pin(async move {
+            let (path, _) = updater.installer().await?;
+            system_integration::install(&path)?;
+            Ok(ledger_application::UpdateInstall::InstallerOpened)
+        })
+    }
+    fn close_after_update(&self) {
+        std::process::exit(0);
+    }
+    fn alert_preferences(&self) -> UiFuture<ledger_application::AlertPreferences> {
+        let alerts = self.alerts.clone();
+        Box::pin(async move {
+            alerts
+                .ok_or_else(ledger_application::login_required)?
+                .load()
+                .await
+        })
+    }
+    fn save_alert_preferences(&self, prefs: ledger_application::AlertPreferences) -> UiFuture<()> {
+        let alerts = self.alerts.clone();
+        Box::pin(async move {
+            alerts
+                .ok_or_else(ledger_application::login_required)?
+                .save(prefs)
+                .await
+        })
+    }
+    fn enable_system_notifications(&self) -> UiFuture<bool> {
+        Box::pin(async { system_integration::enable_notifications() })
+    }
+    fn system_notification(&self, title: String, body: String) -> UiFuture<()> {
+        Box::pin(async move { system_integration::notify(&title, &body) })
+    }
     fn profiles(
         &self,
         command: ledger_application::ProfileCommand,
@@ -30,6 +84,12 @@ impl UiGateway for DesktopGateway {
     }
     fn authenticated(&self, token: &str) -> Result<Gateway, AppError> {
         Ok(Gateway(Arc::new(Self {
+            directory: self.directory.clone(),
+            updater: self.updater.clone(),
+            alerts: Some(ledger_infrastructure::AlertStore::new(
+                &self.directory,
+                &self.profiles.profile_key(token)?,
+            )?),
             worker: Some(self.profiles.ledger(token)?),
             profiles: self.profiles.clone(),
             model: self.model.clone(),
@@ -46,6 +106,10 @@ impl UiGateway for DesktopGateway {
     fn install_model(&self, operation: ModelOperation) -> UiFuture<()> {
         let model = self.model.clone();
         Box::pin(async move { model.install(operation).await })
+    }
+    fn delete_model(&self, id: ledger_application::LocalModelId) -> UiFuture<()> {
+        let model = self.model.clone();
+        Box::pin(async move { model.delete(id).await })
     }
     fn model_settings(&self) -> UiFuture<ledger_application::ModelSettingsSnapshot> {
         let model = self.model.clone();
@@ -316,6 +380,13 @@ fn launch() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
     let gateway = Gateway(Arc::new(DesktopGateway {
+        directory: directory.clone(),
+        updater: ledger_infrastructure::AppUpdater::new(
+            directory.join("updates"),
+            env!("CARGO_PKG_VERSION").into(),
+            ledger_application::UpdatePlatform::WindowsX64,
+        ),
+        alerts: None,
         worker: None,
         profiles,
         model: ModelWorker::start(model_directory.unwrap_or_else(|| directory.join("models")))?,

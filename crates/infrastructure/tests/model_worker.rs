@@ -244,3 +244,27 @@ fn model_fit_distinguishes_capacity_current_pressure_and_unknown_device() {
     }
     assert!(LocalModelId::from_code("../../arbitrary-model").is_none());
 }
+
+#[test]
+fn deleting_a_catalog_model_keeps_other_models_and_ledger_files() {
+    let directory = tempfile::tempdir().expect("dir");
+    let selected = directory.path().join(LocalModelId::Small.info().filename);
+    let other = directory.path().join(LocalModelId::Compact.info().filename);
+    let ledger = directory.path().join("ledger.sqlite3");
+    for file in [&selected, &other, &ledger] {
+        std::fs::write(file, b"synthetic fixture").expect("fixture");
+    }
+    let worker = ModelWorker::start(directory.path().to_owned()).expect("worker");
+    block_on(worker.delete(LocalModelId::Small)).expect("delete");
+    assert!(!selected.exists());
+    assert_eq!(
+        std::fs::read(other).expect("other model"),
+        b"synthetic fixture"
+    );
+    assert_eq!(std::fs::read(ledger).expect("ledger"), b"synthetic fixture");
+    assert_eq!(
+        block_on(worker.availability()).expect("status"),
+        ModelAvailability::Missing
+    );
+    block_on(worker.delete(LocalModelId::Small)).expect("idempotent delete");
+}

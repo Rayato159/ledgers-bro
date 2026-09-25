@@ -44,6 +44,7 @@ pub fn PagePanel(
 #[component]
 pub fn Icon(name: &'static str, size: u32) -> Element {
     let path = match name {
+        "bell" => "M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4",
         "sun" => {
             "M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0ZM12 2v2M12 20v2M2 12h2M20 12h2M5 5l1 1M18 18l1 1M5 19l1-1M18 6l1-1"
         }
@@ -134,7 +135,9 @@ pub fn entry_label(entry: &JournalEntry) -> Option<(&'static str, Money, Account
 
 #[component]
 pub fn EmptyState(title: String, body: String) -> Element {
-    rsx! { div { class: "empty-state", Icon { name: "wallet", size: 34 } h3 { "{crate::i18n::tr(&title)}" } p { "{crate::i18n::tr(&body)}" } } }
+    let host = use_context::<crate::HostInfo>();
+    let store = use_context::<UiState>();
+    rsx! { div { class: "empty-state", img { class: "empty-mascot", src: host.art.for_page((store.page)()).to_owned(), alt: "", loading: "lazy" } h3 { "{crate::i18n::tr(&title)}" } p { "{crate::i18n::tr(&body)}" } } }
 }
 
 #[component]
@@ -145,5 +148,5 @@ pub fn PrivacyNote() -> Element {
 #[component]
 pub fn NewEntryButton() -> Element {
     let mut store = use_context::<UiState>();
-    rsx! { button { class: "primary add-entry-button", disabled: *store.busy.read() && store.model_operation.read().is_none(), onclick: move |_| store.page.set(crate::state::Page::Chat), Icon { name: "plus", size: 19 } {crate::i18n::tr("เพิ่มรายการ")} } }
+    rsx! { button { class: "primary add-entry-button", "aria-label": crate::i18n::tr("เพิ่มรายการ"), disabled: *store.busy.read() && store.model_operation.read().is_none(), onclick: move |_| store.page.set(crate::state::Page::Chat), Icon { name: "plus", size: 19 } span { {crate::i18n::tr("เพิ่มรายการ")} } } }
 }

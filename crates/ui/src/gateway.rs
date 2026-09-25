@@ -12,6 +12,35 @@ pub type ReceiptScan = (String, Result<(ReceiptImage, String), AppError>);
 
 pub type UiFuture<T> = Pin<Box<dyn Future<Output = Result<T, AppError>> + Send>>;
 pub trait UiGateway: Send + Sync {
+    fn supports_updates(&self) -> bool {
+        false
+    }
+    fn check_update(&self) -> UiFuture<ledger_application::UpdateCheck> {
+        Box::pin(async { Err(AppError::WorkerStopped) })
+    }
+    fn download_update(
+        &self,
+        _release: ledger_application::AppRelease,
+        _operation: ledger_application::UpdateOperation,
+    ) -> UiFuture<()> {
+        Box::pin(async { Err(AppError::WorkerStopped) })
+    }
+    fn install_update(&self) -> UiFuture<ledger_application::UpdateInstall> {
+        Box::pin(async { Err(AppError::WorkerStopped) })
+    }
+    fn close_after_update(&self) {}
+    fn alert_preferences(&self) -> UiFuture<ledger_application::AlertPreferences> {
+        Box::pin(async { Ok(Default::default()) })
+    }
+    fn save_alert_preferences(&self, _prefs: ledger_application::AlertPreferences) -> UiFuture<()> {
+        Box::pin(async { Ok(()) })
+    }
+    fn enable_system_notifications(&self) -> UiFuture<bool> {
+        Box::pin(async { Ok(false) })
+    }
+    fn system_notification(&self, _title: String, _body: String) -> UiFuture<()> {
+        Box::pin(async { Ok(()) })
+    }
     fn profiles(
         &self,
         _command: ledger_application::ProfileCommand,
@@ -26,6 +55,9 @@ pub trait UiGateway: Send + Sync {
     }
     fn model_availability(&self) -> UiFuture<ModelAvailability> {
         Box::pin(async { Ok(ModelAvailability::Missing) })
+    }
+    fn delete_model(&self, _id: ledger_application::LocalModelId) -> UiFuture<()> {
+        Box::pin(async { Err(AppError::WorkerStopped) })
     }
     fn install_model(&self, _operation: ModelOperation) -> UiFuture<()> {
         Box::pin(async {
@@ -121,6 +153,7 @@ pub struct ArtAssets {
     pub history: String,
     pub calendar: String,
     pub tax: String,
+    pub off_duty: String,
 }
 
 impl ArtAssets {
@@ -128,13 +161,27 @@ impl ArtAssets {
     pub fn bundled() -> Self {
         use base64::{Engine, engine::general_purpose::STANDARD};
         let encode = |bytes: &[u8]| format!("data:image/png;base64,{}", STANDARD.encode(bytes));
+        let hero = encode(include_bytes!("../assets/uncle-crab/hero.png"));
         Self {
-            hero: encode(include_bytes!("../assets/characters/lumi.png")),
-            phone: encode(include_bytes!("../assets/characters/ren.png")),
-            accounts: encode(include_bytes!("../assets/characters/mint.png")),
-            history: encode(include_bytes!("../assets/characters/peach.png")),
-            calendar: encode(include_bytes!("../assets/characters/skye.png")),
-            tax: encode(include_bytes!("../assets/characters/iris.png")),
+            accounts: hero.clone(),
+            hero,
+            phone: encode(include_bytes!("../assets/uncle-crab/phone.png")),
+            history: encode(include_bytes!("../assets/uncle-crab/history.png")),
+            calendar: encode(include_bytes!("../assets/uncle-crab/calendar.png")),
+            tax: encode(include_bytes!("../assets/uncle-crab/tax.png")),
+            off_duty: encode(include_bytes!("../assets/uncle-crab/off-duty.png")),
+        }
+    }
+
+    pub fn for_page(&self, page: crate::state::Page) -> &str {
+        use crate::state::Page;
+        match page {
+            Page::Overview | Page::Accounts => &self.hero,
+            Page::Chat | Page::Receivables => &self.phone,
+            Page::Manual | Page::Transactions => &self.history,
+            Page::Recurring => &self.calendar,
+            Page::Tax => &self.tax,
+            Page::Settings => &self.off_duty,
         }
     }
 }

@@ -23,6 +23,11 @@ typealias BuildConfig = BuildConfig
 
 // Platform adapter only. Accounting and CSV serialization remain in Rust.
 class MainActivity : WryActivity() {
+    private val systemFeatures by lazy { AppSystemFeatures(this) }
+    @Keep fun appVersion(): String = BuildConfig.VERSION_NAME
+    @Keep fun installUpdate(path: String): Int = systemFeatures.install(path)
+    @Keep fun enableNotifications(): Boolean = systemFeatures.enableNotifications()
+    @Keep fun showNotification(title: String, body: String): Boolean = systemFeatures.notify(title, body)
     private val voice by lazy { OnDeviceVoiceInput(this) }
     private val receipts by lazy { OnDeviceReceiptInput(this) }
     @Keep fun beginReceipt(id: Long): Boolean = receipts.begin(id)

@@ -12,6 +12,8 @@ use ledger_application::Command;
 #[component]
 pub fn App() -> Element {
     use_context_provider(|| SessionTaskScope(dioxus::dioxus_core::current_scope_id()));
+    let confirmations = use_signal(|| None);
+    use_context_provider(|| crate::confirmation::Confirmations(confirmations));
     let mut preferences = use_signal(ledger_application::UserPreferences::default);
     use_context_provider(|| crate::theme::Theme(preferences));
     let mut language = use_signal(crate::i18n::Language::default);
@@ -74,6 +76,8 @@ pub fn App() -> Element {
         repayment_selection: use_signal(|| None),
     };
     use_context_provider(|| store);
+    let updates = crate::updates::use_updates();
+    crate::notifications::use_notifications(store, updates);
     let market = crate::crypto::use_crypto_market(store);
     use_effect(move || store.send(Command::Load));
     let page = *store.page.read();
@@ -90,11 +94,11 @@ pub fn App() -> Element {
         div { class: "app-shell",
             header { class: "topbar",
                 button { class: "brand", disabled:*store.busy.read(), onclick: move |_| store.page.set(Page::Overview),
-                    span { class: "brand-mark character-brand", img {src:host.art.hero.clone(),alt:""} }
+                    span { class: "brand-mark character-brand", img {src:host.art.for_page(page).to_owned(),alt:""} }
                     span { strong { "ledgers" } span { class: "brand-bro", "bro." } }
                 }
                 crate::navigation::Navigation { show_tax }
-                div { class: "top-actions", NewEntryButton {} }
+                div { class: "top-actions", crate::notifications::NotificationBell {} NewEntryButton {} }
             }
             main {
                 div { class: "ledger-context",
@@ -134,6 +138,7 @@ pub fn App() -> Element {
             if let Some(deletion) = store.account_deletion.read().clone() {
                 crate::account_deletion::DeleteAccountDialog { deletion }
             }
+            crate::confirmation::ConfirmationAlert {}
         }
     }
 }

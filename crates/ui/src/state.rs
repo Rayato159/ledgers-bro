@@ -404,7 +404,60 @@ impl UiState {
             cancel.store(true, Ordering::Relaxed);
         }
     }
-    pub fn send(mut self, command: Command) {
+    pub fn send(self, command: Command) {
+        let details = match &command {
+            Command::EditRecurring { expected, input } => Some(format!(
+                "{}\n{} → {}\n{} {} → {}\n{}: {} → {}\n{}: {}",
+                crate::i18n::tr("แก้ไขแผน"),
+                expected.name().as_str(),
+                input.name,
+                crate::i18n::currency_prefix(),
+                expected.amount().money(),
+                input.amount,
+                crate::i18n::tr("วันที่"),
+                expected.due().day(),
+                input.day,
+                crate::i18n::tr("เริ่มใช้การแก้ไขตั้งแต่งวด (ค.ศ.)"),
+                input.start
+            )),
+            Command::SetRecurringInstallments { installments, .. } => Some(format!(
+                "{}: {}",
+                crate::i18n::tr("จำนวนงวดทั้งหมด (นับจากเดือนเริ่ม)"),
+                installments
+                    .clone()
+                    .unwrap_or_else(|| crate::i18n::tr("ไม่กำหนดจำนวนงวด"))
+            )),
+            Command::SetCreditCycle { expected, cycle } => Some(format!(
+                "{}\n{}: {}\n{}: {}",
+                expected.name().as_str(),
+                crate::i18n::tr("วันตัดรอบบิล"),
+                cycle.closing_day(),
+                crate::i18n::tr("วันครบกำหนดชำระ"),
+                cycle.payment_day()
+            )),
+            Command::SetCurrency(currency) => Some(format!(
+                "{}: {}",
+                crate::i18n::tr("สกุลเงินสมุดบัญชี"),
+                currency.code()
+            )),
+            Command::SetThaiTaxEnabled(enabled) => Some(format!(
+                "{}: {}",
+                crate::i18n::tr("ฟีเจอร์ภาษีไทย"),
+                crate::i18n::tr(if *enabled {
+                    "เปิด"
+                } else {
+                    "ปิด"
+                })
+            )),
+            _ => None,
+        };
+        if let Some(details) = details {
+            crate::confirmation::ask(details, move |_| self.send_confirmed(command.clone()));
+        } else {
+            self.send_confirmed(command);
+        }
+    }
+    pub(crate) fn send_confirmed(mut self, command: Command) {
         if *self.busy.peek() {
             return;
         }
@@ -421,6 +474,8 @@ impl UiState {
         let recurring_change = matches!(
             &command,
             Command::AddRecurring(_)
+                | Command::EditRecurring { .. }
+                | Command::SetCryptoHoldings { .. }
                 | Command::SetCreditCycle { .. }
                 | Command::CreateReceivable(_)
                 | Command::ReceiveRepayment(_)
@@ -537,7 +592,24 @@ impl UiState {
                     self.notice
                         .set(Some((true, "กรุณาใช้เมนูนำเข้าและสำรองข้อมูล".into())));
                 }
-                Err(error) => self.notice.set(Some((true, error.to_string()))),
+                Err(error) => {
+                    let stale = matches!(
+                        &error,
+                        AppError::Storage(
+                            StorageError::RecurringChanged
+                                | StorageError::CryptoHoldingsChanged
+                                | StorageError::CreditCycleChanged
+                                | StorageError::ReceivableChanged
+                        )
+                    );
+                    if stale
+                        && let Ok(Response::Dashboard(view)) =
+                            gateway.0.request(Command::Load).await
+                    {
+                        self.view.set(Some(view));
+                    }
+                    self.notice.set(Some((true, error.to_string())));
+                }
             }
             self.busy.set(false);
         });
