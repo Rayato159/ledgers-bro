@@ -4,6 +4,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+const MAX_BYTES: u64 = 2 * 1024 * 1024;
+
 #[derive(Clone)]
 pub struct AlertStore {
     path: PathBuf,
@@ -27,10 +29,10 @@ impl AlertStore {
                 Err(_) => return Err(error()),
             };
             let mut bytes = Vec::new();
-            file.take(1048577)
+            file.take(MAX_BYTES + 1)
                 .read_to_end(&mut bytes)
                 .map_err(|_| error())?;
-            if bytes.len() > 1048576 {
+            if bytes.len() as u64 > MAX_BYTES {
                 return Err(error());
             }
             let prefs: AlertPreferences = serde_json::from_slice(&bytes).map_err(|_| error())?;
@@ -48,7 +50,7 @@ impl AlertStore {
                 return Err(error());
             }
             let bytes = serde_json::to_vec(&prefs).map_err(|_| error())?;
-            if bytes.len() > 1048576 {
+            if bytes.len() as u64 > MAX_BYTES {
                 return Err(error());
             }
             let mut file = tempfile::NamedTempFile::new_in(path.parent().ok_or_else(error)?)

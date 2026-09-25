@@ -101,9 +101,8 @@ pub fn App() -> Element {
                 div { class: "top-actions", crate::notifications::NotificationBell {} NewEntryButton {} }
             }
             main {
-                div { class: "ledger-context",
-                    crate::profiles::ProfileMenu {}
-                    if host.isolated { div { class: "dev-label", "{crate::i18n::tr(host.preview_label)}" } }
+                if host.isolated {
+                    div { class: "ledger-context", div { class: "dev-label", "{crate::i18n::tr(host.preview_label)}" } }
                 }
                 if let Some((is_error, message)) = notice {
                     div { class: if is_error { "notice error" } else { "notice success" }, role: if is_error { "alert" } else { "status" },

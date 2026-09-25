@@ -160,7 +160,8 @@ fn LoginForm(profile: Option<UserProfile>, onlogin: EventHandler<ProfileSession>
 }
 
 #[component]
-pub fn ProfileMenu() -> Element {
+pub fn ProfileSettings() -> Element {
+    let notifications = use_context::<crate::notifications::NotificationCenter>();
     let mut state = use_context::<LoginState>();
     let store = use_context::<crate::state::UiState>();
     let gateway = use_context::<Gateway>();
@@ -172,10 +173,14 @@ pub fn ProfileMenu() -> Element {
     };
     let token = session.token.clone();
     rsx! {
-        div {class:"profile-menu",
-            span {class:"profile-current",Icon {name:"user",size:17} "{session.profile.username}"}
-            button {class:"soft-button",disabled:busy()||*store.busy.read(),onclick:move |_|editing.set(true),Icon {name:"edit",size:16}{tr("แก้ไขผู้ใช้")}}
-            button {class:"soft-button",disabled:busy()||*store.busy.read(),onclick:move |_| {
+        div {class:"setting-row profile-settings",
+            div {class:"setting-copy",
+                h3 {{tr("ผู้ใช้ที่เข้าสู่ระบบ")}}
+                p {class:"profile-current",Icon {name:"user",size:18} span {"{session.profile.username}"}}
+            }
+            div {class:"profile-settings-actions",
+            button {class:"soft-button",disabled:busy()||*store.busy.read()||notifications.saving(),onclick:move |_|editing.set(true),Icon {name:"edit",size:16}{tr("แก้ไขผู้ใช้")}}
+            button {class:"soft-button",disabled:busy()||*store.busy.read()||notifications.saving(),onclick:move |_| {
                 let gateway=gateway.clone();let token=token.clone();busy.set(true);error.set(None);
                 spawn(async move {
                     match gateway.0.profiles(ProfileCommand::Logout {token}).await {
@@ -186,6 +191,7 @@ pub fn ProfileMenu() -> Element {
                 });
             },Icon {name:"arrow-right",size:16}{tr("สลับผู้ใช้ / ออกจากระบบ")}}
             if let Some(message)=error() {p {class:"form-error",role:"alert","{message}"}}
+            }
         }
         if editing() { EditProfile { session, onclose:move |_|editing.set(false) } }
     }

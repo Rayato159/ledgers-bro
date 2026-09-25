@@ -1,4 +1,12 @@
 &[
+    ("ยังไม่อ่าน", "Unread"),
+    ("เก็บถาวร", "Archived"),
+    ("อ่านและเก็บทั้งหมด", "Read and archive all"),
+    ("ยังไม่มีการแจ้งเตือนที่เก็บไว้", "No archived notifications yet"),
+    ("อ่านครบแล้ว ไม่มีการแจ้งเตือนใหม่", "All caught up. No new notifications."),
+    ("เก็บการแจ้งเตือนที่อ่านแล้วล่าสุด 256 รายการ ยอดเงินเป็นข้อมูล ณ ตอนที่อ่าน", "Your last 256 read notifications. Amounts reflect the time they were read."),
+
+    ("ผู้ใช้ที่เข้าสู่ระบบ", "Signed-in user"),
     ("เปิดการแจ้งเตือน", "Turn on notifications"),
     ("ปิดการแจ้งเตือน", "Turn off notifications"),
     ("เลือกสิ่งที่ต้องการให้แจ้งเตือนขณะเปิดแอป ตั้งค่าแยกสำหรับผู้ใช้แต่ละคน", "Choose what you hear about while the app is open. Preferences are saved for each user."),

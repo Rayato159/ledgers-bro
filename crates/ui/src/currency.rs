@@ -40,6 +40,7 @@ pub fn SettingsPage(view: Dashboard) -> Element {
             section { id: "settings-panel-0", class: "preferences-panel", role: "tabpanel", "aria-labelledby": "settings-tab-0", hidden: tab() != 0, tabindex: "0",
                 h2 { class: "preferences-section-title", {text("ทั่วไป", &[])} }
                 div { class: "settings-group",
+                    crate::profiles::ProfileSettings {}
                     div { class: "setting-row",
                         div { class: "setting-copy", h3 { {text("ภาษาหน้าจอ", &[])} } p { {text("เปลี่ยนภาษาได้โดยไม่เปลี่ยนยอดหรือสกุลเงิน", &[])} } }
                         div { class: "setting-control", crate::i18n::LanguagePicker {} }

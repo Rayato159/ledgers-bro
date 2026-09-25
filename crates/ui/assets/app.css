@@ -1015,9 +1015,12 @@ footer { display: flex; justify-content: space-between; align-items: center; gap
 .profile-choice.selected { background: var(--surface); outline: 2px solid var(--accent); }
 .profile-choice > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .profile-choice small { display: block; color: var(--muted); }
-.profile-menu { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-right: auto; }
 .profile-current { display: flex; align-items: center; gap: 7px; font-weight: 700; overflow-wrap: anywhere; }
-.profile-menu .soft-button { padding: 7px 12px; min-height: 38px; font-size: var(--text-small); }
+.profile-current > span { min-width: 0; }
+.profile-settings-actions { display: flex; gap: 10px; align-items: center; justify-content: flex-end; flex-wrap: wrap; max-width: 65%; }
+.profile-settings-actions .soft-button { padding: 10px 16px; min-height: 44px; font-size: var(--text-small); }
+.profile-settings-actions .form-error { flex-basis: 100%; margin: 0; }
+@media (max-width: 760px) { .profile-settings-actions { display: grid; width: 100%; max-width: none; grid-template-columns: 1fr; } }
 .data-transfer { display: grid; gap: 24px; padding-bottom: 12px; min-width: 0; }
 .data-transfer > .preferences-section-title { margin: 0; }
 .data-transfer-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 20px; }
@@ -1046,7 +1049,7 @@ footer { display: flex; justify-content: space-between; align-items: center; gap
 .import-row p { margin: 4px 0; overflow-wrap: anywhere; }
 .backup-summary { display: grid; grid-template-columns: 1fr auto; gap: 12px; padding: 18px; border-radius: 18px; background: var(--surface); }
 .backup-summary dd { margin: 0; font-weight: 700; }
-@media(max-width:700px) { .data-transfer-grid { grid-template-columns: 1fr; } .transfer-card { padding: 20px; } .transfer-actions > button { flex: 1 1 100%; } .transfer-feedback { gap: 9px; padding: 12px; align-items: flex-start; } .transfer-feedback-icon { margin-top: 6px; } .login-card { padding: 22px; } .profile-menu { width: 100%; } .profile-current { width: 100%; } }
+@media(max-width:700px) { .data-transfer-grid { grid-template-columns: 1fr; } .transfer-card { padding: 20px; } .transfer-actions > button { flex: 1 1 100%; } .transfer-feedback { gap: 9px; padding: 12px; align-items: flex-start; } .transfer-feedback-icon { margin-top: 6px; } .login-card { padding: 22px; } }
 
 .model-settings h2 { margin-top: 0; }
 .model-settings select { max-width: 100%; }
@@ -1104,7 +1107,14 @@ footer { display: flex; justify-content: space-between; align-items: center; gap
 @media (max-width:600px) { .notification-setting-row { gap:14px; padding:18px 0; } }
 @media (prefers-reduced-motion:reduce) { .preference-switch-track, .preference-switch-thumb { transition:none; } }
 .notification-count { position:absolute; top:0; right:0; min-width:18px; padding:1px 4px; border-radius:12px; font:700 11px/16px sans-serif; background:var(--negative); color:white; }
-.notifications-dialog { width:min(620px, calc(100vw - 32px)); }
+.notifications-dialog { width:calc(100vw - 32px); max-width:760px; }
+.notification-tabs { display:flex; gap:20px; border-bottom:1px solid var(--line); margin-bottom:20px; }
+.notification-tabs button { display:flex; align-items:center; gap:10px; min-height:48px; padding:10px 4px; background:transparent; border-radius:0; border-bottom:3px solid transparent; color:var(--muted); }
+.notification-tabs button[aria-selected="true"] { border-bottom-color:var(--accent); color:var(--ink); }
+.notification-tab-count { padding:2px 8px; background:var(--raised); border-radius:12px; font-size:var(--text-small); }
+.notification-empty { padding:36px 12px; text-align:center; color:var(--muted); }
+.notification-archive-note { margin-top:18px; padding-top:16px; border-top:1px solid var(--line); font-size:var(--text-small); color:var(--muted); }
+.notification-amount { justify-self:end; font-weight:700; }
 .notification-actions { display:flex; gap:16px; justify-content:space-between; margin-bottom:14px; }
 .notification-item { display:grid; grid-template-columns:minmax(0,1fr) auto; text-align:start; width:100%; gap:6px 16px; padding:18px; margin-bottom:10px; border-radius:16px; background:var(--surface); }
 .notification-item strong { grid-column:1 / -1; overflow-wrap:anywhere; }
