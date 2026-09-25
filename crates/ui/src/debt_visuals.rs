@@ -219,7 +219,7 @@ pub(crate) fn CreditDebtChart(view: Dashboard) -> Element {
         .collect();
     rsx! {
         section { class: "card credit-debt-chart",
-            div { class: "section-heading", h2 { {text("สัดส่วนหนี้บัตรเครดิต", &[])} } span { class: "status-pill", {text("ยอดคงค้าง ณ วันนี้", &[])} } }
+            div { class: "section-heading credit-chart-heading", h2 { {text("สัดส่วนหนี้บัตรเครดิต", &[])} } span { class: "status-pill", {text("ยอดคงค้าง ณ วันนี้", &[])} } }
             div { class: "credit-chart-layout",
                 div { class: "credit-donut",
                     svg { view_box: "0 0 200 200", role: "img", "aria-label": text("กราฟวงกลมหนี้บัตรเครดิต แยกตามบัตร รายละเอียดอยู่ข้างกราฟ", &[]),
@@ -244,7 +244,7 @@ pub(crate) fn CreditDebtChart(view: Dashboard) -> Element {
                     }
                 }
             }
-            p { class: "field-hint", {text("รวมยอดยกมาและรอบที่ยังไม่ตัดบิล หักยอดที่ชำระแล้ว · ไม่รวมยอดจ่ายเกินเป็นหนี้", &[])} }
+            p { class: "field-hint credit-chart-note", {text("รวมยอดยกมาและรอบที่ยังไม่ตัดบิล หักยอดที่ชำระแล้ว · ไม่รวมยอดจ่ายเกินเป็นหนี้", &[])} }
         }
     }
 }

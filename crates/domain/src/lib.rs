@@ -20,5 +20,7 @@ mod currency;
 pub use currency::Currency;
 mod credit;
 pub use credit::*;
+mod crypto;
 mod income_tax;
+pub use crypto::*;
 pub use income_tax::*;

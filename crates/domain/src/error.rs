@@ -2,6 +2,12 @@ use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum DomainError {
+    #[error("จำนวนเหรียญต้องไม่ติดลบ: BTC รองรับ 8 และ SOL รองรับ 9 ตำแหน่งทศนิยม")]
+    InvalidCryptoQuantity,
+    #[error("ราคาคริปโตหรือเวลาราคาไม่ถูกต้อง กรุณาลองอัปเดตใหม่")]
+    InvalidCryptoPrice,
+    #[error("พอร์ตจำนวนเหรียญใช้แก้ยอด BTC/SOL โดยตรง ไม่ใช้รับจ่ายหรือโอนเงินบาท")]
+    CryptoCashEntry,
     #[error("ตรวจประเภทเงินได้และยอดภาษี: เงินได้ก่อนหัก + VAT − หัก ณ ที่จ่าย − รายการหักอื่น ต้องเท่ากับยอดรับจริง")]
     InvalidIncomeTax,
     #[error("บัตรเครดิตต้องกำหนดวันตัดรอบและวันครบกำหนดชำระเป็นวันที่ 1–31")]

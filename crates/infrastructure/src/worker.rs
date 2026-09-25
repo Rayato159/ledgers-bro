@@ -5,6 +5,10 @@ use ledger_domain::*;
 use std::{
     path::PathBuf,
     sync::mpsc::{self, SyncSender, TrySendError},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 use uuid::Uuid;
 
@@ -35,12 +39,14 @@ impl IdSource for RandomIds {
 
 struct Envelope {
     command: Command,
+    active: Option<Arc<AtomicBool>>,
     reply: oneshot::Sender<Result<Response, AppError>>,
 }
 
 #[derive(Clone)]
 pub struct LedgerWorker {
     sender: SyncSender<Envelope>,
+    active: Option<Arc<AtomicBool>>,
 }
 impl LedgerWorker {
     /// The connection is opened and used only on this dedicated thread.
@@ -54,9 +60,17 @@ impl LedgerWorker {
                 let mut application =
                     storage.map(|repo| LedgerApplication::new(repo, SystemClock, RandomIds));
                 while let Ok(envelope) = receiver.recv() {
-                    let response = match &mut application {
-                        Ok(app) => app.execute(envelope.command),
-                        Err(error) => Err(error.clone().into()),
+                    let response = if envelope
+                        .active
+                        .as_ref()
+                        .is_some_and(|a| !a.load(Ordering::Acquire))
+                    {
+                        Err(login_required())
+                    } else {
+                        match &mut application {
+                            Ok(app) => app.execute(envelope.command),
+                            Err(error) => Err(error.clone().into()),
+                        }
                     };
                     // A closed receiver means the view was disposed; the transaction still
                     // has exactly-once retry semantics through its submission ID.
@@ -64,16 +78,42 @@ impl LedgerWorker {
                 }
             })
             .map_err(|_| AppError::WorkerStopped)?;
-        Ok(Self { sender })
+        Ok(Self {
+            sender,
+            active: None,
+        })
+    }
+    pub(crate) fn guarded(mut self, active: Arc<AtomicBool>) -> Self {
+        self.active = Some(active);
+        self
     }
     pub async fn request(&self, command: Command) -> Result<Response, AppError> {
+        if self
+            .active
+            .as_ref()
+            .is_some_and(|a| !a.load(Ordering::Acquire))
+        {
+            return Err(login_required());
+        }
         let (reply, receiver) = oneshot::channel();
         self.sender
-            .try_send(Envelope { command, reply })
+            .try_send(Envelope {
+                command,
+                reply,
+                active: self.active.clone(),
+            })
             .map_err(|error| match error {
                 TrySendError::Full(_) => AppError::Busy,
                 TrySendError::Disconnected(_) => AppError::WorkerStopped,
             })?;
-        receiver.await.map_err(|_| AppError::WorkerStopped)?
+        let result = receiver.await.map_err(|_| AppError::WorkerStopped)?;
+        if self
+            .active
+            .as_ref()
+            .is_some_and(|a| !a.load(Ordering::Acquire))
+        {
+            return Err(login_required());
+        }
+        result
     }
 }

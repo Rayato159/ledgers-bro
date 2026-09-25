@@ -52,6 +52,7 @@ pub struct Account {
     kind: AccountKind,
     archived: bool,
     credit_cycle: Option<crate::CreditCardCycle>,
+    crypto_holdings: Option<crate::CryptoHoldings>,
 }
 impl Account {
     pub fn new(id: AccountId, name: AccountName, kind: AccountKind) -> Self {
@@ -61,6 +62,7 @@ impl Account {
             kind,
             archived: false,
             credit_cycle: None,
+            crypto_holdings: None,
         }
     }
     pub fn restore(id: AccountId, name: AccountName, kind: AccountKind, archived: bool) -> Self {
@@ -70,6 +72,7 @@ impl Account {
             kind,
             archived,
             credit_cycle: None,
+            crypto_holdings: None,
         }
     }
     pub const fn id(&self) -> AccountId {
@@ -83,6 +86,22 @@ impl Account {
     }
     pub const fn is_archived(&self) -> bool {
         self.archived
+    }
+    pub const fn crypto_holdings(&self) -> Option<crate::CryptoHoldings> {
+        self.crypto_holdings
+    }
+    pub const fn accepts_cash_entries(&self) -> bool {
+        !self.archived && self.crypto_holdings.is_none()
+    }
+    pub fn with_crypto_holdings(
+        mut self,
+        holdings: crate::CryptoHoldings,
+    ) -> Result<Self, DomainError> {
+        if self.kind != AccountKind::Crypto {
+            return Err(DomainError::InvalidCryptoQuantity);
+        }
+        self.crypto_holdings = Some(holdings);
+        Ok(self)
     }
     pub const fn credit_cycle(&self) -> Option<crate::CreditCardCycle> {
         self.credit_cycle

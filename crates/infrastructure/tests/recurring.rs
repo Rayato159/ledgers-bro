@@ -5,6 +5,141 @@ use ledger_infrastructure::{RandomIds, SqliteLedger};
 use rusqlite::Connection;
 use tempfile::TempDir;
 
+#[test]
+fn new_plan_default_rolls_forward_only_after_the_actual_due_date() {
+    for (today, day, expected) in [
+        ("2026-09-25", 1, "2026-10"),
+        ("2026-09-25", 25, "2026-09"),
+        ("2026-09-25", 26, "2026-09"),
+        ("2026-12-31", 1, "2027-01"),
+        ("2026-02-28", 31, "2026-02"),
+        ("2024-02-29", 31, "2024-02"),
+        ("2024-02-29", 28, "2024-03"),
+    ] {
+        assert_eq!(
+            default_recurring_month(today.parse().expect("today"), day)
+                .expect("default")
+                .to_string(),
+            expected
+        );
+    }
+    assert!(default_recurring_month("2026-09-25".parse().expect("today"), 0).is_err());
+}
+
+#[test]
+fn editing_future_terms_preserves_paid_history_and_prevents_duplicate_obligations() {
+    let dir = TempDir::new().expect("dir");
+    let path = dir.path().join("ledger.sqlite3");
+    let (mut app, cash) = setup(SqliteLedger::open(&path).expect("db"));
+    let old = add(&mut app, cash, "Discord", "215", "1", "2026-08");
+    let august = month().shifted(-1).expect("august");
+    let paid = payment(&mut app, &old, august, "215");
+    app.execute(Command::PayRecurring(paid)).expect("paid");
+    let before = view(&mut app);
+    let mut edited = recurring_edit_input(&old, month());
+    edited.name = "Discord revised".into();
+    edited.amount = "250".into();
+    edited.day = "31".into();
+    edited.category = Some(Category::Food);
+    edited.installments = Some("3".into());
+    app.execute(Command::EditRecurring {
+        expected: old.clone(),
+        input: edited.clone(),
+    })
+    .expect("edit");
+    let after = view(&mut app);
+    assert_eq!(before.entries, after.entries);
+    assert_eq!(before.settlements, after.settlements);
+    assert_eq!(
+        recurring_month(&before, august).expect("old month"),
+        recurring_month(&after, august)
+            .map(|mut v| {
+                // The old entity gains a stop boundary; all period terms remain intact.
+                v.items[0].schedule = old.clone();
+                v
+            })
+            .expect("preserved month")
+    );
+    let september = recurring_month(&after, month()).expect("revised month");
+    assert_eq!(september.items.len(), 1);
+    assert_eq!(september.pending.to_string(), "250.00");
+    assert_eq!(september.items[0].due.to_string(), "2026-09-30");
+    assert_eq!(september.items[0].schedule.category(), Category::Food);
+    assert!(
+        !september.items[0]
+            .schedule
+            .occurs_in("2026-12".parse().expect("after last"))
+    );
+    assert!(
+        app.execute(Command::EditRecurring {
+            expected: old,
+            input: edited
+        })
+        .is_err(),
+        "stale edit cannot split twice"
+    );
+    drop(app);
+    let mut reopened = self::app(SqliteLedger::open(&path).expect("reopen"));
+    assert_eq!(view(&mut reopened), after);
+}
+
+#[test]
+fn edit_is_atomic_and_rejects_paid_future_months_and_invalid_accounts() {
+    let (mut app, cash) = setup(SqliteLedger::in_memory().expect("db"));
+    let old = add(&mut app, cash, "Plan", "215", "1", "2026-09");
+    let prepared = payment(&mut app, &old, month().shifted(1).expect("october"), "215");
+    app.execute(Command::PayRecurring(prepared))
+        .expect("prepaid");
+    let before = view(&mut app);
+    let mut edited = recurring_edit_input(&old, month());
+    edited.amount = "300".into();
+    assert!(matches!(
+        app.execute(Command::EditRecurring {
+            expected: old.clone(),
+            input: edited.clone()
+        }),
+        Err(AppError::Storage(StorageError::RecurringEditPaid))
+    ));
+    assert_eq!(view(&mut app), before);
+    edited.start = "2026-11".into();
+    edited.account = None;
+    assert!(
+        app.execute(Command::EditRecurring {
+            expected: old.clone(),
+            input: edited.clone()
+        })
+        .is_err()
+    );
+    assert_eq!(view(&mut app), before);
+    edited.account = Some(cash);
+    app.execute(Command::EditRecurring {
+        expected: old,
+        input: edited,
+    })
+    .expect("edit after prepaid");
+    assert_eq!(
+        recurring_month(&view(&mut app), month())
+            .expect("september retains old")
+            .pending
+            .to_string(),
+        "215.00"
+    );
+}
+
+#[test]
+fn finite_plan_edit_defaults_to_remaining_contractual_months() {
+    let (mut app, cash) = setup(SqliteLedger::in_memory().expect("db"));
+    let old = add(&mut app, cash, "Three months", "100", "5", "2026-09")
+        .with_installments(Some(3))
+        .expect("terms");
+    assert_eq!(
+        recurring_edit_input(&old, month().shifted(1).expect("october"))
+            .installments
+            .as_deref(),
+        Some("2")
+    );
+}
+
 struct FixedClock;
 impl Clock for FixedClock {
     fn today(&self) -> Result<EntryDate, AppError> {
@@ -352,7 +487,7 @@ fn v1_database_migrates_without_changing_old_journals_and_reopens_plans() {
     drop(initial);
     let raw = Connection::open(&path).expect("raw");
     raw.execute_batch(
-        "ALTER TABLE accounts DROP COLUMN payment_day; ALTER TABLE accounts DROP COLUMN closing_day; DROP TABLE user_preferences; DROP TRIGGER lock_currency_accounts; DROP TRIGGER lock_currency_recurring; DROP TRIGGER lock_currency_receivables; DROP TABLE ledger_settings; DROP TABLE prompt_submissions; DROP TABLE receivables; DROP TABLE recurring_settlements; DROP TABLE recurring_expenses; PRAGMA user_version=1;",
+        "DROP TABLE crypto_holding_changes; DROP TABLE crypto_prices; ALTER TABLE accounts DROP COLUMN sol_atoms; ALTER TABLE accounts DROP COLUMN btc_atoms; ALTER TABLE accounts DROP COLUMN payment_day; ALTER TABLE accounts DROP COLUMN closing_day; DROP TABLE user_preferences; DROP TRIGGER lock_currency_accounts; DROP TRIGGER lock_currency_recurring; DROP TRIGGER lock_currency_receivables; DROP TABLE ledger_settings; DROP TABLE prompt_submissions; DROP TABLE receivables; DROP TABLE recurring_settlements; DROP TABLE recurring_expenses; PRAGMA user_version=1;",
     )
     .expect("v1 fixture");
     let mut migrated = app(SqliteLedger::open(&path).expect("migration"));
@@ -369,7 +504,7 @@ fn v1_database_migrates_without_changing_old_journals_and_reopens_plans() {
     assert_eq!(
         raw.pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0))
             .expect("version"),
-        9
+        10
     );
     assert_eq!(
         raw.query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |r| r
@@ -670,7 +805,7 @@ fn populated_v2_migrates_as_unlimited_and_new_count_survives_reopen() {
     drop(first);
     let raw = Connection::open(&path).expect("raw");
     raw.execute_batch(
-        "ALTER TABLE accounts DROP COLUMN payment_day; ALTER TABLE accounts DROP COLUMN closing_day; DROP TABLE user_preferences; DROP TRIGGER lock_currency_accounts; DROP TRIGGER lock_currency_recurring; DROP TRIGGER lock_currency_receivables; DROP TABLE ledger_settings; DROP TABLE prompt_submissions; DROP TABLE receivables; ALTER TABLE recurring_expenses DROP COLUMN installments; PRAGMA user_version=2;",
+        "DROP TABLE crypto_holding_changes; DROP TABLE crypto_prices; ALTER TABLE accounts DROP COLUMN sol_atoms; ALTER TABLE accounts DROP COLUMN btc_atoms; ALTER TABLE accounts DROP COLUMN payment_day; ALTER TABLE accounts DROP COLUMN closing_day; DROP TABLE user_preferences; DROP TRIGGER lock_currency_accounts; DROP TRIGGER lock_currency_recurring; DROP TRIGGER lock_currency_receivables; DROP TABLE ledger_settings; DROP TABLE prompt_submissions; DROP TABLE receivables; ALTER TABLE recurring_expenses DROP COLUMN installments; PRAGMA user_version=2;",
     )
     .expect("populated v2 fixture");
     let mut migrated = app(SqliteLedger::open(&path).expect("migrate"));
@@ -688,6 +823,6 @@ fn populated_v2_migrates_as_unlimited_and_new_count_survives_reopen() {
     assert_eq!(
         raw.pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0))
             .expect("schema"),
-        9
+        10
     );
 }

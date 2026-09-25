@@ -63,6 +63,22 @@ pub struct PreparedEntry {
 
 #[derive(Debug, Clone)]
 pub enum Command {
+    CsvTemplate,
+    PreviewCsvImport(std::sync::Arc<[u8]>),
+    CommitCsvImport(Vec<PreparedEntry>),
+    ExportBackup,
+    PreviewBackup(std::sync::Arc<[u8]>),
+    RestoreBackup(BackupReview),
+    LoadCryptoPrices,
+    SaveCryptoPrices(CryptoPrices),
+    CreateCryptoAccount {
+        name: String,
+        holdings: CryptoHoldings,
+    },
+    SetCryptoHoldings {
+        expected: Account,
+        holdings: CryptoHoldings,
+    },
     LoadPreferences,
     SetPreferences(UserPreferences),
     SetCurrency(Currency),
@@ -75,6 +91,10 @@ pub enum Command {
     ReceiveRepayment(Vec<PreparedEntry>),
     Load,
     AddRecurring(RecurringInput),
+    EditRecurring {
+        expected: RecurringExpense,
+        input: RecurringInput,
+    },
     SetRecurringInstallments {
         expected: RecurringExpense,
         installments: Option<String>,
@@ -121,6 +141,11 @@ pub enum Command {
 
 #[derive(Debug, Clone)]
 pub enum Response {
+    Document(DocumentExport),
+    PreparedCsv(Vec<PreparedEntry>),
+    BackupReview(BackupReview),
+    BackupRestored(BackupSummary),
+    CryptoPrices(Option<CryptoPrices>),
     Preferences(UserPreferences),
     PreparedPrompt(PromptPlan),
     PromptCommitted,
@@ -156,6 +181,37 @@ impl<R: LedgerRepository, C: Clock, I: IdSource> LedgerApplication<R, C, I> {
     }
     pub fn execute(&mut self, command: Command) -> Result<Response, AppError> {
         match command {
+            Command::CsvTemplate => Ok(Response::Csv(csv_template(
+                self.clock.today()?,
+                self.repository.snapshot()?.currency,
+            ))),
+            Command::PreviewCsvImport(bytes) => Ok(Response::PreparedCsv(prepare_csv_import(
+                &bytes,
+                &self.repository.snapshot()?,
+                self.clock.today()?,
+            )?)),
+            Command::CommitCsvImport(entries) => {
+                let today = self.clock.today()?;
+                if entries.iter().any(|e| e.entry.date() > today) {
+                    return Err(AppError::Input("วันที่รายการต้องไม่เกินวันนี้".into()));
+                }
+                Ok(Response::CommittedBatch(
+                    self.repository.commit_import(&entries)?,
+                ))
+            }
+            Command::ExportBackup => Ok(Response::Document(DocumentExport {
+                filename: format!("LedgersBro-{}.lbro", self.clock.today()?),
+                // Keep the custom .lbro extension in Android's document picker.
+                mime: "application/octet-stream",
+                bytes: self.repository.export_backup()?.into(),
+            })),
+            Command::PreviewBackup(bytes) => {
+                let summary = self.repository.preview_backup(&bytes)?;
+                Ok(Response::BackupReview(BackupReview { bytes, summary }))
+            }
+            Command::RestoreBackup(review) => Ok(Response::BackupRestored(
+                self.repository.restore_backup(&review.bytes)?,
+            )),
             Command::LoadPreferences => Ok(Response::Preferences(self.repository.preferences()?)),
             Command::SetPreferences(preferences) => {
                 if preferences.primary_color > 0xffffff {
@@ -335,6 +391,11 @@ impl<R: LedgerRepository, C: Clock, I: IdSource> LedgerApplication<R, C, I> {
                 )?;
                 Ok(Response::RecurringChanged)
             }
+            Command::EditRecurring { expected, input } => {
+                let replacement = input.validate(self.ids.recurring_id()?)?;
+                self.repository.replace_recurring(&expected, &replacement)?;
+                Ok(Response::RecurringChanged)
+            }
             Command::AddRecurring(input) => {
                 let schedule = input.validate(self.ids.recurring_id()?)?;
                 if schedule.account().is_none() {
@@ -396,6 +457,42 @@ impl<R: LedgerRepository, C: Clock, I: IdSource> LedgerApplication<R, C, I> {
                 self.repository.snapshot()?,
                 self.clock.today()?,
             )?)),
+            Command::LoadCryptoPrices => {
+                Ok(Response::CryptoPrices(self.repository.crypto_prices()?))
+            }
+            Command::SaveCryptoPrices(prices) => {
+                self.repository.save_crypto_prices(prices)?;
+                Ok(Response::CryptoPrices(self.repository.crypto_prices()?))
+            }
+            Command::SetCryptoHoldings { expected, holdings } => {
+                self.repository.set_crypto_holdings(&expected, holdings)?;
+                Ok(Response::RecurringChanged)
+            }
+            Command::CreateCryptoAccount { name, holdings } => {
+                if self.repository.snapshot()?.currency != Currency::Thb {
+                    return Err(DomainError::InvalidCurrency.into());
+                }
+                let account = Account::new(
+                    self.ids.account_id()?,
+                    AccountName::new(&name)?,
+                    AccountKind::Crypto,
+                )
+                .with_crypto_holdings(holdings)?;
+                let opening = JournalEntry::record(
+                    self.ids.entry_id()?,
+                    self.clock.today()?,
+                    Note::new("ยอดเริ่มต้น")?,
+                    EntryKind::Opening {
+                        account: account.id(),
+                        balance: Money::ZERO,
+                    },
+                )?;
+                Ok(Response::Committed(self.repository.create_account(
+                    &account,
+                    &opening,
+                    self.ids.submission_id()?,
+                )?))
+            }
             Command::CreateAccount {
                 name,
                 kind,
@@ -512,6 +609,7 @@ impl<R: LedgerRepository, C: Clock, I: IdSource> LedgerApplication<R, C, I> {
                     entry = entry.with_income_tax(tax.validate()?)?;
                 }
                 entry.validate_accounts(&state.accounts)?;
+                validate_crypto_cash_entry(&state, &entry)?;
                 let recurring = if let Some(selection) = input.recurring {
                     let schedule = state
                         .recurring

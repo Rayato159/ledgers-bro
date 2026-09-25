@@ -16,6 +16,8 @@
 *.sqlite3*
 *.db
 *.db-*
+*.lbro
+*.lbro.json
 /exports/
 /backups/
 

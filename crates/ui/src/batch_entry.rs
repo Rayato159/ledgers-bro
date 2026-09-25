@@ -88,13 +88,13 @@ pub(crate) fn BatchReview(source: String, drafts: Vec<ModelDraft>, view: Dashboa
                         label { r#for: "batch-account-{index}", {crate::i18n::text("บัญชีที่ใช้รับหรือจ่าย", &[])} }
                         select { id: "batch-account-{index}", value: input.account.map(|id| id.to_string()).unwrap_or_default(), onchange: move |event| edit(store, index, |input| input.account = event.value().parse().ok()),
                             option { value: "", selected: input.account.is_none(), {crate::i18n::text("เลือกบัญชี", &[])} }
-                            for account in &view.accounts { if !account.account.is_archived() { option { value: "{account.account.id()}", selected: input.account == Some(account.account.id()), "{account.account.name().as_str()}" } } }
+                            for account in &view.accounts { if account.account.accepts_cash_entries() { option { value: "{account.account.id()}", selected: input.account == Some(account.account.id()), "{account.account.name().as_str()}" } } }
                         }
                         if input.kind == TransactionKind::Transfer {
                             label { r#for: "batch-destination-{index}", {crate::i18n::text("บัญชีปลายทาง", &[])} }
                             select { id: "batch-destination-{index}", value: input.destination.map(|id| id.to_string()).unwrap_or_default(), onchange: move |event| edit(store, index, |input| input.destination = event.value().parse().ok()),
                                 option { value: "", selected: input.destination.is_none(), {crate::i18n::text("เลือกบัญชีปลายทาง", &[])} }
-                                for account in &view.accounts { if !account.account.is_archived() && Some(account.account.id()) != input.account { option { value: "{account.account.id()}", selected: input.destination == Some(account.account.id()), "{account.account.name().as_str()}" } } }
+                                for account in &view.accounts { if account.account.accepts_cash_entries() && Some(account.account.id()) != input.account { option { value: "{account.account.id()}", selected: input.destination == Some(account.account.id()), "{account.account.name().as_str()}" } } }
                             }
                         } else {
                             label { r#for: "batch-category-{index}", {crate::i18n::text("หมวดหมู่", &[])} }

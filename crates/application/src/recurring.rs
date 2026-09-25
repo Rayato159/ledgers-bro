@@ -4,6 +4,67 @@ use crate::{
 use ledger_domain::*;
 
 pub const MAX_RECURRING: usize = 500;
+/// Default for a NEW plan only. Existing arrears and explicitly selected months
+/// must never be shifted just because the due date has passed.
+pub fn default_recurring_month(today: EntryDate, day: u32) -> Result<Month, DomainError> {
+    let month = Month::of(today)?;
+    if month.on_day(day)? < today {
+        month.shifted(1)
+    } else {
+        Ok(month)
+    }
+}
+/// Editing future terms is an atomic stop-and-replace. Earlier planned months,
+/// posted payments and their reversal links retain their original schedule.
+pub fn revised_recurring(
+    state: &LedgerState,
+    expected: &RecurringExpense,
+    replacement: &RecurringExpense,
+) -> Result<RecurringExpense, StorageError> {
+    let effective = replacement.due().start();
+    if !state.recurring.contains(expected)
+        || expected.stopped_from().is_some()
+        || !expected.occurs_in(effective)
+        || replacement.stopped_from().is_some()
+        || state.recurring.iter().any(|s| s.id() == replacement.id())
+    {
+        return Err(StorageError::RecurringChanged);
+    }
+    // Include reversed payments too: editing must never change the meaning of
+    // an existing settlement or make a reversal reopen a different obligation.
+    if state
+        .settlements
+        .iter()
+        .any(|s| s.recurring == expected.id() && s.month >= effective)
+    {
+        return Err(StorageError::RecurringEditPaid);
+    }
+    let stopped = expected.clone().stop_from(effective)?;
+    let mut updated = state.clone();
+    for schedule in &mut updated.recurring {
+        if schedule.id() == expected.id() {
+            *schedule = stopped.clone();
+        }
+    }
+    validate_new_recurring(&updated, replacement)?;
+    Ok(stopped)
+}
+
+pub fn recurring_edit_input(schedule: &RecurringExpense, effective: Month) -> RecurringInput {
+    let number = schedule.due().number_in(effective).unwrap_or(1);
+    RecurringInput {
+        name: schedule.name().as_str().into(),
+        amount: schedule.amount().money().to_string(),
+        day: schedule.due().day().to_string(),
+        start: effective.to_string(),
+        account: schedule.account(),
+        category: Some(schedule.category()),
+        installments: schedule
+            .due()
+            .installments()
+            .map(|n| n.saturating_sub(number - 1).to_string()),
+    }
+}
 pub fn validate_recurring_totals(schedules: &[RecurringExpense]) -> Result<(), StorageError> {
     for month in schedules.iter().map(|s| s.due().start()) {
         let sum: i128 = schedules
@@ -25,7 +86,7 @@ pub fn validate_new_recurring(
     if !state
         .accounts
         .iter()
-        .any(|a| Some(a.id()) == schedule.account() && !a.is_archived())
+        .any(|a| Some(a.id()) == schedule.account() && a.accepts_cash_entries())
     {
         return Err(DomainError::AccountUnavailable.into());
     }

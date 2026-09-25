@@ -12,6 +12,8 @@ thiserror.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 chrono.workspace = true
+csv = "1.4"
+uuid = { workspace = true, features = ["v5"] }
 
 [lints]
 workspace = true

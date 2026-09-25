@@ -156,7 +156,7 @@ fn v5_upgrade_preserves_thb_amounts_and_locks_existing_ledgers() {
     let expected = view(&mut a);
     drop(a);
     let raw = rusqlite::Connection::open(&path).expect("raw");
-    raw.execute_batch("ALTER TABLE accounts DROP COLUMN payment_day; ALTER TABLE accounts DROP COLUMN closing_day;").expect("remove v8 columns for old schema fixture");
+    raw.execute_batch("DROP TABLE crypto_holding_changes; DROP TABLE crypto_prices; ALTER TABLE accounts DROP COLUMN sol_atoms; ALTER TABLE accounts DROP COLUMN btc_atoms; ALTER TABLE accounts DROP COLUMN payment_day; ALTER TABLE accounts DROP COLUMN closing_day;").expect("remove v8 columns for old schema fixture");
     raw.execute_batch("DROP TABLE user_preferences; DROP TRIGGER lock_currency_accounts; DROP TRIGGER lock_currency_recurring; DROP TRIGGER lock_currency_receivables; DROP TABLE ledger_settings; PRAGMA user_version=5;").expect("v5 fixture");
     let mut a = app(SqliteLedger::open(&path).expect("upgrade"));
     assert_eq!(view(&mut a), expected);
@@ -212,7 +212,7 @@ fn v6_migration_adds_preferences_without_resetting_ledger_settings() {
         .expect("GBP");
     drop(ledger);
     let raw = rusqlite::Connection::open(&path).expect("raw");
-    raw.execute_batch("ALTER TABLE accounts DROP COLUMN payment_day; ALTER TABLE accounts DROP COLUMN closing_day;").expect("remove v8 columns for old schema fixture");
+    raw.execute_batch("DROP TABLE crypto_holding_changes; DROP TABLE crypto_prices; ALTER TABLE accounts DROP COLUMN sol_atoms; ALTER TABLE accounts DROP COLUMN btc_atoms; ALTER TABLE accounts DROP COLUMN payment_day; ALTER TABLE accounts DROP COLUMN closing_day;").expect("remove v8 columns for old schema fixture");
     raw.execute_batch("DROP TABLE user_preferences; PRAGMA user_version=6;")
         .expect("v6 fixture");
     let mut migrated = app(SqliteLedger::open(&path).expect("migrate"));

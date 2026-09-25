@@ -91,7 +91,7 @@ pub(crate) fn ModelSettings(capturing: Signal<bool>) -> Element {
                         let gateway = store.gateway.peek().clone();
                         // Root-owned cleanup clears global busy even if this page unmounts.
                         // Component signals are only touched while mounted via try_write.
-                        dioxus::dioxus_core::spawn_forever(async move {
+                        crate::state::spawn_session(async move {
                             let result = gateway.0.install_model(active).await;
                             if let Ok(mut value) = installed.try_write() { *value = result.is_ok(); }
                             if let Ok(mut value) = message.try_write() { *value = match result { Ok(()) => "ดาวน์โหลด AI พร้อมใช้แล้ว".into(), Err(error) => error.to_string() }; }

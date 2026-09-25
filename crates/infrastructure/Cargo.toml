@@ -11,7 +11,7 @@ ledger-domain.workspace = true
 ledger-application.workspace = true
 rusqlite = { version = "0.37", features = ["bundled"] }
 serde.workspace = true
-serde_json.workspace = true
+serde_json = { workspace = true, features = ["arbitrary_precision"] }
 chrono = { workspace = true, features = ["clock"] }
 uuid = { workspace = true, features = ["v4"] }
 futures-channel.workspace = true
@@ -19,6 +19,9 @@ image = { version = "0.25.10", default-features = false, features = ["png", "jpe
 tempfile = "3"
 llama-cpp-2 = { version = "=0.1.156", default-features = false, features = ["android-static-stdcxx"] }
 encoding_rs = "0.8"
+argon2 = "0.5.3"
+rand_core = { version = "0.6", features = ["getrandom"] }
+zeroize = "1.8"
 sha2 = "0.10"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
 

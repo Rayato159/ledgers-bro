@@ -42,7 +42,7 @@ mod app {
     #[component]
     fn Ready(gateway: Gateway) -> Element {
         use_context_provider(|| gateway);
-        rsx! { ledger_ui::App {} }
+        rsx! { ledger_ui::LoginRoot {} }
     }
 }
 

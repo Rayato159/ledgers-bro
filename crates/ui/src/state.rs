@@ -7,6 +7,17 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
+/// Survives page navigation, but is cancelled when this authenticated App is
+/// unmounted. Tasks from one profile must never update the next profile's UI.
+#[derive(Clone, Copy)]
+pub struct SessionTaskScope(pub dioxus::prelude::ScopeId);
+pub fn spawn_session(
+    future: impl std::future::Future<Output = ()> + 'static,
+) -> dioxus::dioxus_core::Task {
+    let scope = consume_context::<SessionTaskScope>().0;
+    dioxus::dioxus_core::Runtime::current().in_scope(scope, || dioxus::prelude::spawn(future))
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Page {
     Overview,
@@ -100,7 +111,7 @@ impl UiState {
         self.notice.set(None);
         self.busy.set(true);
         let gateway = self.gateway.peek().clone();
-        dioxus::dioxus_core::spawn_forever(async move {
+        crate::state::spawn_session(async move {
             let result = await_model(
                 gateway.0.resolve_text(text, operation.clone()),
                 &operation,
@@ -219,7 +230,7 @@ impl UiState {
         self.scan_progress
             .set("กำลังเลือกรูปและอ่านใบเสร็จในเครื่อง…".into());
         let gateway = self.gateway.peek().clone();
-        dioxus::dioxus_core::spawn_forever(async move {
+        crate::state::spawn_session(async move {
             let result = if let Some(files) = files {
                 let mut results = Vec::new();
                 let count = files.len();
@@ -401,7 +412,10 @@ impl UiState {
         // A successful commit dismisses its dialog/preview. The task must belong
         // to the root, otherwise unmounting that child cancels the refresh and
         // leaves the entire app busy even though the transaction was saved.
-        let created_account = matches!(&command, Command::CreateAccount { .. });
+        let created_account = matches!(
+            &command,
+            Command::CreateAccount { .. } | Command::CreateCryptoAccount { .. }
+        );
         let recurring_change = matches!(
             &command,
             Command::AddRecurring(_)
@@ -413,10 +427,10 @@ impl UiState {
                 | Command::PayRecurring(_)
                 | Command::LinkRecurring { .. }
         );
-        dioxus::dioxus_core::spawn_forever(async move {
+        crate::state::spawn_session(async move {
             let result = gateway.0.request(command).await;
             match result {
-                Ok(Response::Preferences(_)) => {}
+                Ok(Response::Preferences(_)) | Ok(Response::CryptoPrices(_)) => {}
                 Ok(Response::ReceivableReview(review)) => self.receivable_review.set(Some(review)),
                 Ok(Response::Dashboard(view)) => self.view.set(Some(view)),
                 Ok(Response::Resolved(resolution)) => self.apply_resolution(resolution),
@@ -512,6 +526,15 @@ impl UiState {
                     Ok(None) => {}
                     Err(error) => self.notice.set(Some((true, error.to_string()))),
                 },
+                Ok(
+                    Response::Document(_)
+                    | Response::PreparedCsv(_)
+                    | Response::BackupReview(_)
+                    | Response::BackupRestored(_),
+                ) => {
+                    self.notice
+                        .set(Some((true, "กรุณาใช้เมนูนำเข้าและสำรองข้อมูล".into())));
+                }
                 Err(error) => self.notice.set(Some((true, error.to_string()))),
             }
             self.busy.set(false);
@@ -699,6 +722,7 @@ mod tests {
     }
 
     fn use_test_state() -> UiState {
+        use_context_provider(|| SessionTaskScope(dioxus::dioxus_core::current_scope_id()));
         let gateway = use_context::<Gateway>();
         UiState {
             gateway: use_signal(|| gateway),

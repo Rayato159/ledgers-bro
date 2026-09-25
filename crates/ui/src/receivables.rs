@@ -40,7 +40,7 @@ pub(crate) fn ReceivablesPage(view: Dashboard) -> Element {
     let review = store.receivable_review.read().clone();
     rsx! {
         section { class: "page-heading",
-            div { h1 { {crate::i18n::text("ลูกหนี้", &[])} } p { class: "muted", {crate::i18n::text("ใครค้างเราเท่าไหร่ รับคืนแล้วกี่งวด และนัดเก็บเงินวันไหน", &[])} } }
+            div { h1 { {crate::i18n::text("ลูกหนี้", &[])} } p { class: "muted", {crate::i18n::text("ใครค้างเราเท่าไหร่ รับคืนแล้วกี่งวด และนัดเก็บเงินวันไหน", &[])} } } crate::artwork::Companion {role:"accounts"}
             button { class: "primary", disabled: *store.busy.read(), onclick: move |_| { adding.set(!adding()); store.receivable_review.set(None); }, {crate::i18n::text("เพิ่มลูกหนี้", &[])} }
         }
         ReceivablesChart { view: view.clone() }
@@ -84,7 +84,7 @@ pub(crate) fn ReceivablesPage(view: Dashboard) -> Element {
                                     label { r#for: "debt-source", {crate::i18n::text("บัญชีที่จ่ายเงินให้ยืม", &[])} }
                                     select { id: "debt-source", required: true, value: form.read().source.map(|id| id.to_string()).unwrap_or_default(), onchange: move |e| form.write().source = e.value().parse().ok(),
                                         option { value: "", selected: form.read().source.is_none(), {crate::i18n::text("เลือกบัญชี", &[])} }
-                                        for a in view.accounts.iter().filter(|a| !a.account.is_archived()) { option { value: "{a.account.id()}", selected: form.read().source == Some(a.account.id()), "{a.account.name().as_str()}" } }
+                                        for a in view.accounts.iter().filter(|a| a.account.accepts_cash_entries()) { option { value: "{a.account.id()}", selected: form.read().source == Some(a.account.id()), "{a.account.name().as_str()}" } }
                                     }
                                 } else { p { class: "field-hint", {crate::i18n::text("หนี้ที่มีอยู่แล้ว: เพิ่มเฉพาะยอดลูกหนี้ เงินในบัญชีไม่เปลี่ยน", &[])} } }
                             }
@@ -176,7 +176,7 @@ pub(crate) fn RepaymentDialog(view: Dashboard) -> Element {
                         label { r#for: "repayment-account", {crate::i18n::text("บัญชีที่รับเงิน", &[])} }
                         select { id: "repayment-account", required: true, value: account().map(|id| id.to_string()).unwrap_or_default(), onchange: move |e| account.set(e.value().parse().ok()),
                             option { value: "", selected: account().is_none(), {crate::i18n::text("เลือกบัญชีรับเงิน", &[])} }
-                            for a in view.accounts.iter().filter(|a| !a.account.is_archived()) { option { value: "{a.account.id()}", selected: account() == Some(a.account.id()), "{a.account.name().as_str()}" } }
+                            for a in view.accounts.iter().filter(|a| a.account.accepts_cash_entries()) { option { value: "{a.account.id()}", selected: account() == Some(a.account.id()), "{a.account.name().as_str()}" } }
                         }
                         label { r#for: "repayment-date", {crate::i18n::text("วันที่ได้รับเงิน", &[])} } input { id: "repayment-date", r#type: "date", required: true, min: "1900-01-01", max: "{view.today}", value: "{date}", onchange: move |e| date.set(e.value()) }
                     }

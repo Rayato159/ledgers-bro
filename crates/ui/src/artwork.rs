@@ -2,6 +2,20 @@
 use dioxus::prelude::*;
 use ledger_domain::{AccountKind, Category, EntryKind};
 
+#[component]
+pub fn Companion(role: &'static str) -> Element {
+    let host = use_context::<crate::HostInfo>();
+    let source = match role {
+        "accounts" => &host.art.accounts,
+        "history" => &host.art.history,
+        "calendar" => &host.art.calendar,
+        "tax" => &host.art.tax,
+        "chat" => &host.art.phone,
+        _ => &host.art.hero,
+    };
+    rsx! { img {class:"page-companion",src:source.clone(),alt:"",draggable:false} }
+}
+
 pub const fn category_art(category: Category) -> &'static str {
     match category {
         Category::Rent => "rent",

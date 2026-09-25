@@ -43,7 +43,7 @@ pub fn QuickEntryPage(view: Dashboard) -> Element {
         crate::navigation::EntryToolbar { manual: false }
         div { class: "entry-layout",
             section { class: "card chat-card",
-                div { class: "chat-greeting illustrated-greeting", img { class: "phone-mascot", src: host.art.phone.clone(), alt: crate::i18n::text("ทานูกิถือโทรศัพท์พร้อมจดรายการ", &[]) } div { strong { {crate::i18n::text("จดไว้ เดี๋ยวช่วยจัดให้", &[])} } p { {crate::i18n::text("เล่าเรื่องเงินวันนี้ให้ฟัง\nหรือหยิบใบเสร็จมาให้ช่วยอ่าน", &[])} } } }
+                div { class: "chat-greeting illustrated-greeting", img { class: "phone-mascot", src: host.art.phone.clone(), alt: "Ren" } div { strong { {crate::i18n::text("จดไว้ เดี๋ยวช่วยจัดให้", &[])} } p { {crate::i18n::text("เล่าเรื่องเงินวันนี้ให้ฟัง\nหรือหยิบใบเสร็จมาให้ช่วยอ่าน", &[])} } } }
                 form { class: if dragging() { "chat-compose receipt-drag-over" } else { "chat-compose" },
                     ondragover: move |event| { event.prevent_default(); if !*store.busy.peek() && !*capturing.peek() { dragging.set(true); } },
                     ondragleave: move |_| dragging.set(false),
@@ -108,7 +108,7 @@ pub fn ManualEntryPage(view: Dashboard) -> Element {
     let prepared = store.prepared.read().clone();
     rsx! {
         section { class: "page-heading",
-            div { h1 { {crate::i18n::text("เพิ่มรายการ", &[])} } p { class: "muted", {crate::i18n::text("กรอกข้อมูล แล้วตรวจให้ตรงก่อนบันทึก", &[])} } }
+            div { h1 { {crate::i18n::text("เพิ่มรายการ", &[])} } p { class: "muted", {crate::i18n::text("กรอกข้อมูล แล้วตรวจให้ตรงก่อนบันทึก", &[])} } } crate::artwork::Companion { role:"history" }
 
         }
         crate::navigation::EntryToolbar { manual: true }
@@ -154,7 +154,7 @@ fn EntryForm(input: EntryInput, view: Dashboard) -> Element {
     let funding = input.account.filter(|id| {
         view.accounts.iter().any(|a| {
             a.account.id() == *id
-                && !a.account.is_archived()
+                && a.account.accepts_cash_entries()
                 && a.account.kind() != AccountKind::CreditCard
         })
     });
@@ -199,14 +199,14 @@ fn EntryForm(input: EntryInput, view: Dashboard) -> Element {
             label { r#for: "entry-account", if kind == TransactionKind::Income { {crate::i18n::text("เงินเข้าบัญชี", &[])} } else { {crate::i18n::text("จากบัญชี", &[])} } }
             select { id: "entry-account", required: true, value: account_value, disabled: *store.busy.read(), onchange: move |event| store.update_entry(|i| i.account = event.value().parse().ok()),
                 option { value: "", selected: input.account.is_none(), {crate::i18n::text("เลือกบัญชี", &[])} }
-                for item in &view.accounts { if !item.account.is_archived() && (!is_payment || item.account.kind() != AccountKind::CreditCard) { option { value: "{item.account.id()}", selected: input.account == Some(item.account.id()), "{item.account.name().as_str()} · {crate::i18n::tr(item.account.kind().label())}" } } }
+                for item in &view.accounts { if item.account.accepts_cash_entries() && (!is_payment || item.account.kind() != AccountKind::CreditCard) { option { value: "{item.account.id()}", selected: input.account == Some(item.account.id()), "{item.account.name().as_str()} · {crate::i18n::tr(item.account.kind().label())}" } } }
             }
             if kind == TransactionKind::Transfer {
                 if !is_payment {
                 label { r#for: "destination", {crate::i18n::text("ไปบัญชี", &[])} }
                 select { id: "destination", required: true, value: destination_value, disabled: *store.busy.read(), onchange: move |event| store.update_entry(|i| i.destination = event.value().parse().ok()),
                     option { value: "", selected: input.destination.is_none(), {crate::i18n::text("เลือกบัญชีปลายทาง", &[])} }
-                    for item in &view.accounts { if !item.account.is_archived() && Some(item.account.id()) != input.account { option { value: "{item.account.id()}", selected: input.destination == Some(item.account.id()), "{item.account.name().as_str()}" } } }
+                    for item in &view.accounts { if item.account.accepts_cash_entries() && Some(item.account.id()) != input.account { option { value: "{item.account.id()}", selected: input.destination == Some(item.account.id()), "{item.account.name().as_str()}" } } }
                 }
                 p { class: "field-hint", {crate::i18n::text("การโอนและการจ่ายยอดหนี้บัตรไม่เพิ่มรายรับรายจ่าย", &[])} }
                 }

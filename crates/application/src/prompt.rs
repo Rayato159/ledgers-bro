@@ -590,34 +590,39 @@ fn command_for_draft(
                 ..EntryInput::empty(today)
             })
         }
-        PromptKind::Account => Command::CreateAccount {
-            name: s("name"),
-            kind: AccountKind::ALL
-                .into_iter()
-                .find(|k| {
-                    k.code() == draft.get("kind")
-                        || k.label() == draft.get("kind")
-                        || (*k == AccountKind::Bank && draft.get("kind") == "ธนาคาร")
-                })
-                .ok_or_else(|| input_error("กรุณาเลือกประเภทบัญชี"))?,
-            opening: s("opening"),
-            credit_cycle: if draft.get("closing_day").is_empty()
-                && draft.get("payment_day").is_empty()
-            {
-                None
-            } else {
-                Some(CreditCardCycle::new(
-                    draft
-                        .get("closing_day")
-                        .parse()
-                        .map_err(|_| DomainError::InvalidCreditCycle)?,
-                    draft
-                        .get("payment_day")
-                        .parse()
-                        .map_err(|_| DomainError::InvalidCreditCycle)?,
-                )?)
-            },
-        },
+        PromptKind::Account => {
+            if matches!(draft.get("kind"), "crypto" | "คริปโต" | "Crypto") {
+                return Err(input_error("เพิ่มพอร์ตคริปโตจากหน้าบัญชี แล้วระบุจำนวน BTC และ SOL"));
+            }
+            Command::CreateAccount {
+                name: s("name"),
+                kind: AccountKind::ALL
+                    .into_iter()
+                    .find(|k| {
+                        k.code() == draft.get("kind")
+                            || k.label() == draft.get("kind")
+                            || (*k == AccountKind::Bank && draft.get("kind") == "ธนาคาร")
+                    })
+                    .ok_or_else(|| input_error("กรุณาเลือกประเภทบัญชี"))?,
+                opening: s("opening"),
+                credit_cycle: if draft.get("closing_day").is_empty()
+                    && draft.get("payment_day").is_empty()
+                {
+                    None
+                } else {
+                    Some(CreditCardCycle::new(
+                        draft
+                            .get("closing_day")
+                            .parse()
+                            .map_err(|_| DomainError::InvalidCreditCycle)?,
+                        draft
+                            .get("payment_day")
+                            .parse()
+                            .map_err(|_| DomainError::InvalidCreditCycle)?,
+                    )?)
+                },
+            }
+        }
         PromptKind::Recurring => Command::AddRecurring(RecurringInput {
             name: s("name"),
             amount: s("amount"),
@@ -715,6 +720,15 @@ impl PlanningRepository {
     }
 }
 impl LedgerRepository for PlanningRepository {
+    fn set_crypto_holdings(&mut self, _: &Account, _: CryptoHoldings) -> Result<(), StorageError> {
+        Err(StorageError::Corrupt)
+    }
+    fn crypto_prices(&mut self) -> Result<Option<CryptoPrices>, StorageError> {
+        Ok(None)
+    }
+    fn save_crypto_prices(&mut self, _: CryptoPrices) -> Result<(), StorageError> {
+        Err(StorageError::Corrupt)
+    }
     fn set_credit_cycle(
         &mut self,
         expected: &Account,
@@ -792,6 +806,20 @@ impl LedgerRepository for PlanningRepository {
         self.state.currency_locked = true;
         self.state.receivables.push(p.loan.clone());
         self.append(p.opening.clone())
+    }
+    fn replace_recurring(
+        &mut self,
+        expected: &RecurringExpense,
+        replacement: &RecurringExpense,
+    ) -> Result<(), StorageError> {
+        let stopped = revised_recurring(&self.state, expected, replacement)?;
+        for schedule in &mut self.state.recurring {
+            if schedule.id() == expected.id() {
+                *schedule = stopped.clone();
+            }
+        }
+        self.state.recurring.push(replacement.clone());
+        Ok(())
     }
     fn add_recurring(&mut self, schedule: &RecurringExpense) -> Result<(), StorageError> {
         validate_new_recurring(&self.state, schedule)?;

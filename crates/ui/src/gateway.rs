@@ -12,6 +12,18 @@ pub type ReceiptScan = (String, Result<(ReceiptImage, String), AppError>);
 
 pub type UiFuture<T> = Pin<Box<dyn Future<Output = Result<T, AppError>> + Send>>;
 pub trait UiGateway: Send + Sync {
+    fn profiles(
+        &self,
+        _command: ledger_application::ProfileCommand,
+    ) -> UiFuture<ledger_application::ProfileResponse> {
+        Box::pin(async { Err(ledger_application::login_required()) })
+    }
+    fn authenticated(&self, _token: &str) -> Result<Gateway, AppError> {
+        Err(ledger_application::login_required())
+    }
+    fn crypto_prices(&self) -> UiFuture<ledger_domain::CryptoPrices> {
+        Box::pin(async { Err(ledger_domain::DomainError::InvalidCryptoPrice.into()) })
+    }
     fn model_availability(&self) -> UiFuture<ModelAvailability> {
         Box::pin(async { Ok(ModelAvailability::Missing) })
     }
@@ -43,6 +55,22 @@ pub trait UiGateway: Send + Sync {
     fn request(&self, command: Command) -> UiFuture<Response>;
     /// The platform owns the save dialog and filesystem, not the component.
     fn save_csv(&self, csv: CsvExport) -> UiFuture<Option<String>>;
+    fn save_document(
+        &self,
+        _document: ledger_application::DocumentExport,
+    ) -> UiFuture<Option<String>> {
+        Box::pin(async {
+            Err(AppError::Input("เครื่องนี้ยังส่งออกไฟล์นี้ไม่ได้".into()))
+        })
+    }
+    fn pick_document(
+        &self,
+        _kind: ledger_application::ImportFileKind,
+    ) -> UiFuture<Option<Arc<[u8]>>> {
+        Box::pin(async {
+            Err(AppError::Input("เครื่องนี้ยังนำเข้าไฟล์ไม่ได้".into()))
+        })
+    }
     fn scan_receipt(
         &self,
         file: dioxus::html::FileData,
@@ -75,6 +103,10 @@ pub struct HostInfo {
 pub struct ArtAssets {
     pub hero: String,
     pub phone: String,
+    pub accounts: String,
+    pub history: String,
+    pub calendar: String,
+    pub tax: String,
 }
 
 impl ArtAssets {
@@ -83,8 +115,12 @@ impl ArtAssets {
         use base64::{Engine, engine::general_purpose::STANDARD};
         let encode = |bytes: &[u8]| format!("data:image/png;base64,{}", STANDARD.encode(bytes));
         Self {
-            hero: encode(include_bytes!("../assets/tanuki/tanuki-ledger.png")),
-            phone: encode(include_bytes!("../assets/tanuki/tanuki-phone.png")),
+            hero: encode(include_bytes!("../assets/characters/lumi.png")),
+            phone: encode(include_bytes!("../assets/characters/ren.png")),
+            accounts: encode(include_bytes!("../assets/characters/mint.png")),
+            history: encode(include_bytes!("../assets/characters/peach.png")),
+            calendar: encode(include_bytes!("../assets/characters/skye.png")),
+            tax: encode(include_bytes!("../assets/characters/iris.png")),
         }
     }
 }

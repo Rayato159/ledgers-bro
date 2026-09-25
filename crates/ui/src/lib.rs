@@ -1,10 +1,13 @@
 //! Dioxus presentation. No SQL, filesystem access, model calls, or tax formulas.
 mod account_deletion;
 mod app;
+mod profiles;
+pub use profiles::LoginRoot;
 mod artwork;
 mod batch_entry;
 mod cashflow;
 mod components;
+mod data_transfer;
 mod entry;
 mod export;
 mod gateway;
@@ -33,6 +36,7 @@ mod prompt_examples;
 
 mod i18n;
 
+mod crypto;
 mod currency;
 
 mod navigation;

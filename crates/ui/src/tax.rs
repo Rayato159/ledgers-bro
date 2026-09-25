@@ -60,7 +60,7 @@ pub(crate) fn TaxPage() -> Element {
             .and_then(|worksheet| calculate_tax(&worksheet))
     });
     rsx! {
-        section { class: "page-heading", div { h1 { {crate::i18n::text("คำนวณภาษีบุคคลธรรมดา", &[])} } p { class: "muted", {crate::i18n::text("คำนวณรายปีจากข้อมูลและสิทธิที่ยืนยัน · ยังไม่ได้ยื่นแบบ", &[])} } } }
+        section { class: "page-heading", div { h1 { {crate::i18n::text("คำนวณภาษีบุคคลธรรมดา", &[])} } p { class: "muted", {crate::i18n::text("คำนวณรายปีจากข้อมูลและสิทธิที่ยืนยัน · ยังไม่ได้ยื่นแบบ", &[])} } } crate::artwork::Companion {role:"tax"} }
         div { class: "tax-calculator",
             form { class: "card tax-inputs", onsubmit: move |event| {
                 event.prevent_default(); session.write().submitted = true;

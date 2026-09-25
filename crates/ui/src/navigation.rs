@@ -17,7 +17,7 @@ pub fn Navigation(show_tax: bool) -> Element {
     rsx! {
         nav { "aria-label": tr("หน้าหลัก"),
             for target in [Page::Overview, Page::Accounts, Page::Transactions] {
-                button { class: if page == target { "nav-item active" } else { "nav-item" },
+                button { class: if page == target { "nav-item active" } else { "nav-item" }, disabled:*store.busy.read(),
                     "aria-current": if page == target { "page" } else { "false" },
                     onclick: move |_| { expanded.set(false); store.page.set(target); },
                     Icon { name: target.icon(), size: 21 } span { "{tr(target.label())}" }
@@ -36,7 +36,7 @@ pub fn Navigation(show_tax: bool) -> Element {
                     button { class: "nav-dismiss", tabindex: "-1", "aria-label": tr("ปิดเมนูเพิ่มเติม"), onclick: move |_| expanded.set(false) }
                     div { id: "more-navigation-panel", class: "nav-more-panel", "aria-label": tr("เมนูเพิ่มเติม"),
                         for target in [Page::Recurring, Page::Receivables, Page::Tax, Page::Settings].into_iter().filter(|p| *p != Page::Tax || show_tax) {
-                            button { class: if page == target { "nav-extra active" } else { "nav-extra" }, "aria-current": if page == target { "page" } else { "false" },
+                            button { class: if page == target { "nav-extra active" } else { "nav-extra" }, disabled:*store.busy.read(), "aria-current": if page == target { "page" } else { "false" },
                                 onclick: move |_| { expanded.set(false); store.page.set(target); },
                                 span { class: "nav-extra-icon", Icon { name: target.icon(), size: 20 } }
                                 span { "{tr(target.label())}" }

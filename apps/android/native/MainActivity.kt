@@ -56,6 +56,11 @@ class MainActivity : WryActivity() {
     }
 
     override fun onDestroy() {
+        documentGeneration.incrementAndGet()
+        importedBytes = null
+        exportBytes = null
+        importState.set(3)
+        exportState.set(3)
         voice.cancelActive()
         receipts.destroy()
         super.onDestroy()
@@ -80,7 +85,7 @@ class MainActivity : WryActivity() {
     @Volatile private var exportName: String = ""
 
     @Keep
-    fun beginCsvExport(filename: String, bytes: ByteArray): Boolean {
+    fun beginDocumentExport(filename: String, mime: String, bytes: ByteArray): Boolean {
         if (exportState.get() == 1) return false
         exportState.set(1)
         exportBytes = bytes
@@ -88,7 +93,7 @@ class MainActivity : WryActivity() {
         return try {
             val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
                 addCategory(Intent.CATEGORY_OPENABLE)
-                type = "text/csv"
+                type = mime
                 putExtra(Intent.EXTRA_TITLE, filename)
             }
             @Suppress("DEPRECATION")
@@ -107,9 +112,61 @@ class MainActivity : WryActivity() {
     @Keep
     fun csvExportName(): String = exportName
 
+    private val importState = AtomicInteger(0)
+    private val documentGeneration = AtomicInteger(0)
+    @Volatile private var importedBytes: ByteArray? = null
+    private var importLimit = 0
+    @Keep fun documentImportState(): Int = importState.get()
+    @Keep fun takeImportedDocument(): ByteArray {
+        val bytes = importedBytes ?: ByteArray(0)
+        importedBytes = null
+        importState.set(0)
+        return bytes
+    }
+    @Keep fun beginDocumentImport(limit: Int): Boolean {
+        if (importState.get() == 1 || limit <= 0 || limit > 32 * 1024 * 1024) return false
+        importedBytes = null
+        importLimit = limit
+        importState.set(1)
+        return try {
+            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "*/*" // The format is strictly validated in Rust, not by the provider's MIME guess.
+            }
+            @Suppress("DEPRECATION")
+            startActivityForResult(intent, IMPORT_REQUEST)
+            true
+        } catch (_: Exception) { importState.set(4); false }
+    }
+
+    private fun importDocument(resultCode: Int, data: Intent?) {
+        if (resultCode != Activity.RESULT_OK) { importState.set(3); return }
+        val uri = data?.data ?: run { importState.set(4); return }
+        val generation = documentGeneration.get()
+        val limit = importLimit
+        val resolver = applicationContext.contentResolver
+        Thread({
+            try {
+                val bytes = resolver.openInputStream(uri)?.use { input ->
+                    val output = java.io.ByteArrayOutputStream()
+                    val buffer = ByteArray(8192)
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read == -1) break
+                        if (output.size() + read > limit) throw java.io.IOException("Document too large")
+                        output.write(buffer, 0, read)
+                    }
+                    output.toByteArray()
+                } ?: throw java.io.IOException("No document input stream")
+                if (documentGeneration.get() == generation) { importedBytes = bytes; importState.set(2) }
+            } catch (_: Exception) { if (documentGeneration.get() == generation) importState.set(4) }
+        }, "ledger-document-import").start()
+    }
+
     @Deprecated("Activity result bridge for the Dioxus WryActivity host")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == IMPORT_REQUEST) { importDocument(resultCode, data); return }
         if (requestCode == OnDeviceReceiptInput.REQUEST) {
             receipts.result(resultCode, data)
             return
@@ -147,6 +204,7 @@ class MainActivity : WryActivity() {
 
     companion object {
         private const val CSV_REQUEST = 4201
+        private const val IMPORT_REQUEST = 4202
     }
 }
 

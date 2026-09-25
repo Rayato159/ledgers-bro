@@ -182,6 +182,7 @@ fn upgrading_schema_eight_preserves_accounts_transactions_cycles_and_preferences
     // V9 only adds optional JSON evidence and a reader-version gate. Unannotated
     // entries serialize exactly as v8; use that previous on-disk format here.
     let db = rusqlite::Connection::open(&path).expect("old file");
+    db.execute_batch("DROP TABLE crypto_holding_changes; DROP TABLE crypto_prices; ALTER TABLE accounts DROP COLUMN sol_atoms; ALTER TABLE accounts DROP COLUMN btc_atoms;").expect("remove v10 fields for v8 fixture");
     db.pragma_update(None, "user_version", 8).expect("v8");
     drop(db);
     let mut app = App::new(
@@ -204,7 +205,7 @@ fn upgrading_schema_eight_preserves_accounts_transactions_cycles_and_preferences
     assert_eq!(
         db.pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))
             .expect("version"),
-        9
+        10
     );
     assert_eq!(
         db.query_row("PRAGMA integrity_check", [], |row| row.get::<_, String>(0))

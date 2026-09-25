@@ -23,7 +23,7 @@ pub fn persist(mut store: UiState, mut theme: Theme, mut locale: Locale, next: U
     }
     store.busy.set(true);
     let gateway = store.gateway.peek().clone();
-    dioxus::dioxus_core::spawn_forever(async move {
+    crate::state::spawn_session(async move {
         match gateway.0.request(Command::SetPreferences(next)).await {
             Ok(Response::Preferences(saved)) => {
                 theme.0.set(saved);

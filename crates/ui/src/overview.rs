@@ -6,6 +6,20 @@ use ledger_application::Dashboard;
 
 #[component]
 pub fn Overview(view: Dashboard) -> Element {
+    let market = use_context::<crate::crypto::CryptoMarket>();
+    let mut view = view;
+    let valuation = ledger_application::crypto_valuation(&view, (market.prices)(), (market.now)());
+    let has_crypto = view
+        .accounts
+        .iter()
+        .any(|a| a.account.crypto_holdings().is_some());
+    let incomplete = valuation.as_ref().is_ok_and(|v| v.unpriced_portfolios > 0);
+    let invalid_value = valuation.is_err();
+    if let Ok(value) = valuation {
+        view.assets = value.assets;
+        view.liabilities = value.liabilities;
+        view.net_worth = value.net_worth;
+    }
     let mut store = use_context::<UiState>();
     let host = use_context::<HostInfo>();
     let date = view.today.date();
@@ -18,20 +32,23 @@ pub fn Overview(view: Dashboard) -> Element {
         .unwrap_or_else(|_| "—".into());
     rsx! {
         section { class: "page-heading", div { h1 { {crate::i18n::text("ภาพรวม", &[])} } } span { class: "date-pill", "{date.day()} {month} {year}" } }
+        if has_crypto { crate::crypto::CryptoMarketStatus {} }
+        if incomplete { p { class: "notice error", role: "status", {crate::i18n::tr("ยอดภาพรวมยังไม่ครบ: ยังไม่รวมพอร์ตที่ไม่มีราคา กรุณาอัปเดตราคาตลาด")} } }
+        if invalid_value { p { class: "notice error", role: "alert", {crate::i18n::tr("มูลค่าเกินขอบเขตที่คำนวณได้")} } }
         div { class: "overview-top",
             section { class: "hero card",
                 div { class: "hero-copy", h2 { {crate::i18n::text("สินทรัพย์สุทธิ", &[])} }
-                    div { class: "hero-amount", span { class: "currency", "{crate::i18n::currency().code()}" } "{money_label(view.net_worth)}" }
+                    div { class: "hero-amount", span { class: "currency", "{crate::i18n::currency().code()}" } if invalid_value { "—" } else { "{money_label(view.net_worth)}" } }
                     p { {crate::i18n::text("รวม {0} บัญชี · ข้อมูลในเครื่อง", &[format!("{}", view.accounts.len())])} }
                     if view.accounts.is_empty() {
                         button { class: "primary", onclick: move |_| store.account_form.set(true), Icon { name: "plus", size: 17 } {crate::i18n::text("เพิ่มบัญชีแรก", &[])} }
                     } else { button { class: "soft-button", onclick: move |_| store.page.set(Page::Accounts), {crate::i18n::text("ดูบัญชีของเรา", &[])} Icon { name: "arrow", size: 16 } } }
                 }
                 div { class: "hero-art", "aria-hidden": "true", img { src: host.art.hero.clone(), alt: "", draggable: false } }
-                div { class: "hero-details",
+                if !invalid_value { div { class: "hero-details",
                     div { span { class: "detail-icon", Icon { name: "wallet", size: 19 } } div { small { {crate::i18n::text("สินทรัพย์", &[])} } strong { "{crate::i18n::currency_prefix()}{money_label(view.assets)}" } } }
                     div { span { class: "detail-icon", Icon { name: "file", size: 19 } } div { small { {crate::i18n::text("หนี้สิน", &[])} } strong { "{crate::i18n::currency_prefix()}{money_label(view.liabilities)}" } } }
-                }
+                } }
             }
             div { class: "month-cards",
                 section { class: "card metric income", div { class: "metric-title", span { {crate::i18n::text("รายรับเดือนนี้", &[])} } span { class: "metric-icon", Icon { name: "down", size: 19 } } } strong { "{crate::i18n::currency_prefix()}{money_label(view.income)}" } small { "{month} {year}" } }
@@ -39,7 +56,7 @@ pub fn Overview(view: Dashboard) -> Element {
                 div { class: "cashflow", span { {crate::i18n::text("รายรับ − รายจ่ายที่บันทึก", &[])} } strong { "{crate::i18n::currency_prefix()}{cashflow}" } }
             }
         }
-        crate::debt_visuals::FinancialPosition { view: view.clone() }
+        if !invalid_value { crate::debt_visuals::FinancialPosition { view: view.clone() } }
         crate::debt_visuals::CreditDebtChart { view: view.clone() }
         crate::cashflow::CashflowChart { view: view.clone() }
         crate::receivables::ReceivablesChart { view: view.clone() }

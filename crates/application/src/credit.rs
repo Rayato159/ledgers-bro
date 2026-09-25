@@ -43,7 +43,7 @@ pub fn select_credit_payment(
     updated.account = input.account.filter(|id| {
         view.accounts.iter().any(|a| {
             a.account.id() == *id
-                && !a.account.is_archived()
+                && a.account.accepts_cash_entries()
                 && a.account.kind() != AccountKind::CreditCard
         })
     });

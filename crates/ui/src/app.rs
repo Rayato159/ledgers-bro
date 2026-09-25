@@ -11,6 +11,7 @@ use ledger_application::Command;
 
 #[component]
 pub fn App() -> Element {
+    use_context_provider(|| SessionTaskScope(dioxus::dioxus_core::current_scope_id()));
     let mut preferences = use_signal(ledger_application::UserPreferences::default);
     use_context_provider(|| crate::theme::Theme(preferences));
     let mut language = use_signal(crate::i18n::Language::default);
@@ -71,6 +72,7 @@ pub fn App() -> Element {
         repayment_selection: use_signal(|| None),
     };
     use_context_provider(|| store);
+    let market = crate::crypto::use_crypto_market(store);
     use_effect(move || store.send(Command::Load));
     let page = *store.page.read();
     let view = store.view.read().clone();
@@ -85,8 +87,8 @@ pub fn App() -> Element {
         style { {crate::theme::stylesheet(preferences())} }
         div { class: "app-shell",
             header { class: "topbar",
-                button { class: "brand", onclick: move |_| store.page.set(Page::Overview),
-                    span { class: "brand-mark", Icon { name: "wallet", size: 23 } }
+                button { class: "brand", disabled:*store.busy.read(), onclick: move |_| store.page.set(Page::Overview),
+                    span { class: "brand-mark character-brand", img {src:host.art.hero.clone(),alt:""} }
                     span { strong { "ledgers" } span { class: "brand-bro", "bro." } }
                 }
                 crate::navigation::Navigation { show_tax }
@@ -94,6 +96,7 @@ pub fn App() -> Element {
             }
             main {
                 div { class: "ledger-context",
+                    crate::profiles::ProfileMenu {}
                     if host.isolated { div { class: "dev-label", "{crate::i18n::tr(host.preview_label)}" } }
                     if let Some(view) = view.as_ref() { span { class: "currency-chip", "{view.currency.code()}" } }
                 }
@@ -106,7 +109,7 @@ pub fn App() -> Element {
                 }
                 if let Some(view) = view {
                     match page {
-                        Page::Chat | Page::Manual if !view.accounts.iter().any(|a| !a.account.is_archived()) => rsx! { crate::currency::FirstAccount {} },
+                        Page::Chat | Page::Manual if !view.accounts.iter().any(|a| a.account.accepts_cash_entries()) => rsx! { crate::currency::FirstAccount {} },
                         Page::Settings => rsx! { crate::currency::SettingsPage { view } },
                         Page::Overview => rsx! { Overview { view } },
                         Page::Accounts => rsx! { AccountsPage { view } },
@@ -124,6 +127,7 @@ pub fn App() -> Element {
             }
             footer { PrivacyNote {} }
             if *store.account_form.read() { AccountDialog {} }
+            if let Some(account) = (market.editing)() { crate::crypto::CryptoHoldingsDialog { account } }
             if *store.export_form.read() { crate::export::ExportDialog {} }
             if *store.repayment_form.read() { if let Some(view) = store.view.read().clone() { crate::receivables::RepaymentDialog { view } } }
             if let Some(deletion) = store.account_deletion.read().clone() {

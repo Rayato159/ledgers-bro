@@ -33,7 +33,13 @@ pub use service::*;
 
 mod tax;
 pub use tax::*;
+mod crypto;
 mod tax_income;
+pub use crypto::*;
+mod data_transfer;
+mod profiles;
+pub use data_transfer::*;
+pub use profiles::*;
 pub use tax_income::*;
 
 mod recurring;

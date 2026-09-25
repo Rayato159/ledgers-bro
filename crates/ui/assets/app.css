@@ -766,25 +766,32 @@ footer { display: flex; justify-content: space-between; align-items: center; gap
 .payment-amount-options .selected { background: var(--action-gradient); color: var(--accent-ink); font-weight: 700; }
 .amount-input[readonly] { background: var(--surface); }
 .credit-section { margin: 28px 0; }
-.credit-debt-chart { margin: 24px 0; }
-.credit-chart-layout { display: grid; grid-template-columns: minmax(220px,280px) minmax(0,1fr); gap: 32px; align-items: center; }
-.credit-donut { position: relative; width: 100%; max-width: 280px; justify-self: center; }
-.credit-donut svg { width: 100%; height: auto; }
-.credit-donut-label { position: absolute; inset: 25% 17%; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; pointer-events: none; }
-.credit-donut-label strong { font-size: clamp(1.2rem,2vw,1.8rem); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.credit-debt-chart { margin: 24px 0; padding: 28px; min-width: 0; container-type: inline-size; }
+.credit-chart-heading { flex-wrap: wrap; gap: 10px 20px; margin-bottom: 24px; }
+.credit-chart-heading h2 { line-height: 1.2; }
+.credit-chart-layout { display: grid; grid-template-columns: minmax(0,280px) minmax(0,1fr); gap: 32px; align-items: center; }
+.credit-donut { position: relative; width: 100%; max-width: 280px; aspect-ratio: 1; justify-self: center; }
+.credit-donut svg { display: block; width: 100%; height: auto; }
+.credit-donut-label { position: absolute; inset: 25% 17%; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 4px; text-align: center; line-height: 1.2; pointer-events: none; }
+.credit-donut-label strong { max-width: 100%; font-size: clamp(1.5rem,2vw,1.8rem); line-height: 1.15; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .credit-donut-label small { color: var(--muted); }
-.credit-chart-legend { max-height: 340px; overflow-y: auto; }
+.credit-chart-legend { min-width: 0; max-height: 340px; overflow-y: auto; }
 .credit-chart-row { display: grid; grid-template-columns: 12px minmax(0,1fr) auto 58px; gap: 12px; align-items: center; padding: 14px 0; border-bottom: 1px solid var(--line); }
+.credit-chart-row:last-child { border-bottom: 0; }
 .credit-chart-row > span:nth-child(2) { overflow-wrap: anywhere; }
-.credit-chart-row strong { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.credit-chart-row strong { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .credit-chart-row small { text-align: right; color: var(--muted); }
 .credit-chart-dot { width: 12px; height: 12px; border-radius: 50%; }
+.credit-chart-note { margin: 24px 0 0; padding-top: 16px; border-top: 1px solid var(--line); }
 @media (max-width: 700px) {
   .entry-kind-tabs { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .credit-debt-chart { padding: 20px; }
+}
+@container (max-width: 640px) {
   .credit-chart-layout { grid-template-columns: minmax(0,1fr); gap: 8px; }
   .credit-donut { max-width: 240px; }
   .credit-chart-row { grid-template-columns: 12px minmax(0,1fr) auto; gap: 8px; }
-  .credit-chart-row strong { grid-column: 2; grid-row: 2; }
+  .credit-chart-row strong { grid-column: 2; grid-row: 2; text-align: left; white-space: normal; overflow-wrap: anywhere; }
   .credit-chart-row small { grid-column: 3; grid-row: 1 / span 2; }
 }
 .credit-card-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,380px),1fr)); gap: 20px; }
@@ -848,3 +855,80 @@ footer { display: flex; justify-content: space-between; align-items: center; gap
   .debt-status-stat { padding: 14px; }
   .credit-cycle-fields { gap: 8px; }
 }
+/* Native-unit portfolios share the same surface and typography as cash accounts. */
+.crypto-market { padding: 24px; margin-bottom: 24px; min-width: 0; }
+.crypto-market-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.crypto-market h2, .crypto-account h2 { margin: 0; }
+.crypto-market p { margin: 6px 0 0; }
+.crypto-market a { color: var(--primary); text-decoration: underline; }
+.crypto-price-strip { display: flex; gap: 12px 24px; flex-wrap: wrap; margin-top: 16px; font-variant-numeric: tabular-nums; }
+.crypto-price-strip strong { margin-right: 8px; }
+.crypto-stale { color: var(--text); border-left: 3px solid var(--primary); padding-left: 10px; }
+.crypto-amount-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 16px; }
+.crypto-amount-fields input { width: 100%; min-width: 0; font-variant-numeric: tabular-nums; }
+.crypto-amount-fields small { display: block; }
+.account-card.crypto-account { align-items: stretch; text-align: left; }
+.crypto-account-title { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.crypto-account-title h2 { overflow-wrap: anywhere; }
+.crypto-account-title .account-icon { margin: 0; flex: 0 0 auto; }
+.crypto-holdings { margin: 18px 0; display: grid; gap: 12px; }
+.crypto-holding { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.coin-symbol { background: var(--surface); border-radius: 12px; padding: 8px 12px; font-weight: 700; }
+.crypto-holding > div { min-width: 0; text-align: right; }
+.account-card .crypto-holding strong { display: block; font-size: 1.2rem; line-height: 1.3; overflow-wrap: anywhere; }
+.crypto-holding small { display: block; }
+.crypto-account-total { border-top: 1px solid var(--border); padding-top: 14px; margin-top: auto; }
+.crypto-account-total > small, .crypto-account-total > strong { display: block; }
+.account-card .crypto-account-total > strong { font-size: 1.45rem; overflow-wrap: anywhere; }
+.crypto-account-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+.crypto-account-actions button { flex: 1 1 auto; }
+@media (max-width: 500px) {
+  .crypto-market { padding: 20px; }
+  .crypto-amount-fields { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .crypto-market-heading > button { width: 100%; }
+}
+.login-shell { min-height: 100dvh; display: grid; place-items: center; padding: 28px 16px; }
+.login-card { width: min(100%, 480px); padding: 28px; text-align: center; }
+.login-mascot { width: 152px; height: 170px; object-fit: contain; }
+.login-card h1 { margin: 6px 0; }
+.login-language { margin: 14px auto; width: 140px; }
+.login-form { text-align: left; display: grid; gap: 9px; padding: 18px 0; }
+.login-form label { margin: 0; }
+.login-form p { margin: 0; }
+.profile-list { display: grid; gap: 10px; margin: 20px 0; }
+.profile-choice { display: flex; align-items: center; gap: 12px; text-align: left; width: 100%; padding: 15px 18px; border: 1px solid var(--line); border-radius: 20px; background: var(--surface); color: var(--ink); }
+.profile-choice.selected { background: var(--surface); outline: 2px solid var(--accent); }
+.profile-choice > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.profile-choice small { display: block; color: var(--muted); }
+.profile-menu { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-right: auto; }
+.profile-current { display: flex; align-items: center; gap: 7px; font-weight: 700; overflow-wrap: anywhere; }
+.profile-menu .soft-button { padding: 7px 12px; min-height: 38px; font-size: var(--text-small); }
+.data-transfer { display: grid; gap: 24px; padding-bottom: 12px; min-width: 0; }
+.data-transfer > .preferences-section-title { margin: 0; }
+.data-transfer-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 20px; }
+.transfer-card { min-width: 0; padding: 26px; border-radius: 22px; background: var(--surface); display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
+.transfer-card h3,.transfer-card p { margin: 0; }
+.transfer-card > .transfer-actions { margin-top: auto; padding-top: 10px; }
+.transfer-icon { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 16px; background: var(--paper); color: var(--ink); }
+.transfer-actions { display: flex; flex-wrap: wrap; gap: 10px; width: 100%; }
+.transfer-actions > button { min-height: 48px; max-width: 100%; white-space: normal; text-align: center; }
+.transfer-feedback { display: flex; align-items: center; gap: 12px; min-width: 0; padding: 14px 16px; border-radius: 18px; color: var(--ink); background: var(--surface); font-size: var(--text-body); }
+.transfer-feedback > p { flex: 1; min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.transfer-feedback-icon { flex: none; width: 32px; height: 32px; display: grid; place-items: center; border-radius: 50%; }
+.transfer-feedback-success .transfer-feedback-icon { color: #246859; background: #e1f3ec; }
+.transfer-feedback-error .transfer-feedback-icon { color: #9c3357; background: #ffe8ee; }
+.transfer-dismiss { flex: none; display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border-radius: 12px; background: transparent; color: var(--muted); }
+.transfer-dismiss:hover { background: var(--raised); color: var(--ink); }
+.transfer-pending { display: flex; gap: 10px; align-items: center; color: var(--muted); }
+[data-theme="dark"] .transfer-feedback-success .transfer-feedback-icon { color: #b9e6d3; background: #294439; }
+[data-theme="dark"] .transfer-feedback-error .transfer-feedback-icon { color: #ffc0d3; background: #532d40; }
+.transfer-dialog .transfer-feedback { margin-top: 20px; }
+.transfer-dialog { max-width: 760px; width: calc(100% - 32px); }
+.csv-example { font: 14px/1.7 ui-monospace,monospace; overflow: auto; max-height: 270px; padding: 16px; background: var(--surface); border-radius: 14px; white-space: pre; }
+.import-rows { max-height: 45dvh; overflow: auto; margin: 16px 0; }
+.import-row { padding: 14px 4px; border-bottom: 1px solid var(--line); }
+.import-row > div { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.import-row p { margin: 4px 0; overflow-wrap: anywhere; }
+.backup-summary { display: grid; grid-template-columns: 1fr auto; gap: 12px; padding: 18px; border-radius: 18px; background: var(--surface); }
+.backup-summary dd { margin: 0; font-weight: 700; }
+@media(max-width:700px) { .data-transfer-grid { grid-template-columns: 1fr; } .transfer-card { padding: 20px; } .transfer-actions > button { flex: 1 1 100%; } .transfer-feedback { gap: 9px; padding: 12px; align-items: flex-start; } .transfer-feedback-icon { margin-top: 6px; } .login-card { padding: 22px; } .profile-menu { width: 100%; } .profile-current { width: 100%; } }

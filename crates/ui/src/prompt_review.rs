@@ -17,7 +17,7 @@ fn options(kind: PromptFieldType, view: &Dashboard) -> Vec<(String, String)> {
         PromptFieldType::Account => view
             .accounts
             .iter()
-            .filter(|a| !a.account.is_archived())
+            .filter(|a| a.account.accepts_cash_entries())
             .map(|a| (a.account.id().to_string(), a.account.name().as_str().into()))
             .collect(),
         PromptFieldType::AccountKind => AccountKind::ALL

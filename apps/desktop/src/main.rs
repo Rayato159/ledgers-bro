@@ -15,11 +15,30 @@ use std::{
 };
 
 struct DesktopGateway {
-    worker: LedgerWorker,
+    worker: Option<LedgerWorker>,
+    profiles: ledger_infrastructure::ProfileWorker,
     model: ModelWorker,
     ocr: TesseractOcr,
 }
 impl UiGateway for DesktopGateway {
+    fn profiles(
+        &self,
+        command: ledger_application::ProfileCommand,
+    ) -> UiFuture<ledger_application::ProfileResponse> {
+        let worker = self.profiles.clone();
+        Box::pin(async move { worker.request(command).await })
+    }
+    fn authenticated(&self, token: &str) -> Result<Gateway, AppError> {
+        Ok(Gateway(Arc::new(Self {
+            worker: Some(self.profiles.ledger(token)?),
+            profiles: self.profiles.clone(),
+            model: self.model.clone(),
+            ocr: self.ocr.clone(),
+        })))
+    }
+    fn crypto_prices(&self) -> UiFuture<ledger_domain::CryptoPrices> {
+        Box::pin(ledger_infrastructure::fetch_crypto_prices())
+    }
     fn model_availability(&self) -> UiFuture<ModelAvailability> {
         let model = self.model.clone();
         Box::pin(async move { model.availability().await })
@@ -31,7 +50,15 @@ impl UiGateway for DesktopGateway {
     fn resolve_text(&self, text: String, operation: ModelOperation) -> UiFuture<Response> {
         let model = self.model.clone();
         let worker = self.worker.clone();
-        Box::pin(async move { model.resolve(&worker, text, operation).await })
+        Box::pin(async move {
+            model
+                .resolve(
+                    &worker.ok_or_else(ledger_application::login_required)?,
+                    text,
+                    operation,
+                )
+                .await
+        })
     }
     fn scan_receipt(
         &self,
@@ -89,23 +116,85 @@ impl UiGateway for DesktopGateway {
     }
     fn request(&self, command: Command) -> UiFuture<Response> {
         let worker = self.worker.clone();
-        Box::pin(async move { worker.request(command).await })
+        Box::pin(async move {
+            worker
+                .ok_or_else(ledger_application::login_required)?
+                .request(command)
+                .await
+        })
     }
     fn save_csv(&self, csv: CsvExport) -> UiFuture<Option<String>> {
+        self.save_document(csv.into())
+    }
+    fn save_document(
+        &self,
+        document: ledger_application::DocumentExport,
+    ) -> UiFuture<Option<String>> {
         Box::pin(async move {
             let file = rfd::AsyncFileDialog::new()
-                .set_title("ส่งออกรายงานบัญชีคู่เป็น CSV")
-                .set_file_name(&csv.filename)
-                .add_filter("CSV", &["csv"])
+                .set_title("เลือกที่บันทึกไฟล์")
+                .set_file_name(&document.filename)
+                .add_filter(
+                    "Ledgers Bro",
+                    &[if document.mime == "text/csv" {
+                        "csv"
+                    } else {
+                        "lbro"
+                    }],
+                )
                 .save_file()
                 .await;
             let Some(file) = file else {
                 return Ok(None);
             };
-            file.write(csv.contents.as_bytes())
+            file.write(&document.bytes)
                 .await
                 .map_err(|_| AppError::Input("เขียนไฟล์ส่งออกไม่ได้ กรุณาลองเลือกที่บันทึกใหม่".into()))?;
             Ok(Some(file.file_name()))
+        })
+    }
+    fn pick_document(
+        &self,
+        kind: ledger_application::ImportFileKind,
+    ) -> UiFuture<Option<Arc<[u8]>>> {
+        Box::pin(async move {
+            let Some(file) = rfd::AsyncFileDialog::new()
+                .set_title("เลือกไฟล์นำเข้า")
+                .add_filter(
+                    "Ledgers Bro",
+                    &[if kind == ledger_application::ImportFileKind::Csv {
+                        "csv"
+                    } else {
+                        "lbro"
+                    }],
+                )
+                .pick_file()
+                .await
+            else {
+                return Ok(None);
+            };
+            let path = file.path().to_owned();
+            let (send, receive) = futures_channel::oneshot::channel();
+            std::thread::Builder::new()
+                .name("document-import".into())
+                .spawn(move || {
+                    let result = (|| {
+                        let input = std::fs::File::open(path)
+                            .map_err(|_| AppError::Input("เปิดไฟล์ไม่ได้".into()))?;
+                        let mut bytes = Vec::new();
+                        input
+                            .take(kind.max_bytes() as u64 + 1)
+                            .read_to_end(&mut bytes)
+                            .map_err(|_| AppError::Input("อ่านไฟล์ไม่ได้".into()))?;
+                        if bytes.len() > kind.max_bytes() {
+                            return Err(AppError::Input("ไฟล์ใหญ่เกินขนาดที่รองรับ".into()));
+                        }
+                        Ok(Some(Arc::from(bytes)))
+                    })();
+                    let _ = send.send(result);
+                })
+                .map_err(|_| AppError::WorkerStopped)?;
+            receive.await.map_err(|_| AppError::WorkerStopped)?
         })
     }
 }
@@ -202,7 +291,7 @@ fn launch() -> Result<(), Box<dyn std::error::Error>> {
             .to_owned(),
     };
     std::fs::create_dir_all(&directory)?;
-    let worker = LedgerWorker::start(directory.join("ledger.sqlite3"))?;
+    let profiles = ledger_infrastructure::ProfileWorker::start(&directory)?;
     let ocr_directory = ocr_directory.unwrap_or_else(|| {
         if cfg!(debug_assertions) {
             PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../.tools/ocr")
@@ -214,7 +303,8 @@ fn launch() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
     let gateway = Gateway(Arc::new(DesktopGateway {
-        worker,
+        worker: None,
+        profiles,
         model: ModelWorker::start(model_directory.unwrap_or_else(|| directory.join("models")))?,
         ocr: TesseractOcr::new(ocr_directory),
     }));
@@ -258,6 +348,6 @@ fn launch() -> Result<(), Box<dyn std::error::Error>> {
         .with_cfg(config)
         .with_context(gateway)
         .with_context(host)
-        .launch(ledger_ui::App);
+        .launch(ledger_ui::LoginRoot);
     Ok(())
 }

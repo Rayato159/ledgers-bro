@@ -12,10 +12,10 @@ use std::{
 };
 
 const APPLICATION_ID: i64 = 1_279_414_863;
-const SCHEMA_VERSION: i64 = 9;
+const SCHEMA_VERSION: i64 = 10;
 
 pub struct SqliteLedger {
-    connection: Connection,
+    pub(crate) connection: Connection,
 }
 impl SqliteLedger {
     pub fn open(path: &Path) -> Result<Self, StorageError> {
@@ -87,6 +87,10 @@ impl SqliteLedger {
             tx.execute_batch(include_str!("../migrations/009_income_tax.sql"))
                 .map_err(database_error)?;
         }
+        if version < 10 {
+            tx.execute_batch(include_str!("../migrations/010_crypto_holdings.sql"))
+                .map_err(database_error)?;
+        }
         if version < SCHEMA_VERSION {
             read_state(&tx)?;
         }
@@ -102,6 +106,58 @@ impl SqliteLedger {
 }
 
 impl LedgerRepository for SqliteLedger {
+    fn set_crypto_holdings(
+        &mut self,
+        expected: &Account,
+        holdings: CryptoHoldings,
+    ) -> Result<(), StorageError> {
+        let tx = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(database_error)?;
+        let updated =
+            ledger_application::configure_crypto_holdings(&read_state(&tx)?, expected, holdings)?;
+        tx.execute(
+            "UPDATE accounts SET btc_atoms=?1,sol_atoms=?2 WHERE id=?3",
+            params![
+                holdings.quantity(CryptoAsset::Bitcoin).atoms(),
+                holdings.quantity(CryptoAsset::Solana).atoms(),
+                updated.id().to_string()
+            ],
+        )
+        .map_err(database_error)?;
+        record_holdings_change(&tx, updated.id(), expected.crypto_holdings(), holdings)?;
+        tx.commit().map_err(database_error)
+    }
+    fn crypto_prices(&mut self) -> Result<Option<CryptoPrices>, StorageError> {
+        let row = self
+            .connection
+            .query_row(
+                "SELECT btc_price,btc_time,sol_price,sol_time FROM crypto_prices WHERE id=1",
+                [],
+                |r| {
+                    Ok((
+                        r.get::<_, u64>(0)?,
+                        r.get::<_, i64>(1)?,
+                        r.get::<_, u64>(2)?,
+                        r.get::<_, i64>(3)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(database_error)?;
+        row.map(|(bp, bt, sp, st)| {
+            Ok(CryptoPrices {
+                bitcoin: CryptoQuote::new(ThbUnitPrice::from_units(bp)?, bt)?,
+                solana: CryptoQuote::new(ThbUnitPrice::from_units(sp)?, st)?,
+            })
+        })
+        .transpose()
+    }
+    fn save_crypto_prices(&mut self, prices: CryptoPrices) -> Result<(), StorageError> {
+        self.connection.execute("INSERT INTO crypto_prices(id,btc_price,btc_time,sol_price,sol_time) VALUES(1,?1,?2,?3,?4) ON CONFLICT(id) DO UPDATE SET btc_price=CASE WHEN excluded.btc_time>=btc_time THEN excluded.btc_price ELSE btc_price END,btc_time=MAX(btc_time,excluded.btc_time),sol_price=CASE WHEN excluded.sol_time>=sol_time THEN excluded.sol_price ELSE sol_price END,sol_time=MAX(sol_time,excluded.sol_time)", params![prices.bitcoin.price().units(),prices.bitcoin.observed_at(),prices.solana.price().units(),prices.solana.observed_at()]).map_err(database_error)?;
+        Ok(())
+    }
     fn set_credit_cycle(
         &mut self,
         expected: &Account,
@@ -332,6 +388,28 @@ impl LedgerRepository for SqliteLedger {
         .map_err(database_error)?;
         tx.commit().map_err(database_error)
     }
+    fn replace_recurring(
+        &mut self,
+        expected: &RecurringExpense,
+        replacement: &RecurringExpense,
+    ) -> Result<(), StorageError> {
+        let tx = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(database_error)?;
+        let stopped =
+            ledger_application::revised_recurring(&read_state(&tx)?, expected, replacement)?;
+        tx.execute(
+            "UPDATE recurring_expenses SET stopped_from=?1 WHERE id=?2",
+            params![
+                stopped.stopped_from().map(|m| m.to_string()),
+                expected.id().to_string()
+            ],
+        )
+        .map_err(database_error)?;
+        insert_recurring(&tx, replacement)?;
+        tx.commit().map_err(database_error)
+    }
     fn add_recurring(&mut self, schedule: &RecurringExpense) -> Result<(), StorageError> {
         let tx = self
             .connection
@@ -339,7 +417,7 @@ impl LedgerRepository for SqliteLedger {
             .map_err(database_error)?;
         let state = read_state(&tx)?;
         ledger_application::validate_new_recurring(&state, schedule)?;
-        tx.execute("INSERT INTO recurring_expenses(id,name,amount_minor,category,account_id,day,start_month,stopped_from,installments) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)", params![schedule.id().to_string(),schedule.name().as_str(),schedule.amount().money().minor(),schedule.category().code(),schedule.account().map(|id| id.to_string()),schedule.due().day(),schedule.due().start().to_string(),schedule.stopped_from().map(|m| m.to_string()),schedule.due().installments()]).map_err(database_error)?;
+        insert_recurring(&tx, schedule)?;
         tx.commit().map_err(database_error)
     }
     fn stop_recurring(
@@ -412,75 +490,43 @@ impl LedgerRepository for SqliteLedger {
         insert_settlement(&tx, expected.id(), month, entry.id())?;
         tx.commit().map_err(database_error)
     }
+    fn export_backup(&mut self) -> Result<Vec<u8>, StorageError> {
+        crate::backup::export(self)
+    }
+    fn preview_backup(
+        &mut self,
+        bytes: &[u8],
+    ) -> Result<ledger_application::BackupSummary, StorageError> {
+        crate::backup::preview(bytes)
+    }
+    fn restore_backup(
+        &mut self,
+        bytes: &[u8],
+    ) -> Result<ledger_application::BackupSummary, StorageError> {
+        crate::backup::restore(self, bytes)
+    }
+    fn commit_import(
+        &mut self,
+        entries: &[ledger_application::PreparedEntry],
+    ) -> Result<Vec<CommitOutcome>, StorageError> {
+        if entries.iter().any(|p| {
+            p.recurring.is_some()
+                || !matches!(
+                    p.entry.kind(),
+                    EntryKind::Expense { .. }
+                        | EntryKind::Income { .. }
+                        | EntryKind::Transfer { .. }
+                )
+        }) {
+            return Err(StorageError::Corrupt);
+        }
+        self.commit_entries(entries, ledger_application::MAX_IMPORT_ROWS)
+    }
     fn commit_batch(
         &mut self,
         entries: &[ledger_application::PreparedEntry],
     ) -> Result<Vec<CommitOutcome>, StorageError> {
-        if entries.is_empty() || entries.len() > ledger_application::MAX_BATCH_ENTRIES {
-            return Err(StorageError::Corrupt);
-        }
-        let tx = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(database_error)?;
-        let mut state = read_state(&tx)?;
-        let mut outcomes = Vec::new();
-        let mut submissions = BTreeSet::new();
-        let mut ids = BTreeSet::new();
-        for prepared in entries {
-            if !submissions.insert(prepared.submission)
-                || !ids.insert(prepared.entry.id())
-                || matches!(
-                    prepared.entry.kind(),
-                    EntryKind::Opening { .. }
-                        | EntryKind::ReceivableOpening { .. }
-                        | EntryKind::Lending { .. }
-                        | EntryKind::Reversal { .. }
-                )
-            {
-                return Err(StorageError::SubmissionConflict);
-            }
-            if let Some(outcome) = existing_submission(&tx, &prepared.entry, prepared.submission)? {
-                if let Some(link) = &prepared.recurring
-                    && !state.settlements.iter().any(|s| {
-                        s.recurring == link.schedule.id()
-                            && s.month == link.month
-                            && s.entry == prepared.entry.id()
-                    })
-                {
-                    return Err(StorageError::SubmissionConflict);
-                }
-                outcomes.push(outcome);
-            } else {
-                validate_append(&state, &prepared.entry)?;
-                if let Some(link) = &prepared.recurring {
-                    ledger_application::validate_recurring_settlement(
-                        &state,
-                        &link.schedule,
-                        link.month,
-                        &prepared.entry,
-                    )?;
-                }
-                insert_entry(&tx, &prepared.entry, prepared.submission)?;
-                if let Some(link) = &prepared.recurring {
-                    insert_settlement(&tx, link.schedule.id(), link.month, prepared.entry.id())?;
-                    state
-                        .settlements
-                        .retain(|s| !(s.recurring == link.schedule.id() && s.month == link.month));
-                    state
-                        .settlements
-                        .push(ledger_application::RecurringSettlement {
-                            recurring: link.schedule.id(),
-                            month: link.month,
-                            entry: prepared.entry.id(),
-                        });
-                }
-                state.entries.push(prepared.entry.clone());
-                outcomes.push(CommitOutcome::Saved(prepared.entry.id()));
-            }
-        }
-        tx.commit().map_err(database_error)?;
-        Ok(outcomes)
+        self.commit_entries(entries, ledger_application::MAX_BATCH_ENTRIES)
     }
     fn delete_account(&mut self, deletion: &AccountDeletion) -> Result<(), StorageError> {
         let tx = self
@@ -535,10 +581,13 @@ impl LedgerRepository for SqliteLedger {
         }
         let mut state = read_state(&tx)?;
         account.ensure_can_add(&state.accounts)?;
+        if account.crypto_holdings().is_some() && state.currency != Currency::Thb {
+            return Err(DomainError::InvalidCurrency.into());
+        }
         state.accounts.push(account.clone());
         validate_append(&state, opening)?;
         tx.execute(
-            "INSERT INTO accounts(id,name,name_key,kind,archived,closing_day,payment_day) VALUES(?1,?2,?3,?4,?5,?6,?7)",
+            "INSERT INTO accounts(id,name,name_key,kind,archived,closing_day,payment_day,btc_atoms,sol_atoms) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)",
             params![
                 account.id().to_string(),
                 account.name().as_str(),
@@ -546,10 +595,15 @@ impl LedgerRepository for SqliteLedger {
                 account.kind().code(),
                 account.is_archived(),
                 account.credit_cycle().map(CreditCardCycle::closing_day),
-                account.credit_cycle().map(CreditCardCycle::payment_day)
+                account.credit_cycle().map(CreditCardCycle::payment_day),
+                account.crypto_holdings().map(|h| h.quantity(CryptoAsset::Bitcoin).atoms()),
+                account.crypto_holdings().map(|h| h.quantity(CryptoAsset::Solana).atoms())
             ],
         )
         .map_err(database_error)?;
+        if let Some(holdings) = account.crypto_holdings() {
+            record_holdings_change(&tx, account.id(), None, holdings)?;
+        }
         insert_entry(&tx, opening, submission)?;
         tx.commit().map_err(database_error)?;
         Ok(CommitOutcome::Saved(opening.id()))
@@ -579,6 +633,24 @@ impl LedgerRepository for SqliteLedger {
         tx.commit().map_err(database_error)?;
         Ok(CommitOutcome::Saved(entry.id()))
     }
+}
+
+fn insert_recurring(
+    connection: &Connection,
+    schedule: &RecurringExpense,
+) -> Result<(), StorageError> {
+    connection.execute("INSERT INTO recurring_expenses(id,name,amount_minor,category,account_id,day,start_month,stopped_from,installments) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)", params![schedule.id().to_string(),schedule.name().as_str(),schedule.amount().money().minor(),schedule.category().code(),schedule.account().map(|id| id.to_string()),schedule.due().day(),schedule.due().start().to_string(),schedule.stopped_from().map(|m| m.to_string()),schedule.due().installments()]).map_err(database_error)?;
+    Ok(())
+}
+
+fn record_holdings_change(
+    connection: &Connection,
+    account: AccountId,
+    before: Option<CryptoHoldings>,
+    after: CryptoHoldings,
+) -> Result<(), StorageError> {
+    connection.execute("INSERT INTO crypto_holding_changes(account_id,before_btc,before_sol,after_btc,after_sol) VALUES(?1,?2,?3,?4,?5)", params![account.to_string(),before.map(|h|h.quantity(CryptoAsset::Bitcoin).atoms()),before.map(|h|h.quantity(CryptoAsset::Solana).atoms()),after.quantity(CryptoAsset::Bitcoin).atoms(),after.quantity(CryptoAsset::Solana).atoms()]).map_err(database_error)?;
+    Ok(())
 }
 
 fn existing_submission(
@@ -645,9 +717,9 @@ fn target_columns(target: PostingTarget) -> (Option<String>, Option<&'static str
     }
 }
 
-fn read_state(connection: &Connection) -> Result<LedgerState, StorageError> {
+pub(crate) fn read_state(connection: &Connection) -> Result<LedgerState, StorageError> {
     let mut accounts_query = connection
-        .prepare("SELECT id,name,name_key,kind,archived,closing_day,payment_day FROM accounts ORDER BY name_key,id")
+        .prepare("SELECT id,name,name_key,kind,archived,closing_day,payment_day,btc_atoms,sol_atoms FROM accounts ORDER BY name_key,id")
         .map_err(database_error)?;
     let mut accounts_rows = accounts_query.query([]).map_err(database_error)?;
     let mut accounts = Vec::new();
@@ -675,6 +747,15 @@ fn read_state(connection: &Connection) -> Result<LedgerState, StorageError> {
                 account = account
                     .with_credit_cycle(cycle)
                     .map_err(|_| StorageError::Corrupt)?;
+            }
+            (None, None) => {}
+            _ => return Err(StorageError::Corrupt),
+        }
+        let btc: Option<u64> = row.get(7).map_err(database_error)?;
+        let sol: Option<u64> = row.get(8).map_err(database_error)?;
+        match (btc, sol) {
+            (Some(btc), Some(sol)) => {
+                account = account.with_crypto_holdings(CryptoHoldings::from_atoms(btc, sol)?)?
             }
             (None, None) => {}
             _ => return Err(StorageError::Corrupt),
@@ -880,4 +961,78 @@ fn read_recurring(
         settlements.push(settlement);
     }
     Ok((schedules, settlements))
+}
+
+impl SqliteLedger {
+    fn commit_entries(
+        &mut self,
+        entries: &[ledger_application::PreparedEntry],
+        limit: usize,
+    ) -> Result<Vec<CommitOutcome>, StorageError> {
+        if entries.is_empty() || entries.len() > limit {
+            return Err(StorageError::Corrupt);
+        }
+        let tx = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(database_error)?;
+        let mut state = read_state(&tx)?;
+        let mut outcomes = Vec::new();
+        let mut submissions = BTreeSet::new();
+        let mut ids = BTreeSet::new();
+        for prepared in entries {
+            if !submissions.insert(prepared.submission)
+                || !ids.insert(prepared.entry.id())
+                || matches!(
+                    prepared.entry.kind(),
+                    EntryKind::Opening { .. }
+                        | EntryKind::ReceivableOpening { .. }
+                        | EntryKind::Lending { .. }
+                        | EntryKind::Reversal { .. }
+                )
+            {
+                return Err(StorageError::SubmissionConflict);
+            }
+            if let Some(outcome) = existing_submission(&tx, &prepared.entry, prepared.submission)? {
+                if let Some(link) = &prepared.recurring
+                    && !state.settlements.iter().any(|s| {
+                        s.recurring == link.schedule.id()
+                            && s.month == link.month
+                            && s.entry == prepared.entry.id()
+                    })
+                {
+                    return Err(StorageError::SubmissionConflict);
+                }
+                outcomes.push(outcome);
+            } else {
+                validate_append(&state, &prepared.entry)?;
+                if let Some(link) = &prepared.recurring {
+                    ledger_application::validate_recurring_settlement(
+                        &state,
+                        &link.schedule,
+                        link.month,
+                        &prepared.entry,
+                    )?;
+                }
+                insert_entry(&tx, &prepared.entry, prepared.submission)?;
+                if let Some(link) = &prepared.recurring {
+                    insert_settlement(&tx, link.schedule.id(), link.month, prepared.entry.id())?;
+                    state
+                        .settlements
+                        .retain(|s| !(s.recurring == link.schedule.id() && s.month == link.month));
+                    state
+                        .settlements
+                        .push(ledger_application::RecurringSettlement {
+                            recurring: link.schedule.id(),
+                            month: link.month,
+                            entry: prepared.entry.id(),
+                        });
+                }
+                state.entries.push(prepared.entry.clone());
+                outcomes.push(CommitOutcome::Saved(prepared.entry.id()));
+            }
+        }
+        tx.commit().map_err(database_error)?;
+        Ok(outcomes)
+    }
 }

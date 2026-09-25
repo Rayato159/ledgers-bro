@@ -8,13 +8,17 @@ pub fn AccountsPage(view: Dashboard) -> Element {
     let mut store = use_context::<UiState>();
     let host = use_context::<HostInfo>();
     rsx! {
-        section { class: "page-heading", div { h1 { {crate::i18n::text("บัญชีของเรา", &[])} } p { class: "muted", {crate::i18n::text("{0} / 100 บัญชี · ทุกยอดเป็นเงินบาท", &[format!("{}", view.accounts.len())])} } } button { class: "primary", disabled: view.accounts.len() >= 100 || *store.busy.read(), onclick: move |_| store.account_form.set(true), Icon { name: "plus", size: 17 } {crate::i18n::text("เพิ่มบัญชี", &[])} } }
+        section { class: "page-heading", div { h1 { {crate::i18n::text("บัญชีของเรา", &[])} } p { class: "muted", {crate::i18n::text("{0} / 100 บัญชี · มูลค่ารวมแสดงเป็นเงินบาท", &[format!("{}", view.accounts.len())])} } } button { class: "primary", disabled: view.accounts.len() >= 100 || *store.busy.read(), onclick: move |_| store.account_form.set(true), Icon { name: "plus", size: 17 } {crate::i18n::text("เพิ่มบัญชี", &[])} } }
         div { class: "account-art-banner card", div { h2 { {crate::i18n::text("เงินแต่ละก้อน อยู่ตรงไหน", &[])} } p { {crate::i18n::text("แยกบัญชีตามที่ใช้ แล้วค่อย ๆ ดูแลไปด้วยกัน", &[])} }
             div { class: "account-art-types", for kind in AccountKind::ALL { span { title: crate::i18n::tr(kind.label()), ArtIcon { name: account_art(kind), size: 44 } } } }
-        } img { src: host.art.hero.clone(), alt: crate::i18n::text("ทานูกิถือสมุดบัญชี", &[]) } }
+        } img { src: host.art.accounts.clone(), alt: "Mint" } }
         if view.accounts.is_empty() { div { class: "card", EmptyState { title: crate::i18n::text("เริ่มจากกระเป๋าใบแรก", &[]).to_owned(), body: crate::i18n::text("เพิ่มเงินสดหรือธนาคาร แล้วใส่ยอดที่มีอยู่ตอนนี้ ยอดเริ่มต้นจะไม่นับเป็นรายรับ", &[]).to_owned() } } }
+        if view.accounts.iter().any(|a| a.account.kind() == AccountKind::Crypto) { crate::crypto::CryptoMarketStatus {} }
         div { class: "account-grid",
             for item in &view.accounts {
+                if item.account.kind() == AccountKind::Crypto {
+                    crate::crypto::CryptoAccountCard { key: "{item.account.id()}", account: item.account.clone(), book_balance: item.balance }
+                } else {
                 {
                     let is_credit = item.account.kind() == AccountKind::CreditCard;
                     let id = item.account.id();
@@ -31,10 +35,11 @@ pub fn AccountsPage(view: Dashboard) -> Element {
                         }
                     } }
                 }
+                }
             }
         }
         crate::debt_visuals::CreditCardsPanel { view: view.clone() }
-        div { class: "inline-note", Icon { name: "file", size: 19 } p { {crate::i18n::text("คริปโตและพอร์ตหุ้นในรุ่นนี้เป็นการจดมูลค่าเงินบาทด้วยมือ ยังไม่มีราคาตลาดสดหรือการซื้อขายสินทรัพย์", &[])} } }
+        div { class: "inline-note", Icon { name: "file", size: 19 } p { {crate::i18n::tr("พอร์ตหุ้นยังใช้มูลค่าที่บันทึกด้วยมือ ส่วนคริปโตใช้จำนวนเหรียญและราคาตลาด ไม่มีการส่งคำสั่งซื้อขาย")} } }
     }
 }
 
@@ -44,6 +49,8 @@ pub fn AccountDialog() -> Element {
     let mut name = use_signal(String::new);
     let mut kind = use_signal(|| AccountKind::Cash);
     let mut opening = use_signal(|| "0".to_owned());
+    let bitcoin = use_signal(|| "0".to_owned());
+    let solana = use_signal(|| "0".to_owned());
     let closing = use_signal(String::new);
     let payment = use_signal(String::new);
     rsx! {
@@ -52,6 +59,13 @@ pub fn AccountDialog() -> Element {
             oncancel: move |event| { event.prevent_default(); if !*store.busy.read() { store.account_form.set(false); } },
             form { onsubmit: move |event| {
                 event.prevent_default();
+                if kind() == AccountKind::Crypto {
+                    match CryptoHoldings::parse(&bitcoin(), &solana()) {
+                        Ok(holdings) => store.send(Command::CreateCryptoAccount { name: name(), holdings }),
+                        Err(e) => store.notice.set(Some((true, e.to_string()))),
+                    }
+                    return;
+                }
                 let credit_cycle = if kind() == AccountKind::CreditCard {
                     match crate::debt_visuals::cycle_from_fields(&closing(), &payment()) {
                         Ok(cycle) => Some(cycle),
@@ -65,8 +79,13 @@ pub fn AccountDialog() -> Element {
                 label { r#for: "account-name", {crate::i18n::text("ชื่อบัญชี", &[])} } input { id: "account-name", name: "account-name", autofocus: true, required: true, maxlength: 60, placeholder: crate::i18n::text("เช่น เงินสด หรือ ธนาคาร ออมเงิน", &[]), value: "{name}", disabled: *store.busy.read(), oninput: move |event| name.set(event.value()) }
                 label { r#for: "account-kind", {crate::i18n::text("ประเภทบัญชี", &[])} } select { id: "account-kind", value: kind().code(), disabled: *store.busy.read(), onchange: move |event| { if let Ok(value) = AccountKind::from_code(&event.value()) { kind.set(value); } }, for item in AccountKind::ALL { option { value: item.code(), "{crate::i18n::tr(item.label())}" } } }
                 div { class: "account-kind-preview", ArtIcon { name: account_art(kind()), size: 44 } span { "{crate::i18n::tr(kind().label())}" } }
-                label { r#for: "opening", if kind() == AccountKind::CreditCard { {crate::i18n::text("ยอดหนี้ที่ค้างอยู่ (ไม่ใช่วงเงินบัตร)", &[])} } else { {crate::i18n::text("ยอดเริ่มต้น (บาท)", &[])} } } input { id: "opening", name: "opening", inputmode: "decimal", required: true, value: "{opening}", disabled: *store.busy.read(), oninput: move |event| opening.set(event.value()) }
-                p { class: "field-hint", {crate::i18n::text("ยอดเริ่มต้นไม่ถูกนับเป็นรายรับเดือนนี้", &[])} }
+                if kind() == AccountKind::Crypto {
+                    crate::crypto::CryptoAmounts { bitcoin, solana }
+                    if store.view.read().as_ref().is_some_and(|v| v.currency != Currency::Thb) { p { class: "form-error", {crate::i18n::tr("พอร์ตเหรียญรองรับเฉพาะสมุดบัญชี THB")} } }
+                } else {
+                    label { r#for: "opening", if kind() == AccountKind::CreditCard { {crate::i18n::text("ยอดหนี้ที่ค้างอยู่ (ไม่ใช่วงเงินบัตร)", &[])} } else { {crate::i18n::text("ยอดเริ่มต้น (บาท)", &[])} } } input { id: "opening", name: "opening", inputmode: "decimal", required: true, value: "{opening}", disabled: *store.busy.read(), oninput: move |event| opening.set(event.value()) }
+                    p { class: "field-hint", {crate::i18n::text("ยอดเริ่มต้นไม่ถูกนับเป็นรายรับเดือนนี้", &[])} }
+                }
                 if kind() == AccountKind::CreditCard {
                     fieldset { class: "credit-cycle-group", disabled: *store.busy.read(), "aria-label": crate::i18n::tr("บัตรเครดิต"), crate::debt_visuals::CycleFields { closing, payment, prefix: "new-card" } }
                     p { class: "field-hint", {crate::i18n::text("ยอดหนี้เริ่มต้นรวมในยอดรอชำระ แต่ไม่เดารอบบิลย้อนหลัง", &[])} }
@@ -84,7 +103,7 @@ pub fn TransactionsPage(view: Dashboard) -> Element {
     let host = use_context::<HostInfo>();
     rsx! {
         section { class: "page-heading", div { h1 { {crate::i18n::text("รายการทั้งหมด", &[])} } p { class: "muted", {crate::i18n::text("เรียงตามเวลาที่บันทึก • ยกเลิกรายการได้โดยเก็บประวัติไว้", &[])} } } button { class: "soft-button", disabled: *store.busy.read(), onclick: move |_| { store.notice.set(None); store.export_form.set(true); }, Icon { name: "download", size: 18 } {crate::i18n::text("ส่งออก CSV", &[])} } }
-        div { class: "history-art-banner", img { src: host.art.hero.clone(), alt: crate::i18n::text("ทานูกิช่วยดูสมุดบัญชี", &[]) } div { h2 { {crate::i18n::text("ทุกรายการ ตรวจดูได้", &[])} } p { {crate::i18n::text("รายรับ รายจ่าย และการโอน รวมไว้ในที่เดียว", &[])} } } }
+        div { class: "history-art-banner", img { src: host.art.history.clone(), alt: "Peach" } div { h2 { {crate::i18n::text("ทุกรายการ ตรวจดูได้", &[])} } p { {crate::i18n::text("รายรับ รายจ่าย และการโอน รวมไว้ในที่เดียว", &[])} } } }
         section { class: "card transaction-card", TransactionRows { view, limit: usize::MAX, allow_cancel: true } }
     }
 }

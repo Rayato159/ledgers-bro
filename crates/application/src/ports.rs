@@ -37,6 +37,31 @@ pub enum CommitOutcome {
 /// Each mutation is atomic and must recheck invariants against current data.
 /// A snapshot is consistent across both collections. No partially saved postings.
 pub trait LedgerRepository {
+    fn export_backup(&mut self) -> Result<Vec<u8>, StorageError> {
+        Err(StorageError::Unavailable)
+    }
+    fn preview_backup(&mut self, _bytes: &[u8]) -> Result<crate::BackupSummary, StorageError> {
+        Err(StorageError::Unavailable)
+    }
+    fn restore_backup(&mut self, _bytes: &[u8]) -> Result<crate::BackupSummary, StorageError> {
+        Err(StorageError::Unavailable)
+    }
+    fn commit_import(
+        &mut self,
+        _entries: &[crate::PreparedEntry],
+    ) -> Result<Vec<CommitOutcome>, StorageError> {
+        Err(StorageError::Unavailable)
+    }
+    fn set_crypto_holdings(
+        &mut self,
+        expected: &Account,
+        holdings: ledger_domain::CryptoHoldings,
+    ) -> Result<(), StorageError>;
+    fn crypto_prices(&mut self) -> Result<Option<ledger_domain::CryptoPrices>, StorageError>;
+    fn save_crypto_prices(
+        &mut self,
+        prices: ledger_domain::CryptoPrices,
+    ) -> Result<(), StorageError>;
     fn set_credit_cycle(
         &mut self,
         expected: &Account,
@@ -59,6 +84,11 @@ pub trait LedgerRepository {
     fn add_recurring(
         &mut self,
         schedule: &ledger_domain::RecurringExpense,
+    ) -> Result<(), StorageError>;
+    fn replace_recurring(
+        &mut self,
+        expected: &ledger_domain::RecurringExpense,
+        replacement: &ledger_domain::RecurringExpense,
     ) -> Result<(), StorageError>;
     fn stop_recurring(
         &mut self,
@@ -130,6 +160,7 @@ impl<T: IdSource + ?Sized> IdSource for &T {
 pub fn validate_append(state: &LedgerState, entry: &JournalEntry) -> Result<(), StorageError> {
     use ledger_domain::{DomainError, EntryKind};
     entry.validate_accounts(&state.accounts)?;
+    crate::validate_crypto_cash_entry(state, entry)?;
     if entry.income_tax().is_some()
         && (state.currency != ledger_domain::Currency::Thb || !state.thai_tax_enabled)
     {

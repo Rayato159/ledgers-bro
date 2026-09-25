@@ -13,7 +13,8 @@ use std::{
 };
 
 struct AndroidGateway {
-    worker: LedgerWorker,
+    worker: Option<LedgerWorker>,
+    profiles: ledger_infrastructure::ProfileWorker,
     model: ModelWorker,
 }
 
@@ -55,7 +56,8 @@ pub async fn initialize() -> Result<Gateway, AppError> {
                 std::fs::create_dir_all(&directory)
                     .map_err(|_| AppError::Input("เปิดที่เก็บข้อมูลในเครื่องไม่ได้".into()))?;
                 Ok(Gateway(Arc::new(AndroidGateway {
-                    worker: LedgerWorker::start(directory.join("ledger.sqlite3"))?,
+                    worker: None,
+                    profiles: ledger_infrastructure::ProfileWorker::start(&directory)?,
                     model: ModelWorker::start(directory.join("models"))?,
                 })))
             })();
@@ -66,6 +68,23 @@ pub async fn initialize() -> Result<Gateway, AppError> {
 }
 
 impl UiGateway for AndroidGateway {
+    fn profiles(
+        &self,
+        command: ledger_application::ProfileCommand,
+    ) -> UiFuture<ledger_application::ProfileResponse> {
+        let worker = self.profiles.clone();
+        Box::pin(async move { worker.request(command).await })
+    }
+    fn authenticated(&self, token: &str) -> Result<Gateway, AppError> {
+        Ok(Gateway(Arc::new(Self {
+            worker: Some(self.profiles.ledger(token)?),
+            profiles: self.profiles.clone(),
+            model: self.model.clone(),
+        })))
+    }
+    fn crypto_prices(&self) -> UiFuture<ledger_domain::CryptoPrices> {
+        Box::pin(ledger_infrastructure::fetch_crypto_prices())
+    }
     fn model_availability(&self) -> UiFuture<ModelAvailability> {
         let model = self.model.clone();
         Box::pin(async move { model.availability().await })
@@ -77,7 +96,15 @@ impl UiGateway for AndroidGateway {
     fn resolve_text(&self, text: String, operation: ModelOperation) -> UiFuture<Response> {
         let model = self.model.clone();
         let worker = self.worker.clone();
-        Box::pin(async move { model.resolve(&worker, text, operation).await })
+        Box::pin(async move {
+            model
+                .resolve(
+                    &worker.ok_or_else(ledger_application::login_required)?,
+                    text,
+                    operation,
+                )
+                .await
+        })
     }
     fn supports_voice(&self) -> bool {
         true
@@ -99,19 +126,31 @@ impl UiGateway for AndroidGateway {
     }
     fn request(&self, command: Command) -> UiFuture<Response> {
         let worker = self.worker.clone();
-        Box::pin(async move { worker.request(command).await })
+        Box::pin(async move {
+            worker
+                .ok_or_else(ledger_application::login_required)?
+                .request(command)
+                .await
+        })
     }
 
     fn save_csv(&self, csv: CsvExport) -> UiFuture<Option<String>> {
+        self.save_document(csv.into())
+    }
+    fn save_document(
+        &self,
+        document: ledger_application::DocumentExport,
+    ) -> UiFuture<Option<String>> {
         Box::pin(async move {
             let started = on_activity(move |env, activity| {
-                let name = env.new_string(csv.filename)?;
-                let data = env.byte_array_from_slice(csv.contents.as_bytes())?;
+                let name = env.new_string(document.filename)?;
+                let mime = env.new_string(document.mime)?;
+                let data = env.byte_array_from_slice(&document.bytes)?;
                 env.call_method(
                     activity,
-                    "beginCsvExport",
-                    "(Ljava/lang/String;[B)Z",
-                    &[(&name).into(), (&data).into()],
+                    "beginDocumentExport",
+                    "(Ljava/lang/String;Ljava/lang/String;[B)Z",
+                    &[(&name).into(), (&mime).into(), (&data).into()],
                 )?
                 .z()
             })
@@ -120,29 +159,80 @@ impl UiGateway for AndroidGateway {
                 return Err(AppError::Input("เปิดหน้าต่างบันทึกไฟล์ไม่ได้ กรุณาลองใหม่".into()));
             }
             loop {
-                let state = on_activity(|env, activity| {
-                    env.call_method(activity, "csvExportState", "()I", &[])?.i()
+                tokio::time::sleep(Duration::from_millis(250)).await;
+                let (state, saved_name) = on_activity(|env, activity| {
+                    let state = env
+                        .call_method(activity, "csvExportState", "()I", &[])?
+                        .i()?;
+                    let name = if state == 2 {
+                        let name = env
+                            .call_method(activity, "csvExportName", "()Ljava/lang/String;", &[])?
+                            .l()?;
+                        String::from(env.get_string(&name.into())?)
+                    } else {
+                        String::new()
+                    };
+                    Ok((state, name))
                 })
                 .await?;
                 match state {
-                    1 => tokio::time::sleep(Duration::from_millis(250)).await,
-                    2 => {
-                        let saved_name = on_activity(|env, activity| {
-                            let name = env
-                                .call_method(
-                                    activity,
-                                    "csvExportName",
-                                    "()Ljava/lang/String;",
-                                    &[],
-                                )?
-                                .l()?;
-                            Ok(String::from(env.get_string(&name.into())?))
-                        })
-                        .await?;
-                        return Ok(Some(saved_name));
-                    }
+                    1 => {}
+                    2 => return Ok(Some(saved_name)),
                     3 => return Ok(None),
                     _ => return Err(AppError::Input("บันทึกไฟล์ไม่สำเร็จ กรุณาเลือกที่บันทึกอีกครั้ง".into())),
+                }
+            }
+        })
+    }
+
+    fn pick_document(
+        &self,
+        kind: ledger_application::ImportFileKind,
+    ) -> UiFuture<Option<Arc<[u8]>>> {
+        Box::pin(async move {
+            let started = on_activity(move |env, activity| {
+                env.call_method(
+                    activity,
+                    "beginDocumentImport",
+                    "(I)Z",
+                    &[(kind.max_bytes() as i32).into()],
+                )?
+                .z()
+            })
+            .await?;
+            if !started {
+                return Err(AppError::Input("เปิดหน้าต่างเลือกไฟล์ไม่ได้ กรุณาลองอีกครั้ง".into()));
+            }
+            loop {
+                tokio::time::sleep(Duration::from_millis(250)).await;
+                // Read completion and consume its payload in one UI-thread dispatch.
+                // Splitting these into consecutive Wry dispatches can strand the
+                // second callback while the activity resumes from the picker.
+                let (state, bytes) = on_activity(|env, activity| {
+                    let state = env
+                        .call_method(activity, "documentImportState", "()I", &[])?
+                        .i()?;
+                    let bytes = if state == 2 {
+                        let array = env
+                            .call_method(activity, "takeImportedDocument", "()[B", &[])?
+                            .l()?;
+                        env.convert_byte_array(jni::objects::JByteArray::from(array))?
+                    } else {
+                        Vec::new()
+                    };
+                    Ok((state, bytes))
+                })
+                .await?;
+                match state {
+                    1 => {}
+                    2 => {
+                        if bytes.len() > kind.max_bytes() {
+                            return Err(AppError::Input("ไฟล์ใหญ่เกินขนาดที่รองรับ".into()));
+                        }
+                        return Ok(Some(bytes.into()));
+                    }
+                    3 => return Ok(None),
+                    _ => return Err(AppError::Input("อ่านไฟล์ไม่ได้ หรือไฟล์ใหญ่เกินขนาดที่รองรับ".into())),
                 }
             }
         })

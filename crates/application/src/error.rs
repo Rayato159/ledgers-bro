@@ -3,6 +3,14 @@ use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum StorageError {
+    #[error("ไฟล์สำรองไม่ถูกต้อง หรือสร้างจากแอปรุ่นที่ยังไม่รองรับ")]
+    InvalidBackup,
+    #[error("กู้คืนได้เฉพาะผู้ใช้ที่ยังไม่มีข้อมูล กรุณาสร้างผู้ใช้ใหม่เพื่อย้ายข้อมูลเข้า")]
+    RestoreNeedsEmptyLedger,
+    #[error("จำนวนเหรียญในพอร์ตเปลี่ยนไปแล้ว กรุณาโหลดใหม่ก่อนบันทึก")]
+    CryptoHoldingsChanged,
+    #[error("บัญชีนี้ผูกกับรายจ่ายประจำ กรุณาหยุดแผนเดิมและเลือกบัญชีจ่ายอื่นก่อนเปลี่ยนเป็นจำนวนเหรียญ")]
+    CryptoRecurringAccount,
     #[error("รอบบัตรถูกกำหนดไปแล้วหรือบัญชีเปลี่ยนไป กรุณาโหลดข้อมูลใหม่")]
     CreditCycleChanged,
     #[error(
@@ -25,6 +33,8 @@ pub enum StorageError {
     InstallmentsConflict,
     #[error("แผนรายจ่ายเปลี่ยนไปแล้ว กรุณาโหลดใหม่แล้วตรวจอีกครั้ง")]
     RecurringChanged,
+    #[error("มีประวัติบันทึกจ่ายตั้งแต่งวดที่เลือก กรุณาเลือกเดือนเริ่มใช้การแก้ไขหลังงวดที่เคยบันทึกจ่าย")]
+    RecurringEditPaid,
     #[error("งวดนี้จ่ายแล้ว หรือรายการจ่ายถูกผูกกับงวดอื่นแล้ว กรุณาโหลดใหม่")]
     RecurringPaid,
     #[error("เพิ่มแผนรายจ่ายประจำได้สูงสุด 500 แผน")]

@@ -282,12 +282,12 @@ fn prompt_schema_upgrade_preserves_existing_receivable_and_settlement_history() 
     let raw = Connection::open(&path).expect("raw");
     raw.execute_batch("DROP TABLE user_preferences; DROP TRIGGER lock_currency_accounts; DROP TRIGGER lock_currency_recurring; DROP TRIGGER lock_currency_receivables; DROP TABLE ledger_settings; DROP TABLE prompt_submissions; PRAGMA user_version=4;")
         .expect("v4");
-    raw.execute_batch("ALTER TABLE accounts DROP COLUMN payment_day; ALTER TABLE accounts DROP COLUMN closing_day;").expect("remove v8 columns for old schema fixture");
+    raw.execute_batch("DROP TABLE crypto_holding_changes; DROP TABLE crypto_prices; ALTER TABLE accounts DROP COLUMN sol_atoms; ALTER TABLE accounts DROP COLUMN btc_atoms; ALTER TABLE accounts DROP COLUMN payment_day; ALTER TABLE accounts DROP COLUMN closing_day;").expect("remove v8 columns for old schema fixture");
     let mut migrated = app(SqliteLedger::open(&path).expect("migrate"));
     assert_eq!(view(&mut migrated), expected);
     assert_eq!(
         raw.pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0))
             .expect("version"),
-        9
+        10
     );
 }

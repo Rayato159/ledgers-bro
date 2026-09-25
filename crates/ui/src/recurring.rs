@@ -23,20 +23,29 @@ pub(crate) fn RecurringPage(view: Dashboard) -> Element {
         Err(_) => return rsx! { p { {crate::i18n::text("วันที่ไม่ถูกต้อง", &[])} } },
     };
     let mut month = use_signal(|| current);
+    let default_start = default_recurring_month(view.today, 1).unwrap_or(current);
     let mut show_form = use_signal(|| false);
     let mut filter = use_signal(|| 0_u8);
-    let mut form = use_signal(|| empty_form(current));
+    let mut form = use_signal(|| empty_form(default_start));
     let mut paying = use_signal(|| None::<(RecurringExpense, Month)>);
     let mut stopping = use_signal(|| None::<RecurringExpense>);
     let mut configuring = use_signal(|| None::<RecurringExpense>);
+    let mut editing = use_signal(|| None::<(RecurringExpense, Month)>);
     let mut known_count = use_signal(|| view.recurring.len());
     let mut known_settlements = use_signal(|| view.settlements.clone());
     use_effect(move || {
         if let Some(view) = store.view.read().as_ref() {
+            if editing
+                .peek()
+                .as_ref()
+                .is_some_and(|(s, _)| !view.recurring.contains(s))
+            {
+                editing.set(None);
+            }
             if view.recurring.len() != *known_count.peek() {
                 known_count.set(view.recurring.len());
                 show_form.set(false);
-                form.set(empty_form(current));
+                form.set(empty_form(default_start));
             }
             if view.settlements != *known_settlements.peek() {
                 known_settlements.set(view.settlements.clone());
@@ -89,7 +98,7 @@ pub(crate) fn RecurringPage(view: Dashboard) -> Element {
         })
         .collect();
     rsx! {
-        section { class: "page-heading", div { h1 { {crate::i18n::text("หนี้และรายจ่ายประจำ", &[])} } p { class: "muted", {crate::i18n::text("วางแผนค่าเช่า ค่าน้ำไฟ ค่าสมาชิก และค่าใช้จ่ายที่ต้องจ่ายทุกเดือน", &[])} } }
+        section { class: "page-heading", div { h1 { {crate::i18n::text("หนี้และรายจ่ายประจำ", &[])} } p { class: "muted", {crate::i18n::text("วางแผนค่าเช่า ค่าน้ำไฟ ค่าสมาชิก และค่าใช้จ่ายที่ต้องจ่ายทุกเดือน", &[])} } } crate::artwork::Companion {role:"calendar"}
             button { class: "primary", disabled: *store.busy.read(), onclick: move |_| show_form.set(!show_form()), {crate::i18n::text("เพิ่มรายจ่ายประจำ", &[])} }
         }
         crate::debt_visuals::CreditCardsPanel { view: view.clone() }
@@ -121,7 +130,7 @@ pub(crate) fn RecurringPage(view: Dashboard) -> Element {
             if summary.items.is_empty() { p { class: "muted", {crate::i18n::text("ยังไม่มีรายจ่ายประจำในเดือนนี้ เพิ่มแผนเพื่อดูวันครบกำหนดและยอดรวม", &[])} } }
             else if visible_items.is_empty() { p { class: "muted", {crate::i18n::text("ไม่มีรายการในสถานะนี้", &[])} } }
             for item in visible_items {
-                { let schedule = item.schedule.clone(); let for_stop = schedule.clone(); let period = month();
+                { let schedule = item.schedule.clone(); let for_stop = schedule.clone(); let for_edit = schedule.clone(); let period = month();
                   rsx! {
                     article { class: "recurring-item obligation-row", "data-overdue": item.paid_entry.is_none() && item.due < view.today,
                         div { class: "due-date-tile", "aria-label": "{item.due}", strong { {item.due.date().format("%d").to_string()} } small { {item.due.date().format("%m / %Y").to_string()} } }
@@ -141,6 +150,7 @@ pub(crate) fn RecurringPage(view: Dashboard) -> Element {
                                 button { class: "primary", disabled: *store.busy.read(), onclick: move |_| { store.recurring_prepared.set(None); paying.set(Some((schedule.clone(), period))); }, Icon { name: "check", size: 18 } {crate::i18n::text("บันทึกจ่าย", &[])} }
                             }
                             if for_stop.stopped_from().is_none() {
+                                button { class: "soft-button", disabled: *store.busy.read(), onclick: move |_| { store.notice.set(None); editing.set(Some((for_edit.clone(), period))); }, Icon { name: "edit", size: 18 } {crate::i18n::tr("แก้ไขแผน")} }
                                 details { class: "obligation-more", summary { {crate::i18n::text("จัดการแผน", &[])} }
                                     button { class: "text-button", disabled: *store.busy.read(), onclick: move |_| stopping.set(Some(for_stop.clone())), {crate::i18n::text("หยุดแผนตั้งแต่งวดนี้", &[])} }
                                 }
@@ -156,7 +166,7 @@ pub(crate) fn RecurringPage(view: Dashboard) -> Element {
             p { class: "field-hint", {crate::i18n::text("งวดค้างยังอยู่แม้ผ่านเดือนสุดท้ายแล้ว เลือกบันทึกงวดค้างหรือจ่ายล่วงหน้าได้", &[])} }
             if progress.iter().all(|p| p.next_unpaid.is_none()) { p { {crate::i18n::text("ไม่มีแผนที่ต้องจ่ายต่อแล้ว", &[])} } }
             for p in progress.iter().filter(|p| p.next_unpaid.is_some()) {
-                { let schedule = p.schedule.clone(); let config = schedule.clone();
+                { let schedule = p.schedule.clone(); let config = schedule.clone(); let for_edit = schedule.clone();
                   rsx! { article { class: "recurring-item installment-plan",
                     div { h3 { "{schedule.name().as_str()}" }
                         if let Some(count) = schedule.due().installments() {
@@ -171,6 +181,9 @@ pub(crate) fn RecurringPage(view: Dashboard) -> Element {
                             button { class: "primary", disabled: *store.busy.read(), onclick: move |_| { store.recurring_prepared.set(None); paying.set(Some((schedule.clone(), next))); }, {crate::i18n::text("บันทึกงวดที่ยังไม่จ่าย", &[])} }
                         }
                         button { class: "text-button", disabled: *store.busy.read(), onclick: move |_| configuring.set(Some(config.clone())), {crate::i18n::text("ตั้งจำนวนงวด", &[])} }
+                        if for_edit.stopped_from().is_none() { if let Some(next) = p.next_unpaid {
+                            button { class: "soft-button", disabled: *store.busy.read(), onclick: move |_| { store.notice.set(None); editing.set(Some((for_edit.clone(), next))); }, Icon { name: "edit", size: 18 } {crate::i18n::tr("แก้ไขแผน")} }
+                        } }
                     }
                   } }
                 }
@@ -186,38 +199,14 @@ pub(crate) fn RecurringPage(view: Dashboard) -> Element {
                     } } }
                 }
             }
-            p { class: "field-hint", {crate::i18n::text("เปลี่ยนยอดหรือวันครบกำหนดได้โดยหยุดแผนเดิม แล้วเพิ่มแผนใหม่ · การจ่ายยอดหนี้บัญชีบัตรเครดิตยังใช้การโอนเข้าบัญชีบัตร ไม่ลงเป็นรายจ่ายซ้ำ", &[])} }
+            p { class: "field-hint", {crate::i18n::text("กดแก้ไขแผนเพื่อเปลี่ยนยอด วันชำระ หรือบัญชีตั้งแต่งวดที่เลือก · ชำระหนี้บัตรเครดิตด้วยการโอนเข้าบัญชีบัตร ไม่ลงรายจ่ายซ้ำ", &[])} }
         }
         if show_form() {
             section { class: "card recurring-card",
-                onmounted: move |_| { let _ = document::eval("document.getElementById('rec-name').focus()"); },
+                onmounted: move |_| { let _ = document::eval("document.getElementById('new-rec-name').focus()"); },
                 h2 { {crate::i18n::text("เพิ่มแผนรายจ่ายประจำ", &[])} }
                 form { onsubmit: move |event| { event.prevent_default(); store.send(Command::AddRecurring(form())); },
-                    fieldset { disabled: *store.busy.read(), class: "recurring-fields",
-                        div { label { r#for: "rec-name", {crate::i18n::text("ชื่อค่าใช้จ่าย", &[])} } input { id: "rec-name", required: true, maxlength: 60, placeholder: crate::i18n::text("เช่น ค่าเช่าห้อง", &[]), value: form.read().name.clone(), oninput: move |e| form.write().name = e.value() } }
-                        div { label { r#for: "rec-amount", {crate::i18n::text("ยอดต่อเดือน (บาท)", &[])} } input { id: "rec-amount", required: true, inputmode: "decimal", placeholder: "8500.00", value: form.read().amount.clone(), oninput: move |e| form.write().amount = e.value() } }
-                        div { label { r#for: "rec-day", {crate::i18n::text("ทุกวันที่ของเดือน (1–31)", &[])} } input { id: "rec-day", r#type: "number", min: "1", max: "31", required: true, value: form.read().day.clone(), oninput: move |e| form.write().day = e.value() } }
-                        div { label { r#for: "rec-start", {crate::i18n::text("เริ่มงวดเดือน (ค.ศ.)", &[])} } input { id: "rec-start", r#type: "month", min: "1900-01", max: "9999-12", required: true, value: form.read().start.clone(), onchange: move |e| form.write().start = e.value() } }
-                        div { class: "installments-field",
-                            label { class: "flow-mode", input { r#type: "checkbox", checked: form.read().installments.is_some(), onchange: move |e| form.write().installments = e.checked().then(String::new) } {crate::i18n::text("กำหนดจำนวนงวด", &[])} }
-                            if let Some(count) = form.read().installments.clone() {
-                                label { r#for: "rec-count", {crate::i18n::text("จำนวนงวดทั้งหมด (นับจากเดือนเริ่ม)", &[])} }
-                                input { id: "rec-count", r#type: "number", min: "1", max: "1200", required: true, placeholder: crate::i18n::text("เช่น 12", &[]), value: count, oninput: move |e| form.write().installments = Some(e.value()) }
-                            } else { p { class: "field-hint", {crate::i18n::text("ไม่กำหนดจำนวนงวด — เกิดซ้ำทุกเดือนจนกว่าจะหยุดแผน", &[])} } }
-                        }
-                        div { label { r#for: "rec-account", {crate::i18n::text("บัญชีที่จะใช้จ่าย", &[])} }
-                            select { id: "rec-account", required: true, value: form.read().account.map(|id| id.to_string()).unwrap_or_default(), onchange: move |e| form.write().account = e.value().parse().ok(),
-                                option { value: "", selected: form.read().account.is_none(), {crate::i18n::text("เลือกบัญชี", &[])} }
-                                for a in &view.accounts { if !a.account.is_archived() { option { value: "{a.account.id()}", selected: form.read().account == Some(a.account.id()), "{a.account.name().as_str()}" } } }
-                            }
-                        }
-                        div { label { r#for: "rec-category", {crate::i18n::text("หมวดรายจ่าย", &[])} }
-                            select { id: "rec-category", required: true, value: form.read().category.map(|c| c.code()).unwrap_or(""), onchange: move |e| form.write().category = Category::from_code(&e.value()).ok(),
-                                option { value: "", selected: form.read().category.is_none(), {crate::i18n::text("เลือกหมวดหมู่", &[])} }
-                                for c in Category::EXPENSE { option { value: c.code(), selected: form.read().category == Some(c), "{crate::i18n::tr(c.label())}" } }
-                            }
-                        }
-                    }
+                    RecurringFields { form, view: view.clone(), prefix: "new", baseline: None }
                     p { class: "field-hint", {crate::i18n::text("ยอดนี้เป็นแผนรายเดือน ก่อนจ่ายจริงสามารถแก้ยอดและบัญชีได้", &[])} }
                     button { class: "primary", r#type: "submit", disabled: *store.busy.read(), {crate::i18n::text("บันทึกแผนรายเดือน", &[])} }
                     button { class: "text-button", r#type: "button", disabled: *store.busy.read(), onclick: move |_| show_form.set(false), {crate::i18n::text("ยกเลิก", &[])} }
@@ -226,6 +215,9 @@ pub(crate) fn RecurringPage(view: Dashboard) -> Element {
         }
         if let Some(schedule) = configuring() {
             InstallmentsDialog { key: "{schedule.id()}", schedule, onclose: move |_| configuring.set(None) }
+        }
+        if let Some((schedule, effective)) = editing() {
+            EditRecurringDialog { key: "{schedule.id()}-{effective}", schedule, effective, view: view.clone(), onclose: move |_| editing.set(None) }
         }
         if let Some((schedule, period)) = paying() {
             PaymentDialog { key: "{schedule.id()}-{period}", schedule, month: period, view: view.clone(), onclose: move |_| { paying.set(None); store.recurring_prepared.set(None); } }
@@ -296,7 +288,7 @@ fn PaymentDialog(
                             div { label { r#for: "rec-pay-account", {crate::i18n::text("บัญชีที่จ่าย", &[])} }
                                 select { id: "rec-pay-account", required: true, value: input.read().account.map(|id| id.to_string()).unwrap_or_default(), onchange: move |e| input.write().account = e.value().parse().ok(),
                                     option { value: "", selected: input.read().account.is_none(), {crate::i18n::text("เลือกบัญชี", &[])} }
-                                    for a in &view.accounts { if !a.account.is_archived() { option { value: "{a.account.id()}", selected: input.read().account == Some(a.account.id()), "{a.account.name().as_str()}" } } }
+                                    for a in &view.accounts { if a.account.accepts_cash_entries() { option { value: "{a.account.id()}", selected: input.read().account == Some(a.account.id()), "{a.account.name().as_str()}" } } }
                                 }
                             }
                         }
@@ -336,6 +328,94 @@ fn InstallmentsDialog(schedule: RecurringExpense, onclose: EventHandler) -> Elem
                 p { class: "field-hint", {crate::i18n::text("จำนวนงวดนับจากเดือนเริ่มต้นของแผน จ่ายครบแล้วจะไม่มีงวดถัดไป ประวัติที่เคยจ่ายจะไม่ถูกตัดทิ้ง", &[])} }
                 button { class: "primary", r#type: "submit", disabled: *store.busy.read(), {crate::i18n::text("บันทึกจำนวนงวด", &[])} }
                 button { class: "text-button", r#type: "button", disabled: *store.busy.read(), onclick: move |_| onclose.call(()), {crate::i18n::text("กลับ", &[])} }
+            }
+        }
+    }
+}
+
+#[component]
+fn RecurringFields(
+    mut form: Signal<RecurringInput>,
+    view: Dashboard,
+    prefix: &'static str,
+    baseline: Option<RecurringExpense>,
+) -> Element {
+    let store = use_context::<UiState>();
+    let mut manual_start = use_signal(|| baseline.is_some());
+    let is_edit = baseline.is_some();
+    let today = view.today;
+    rsx! {
+                    fieldset { disabled: *store.busy.read(), class: "recurring-fields",
+                        div { label { r#for: "{prefix}-rec-name", {crate::i18n::text("ชื่อค่าใช้จ่าย", &[])} } input { id: "{prefix}-rec-name", required: true, maxlength: 60, placeholder: crate::i18n::text("เช่น ค่าเช่าห้อง", &[]), value: form.read().name.clone(), oninput: move |e| form.write().name = e.value() } }
+                        div { label { r#for: "{prefix}-rec-amount", {crate::i18n::text("ยอดต่อเดือน (บาท)", &[])} } input { id: "{prefix}-rec-amount", required: true, inputmode: "decimal", placeholder: "8500.00", value: form.read().amount.clone(), oninput: move |e| form.write().amount = e.value() } }
+                        div { label { r#for: "{prefix}-rec-day", {crate::i18n::text("ทุกวันที่ของเดือน (1–31)", &[])} } input { id: "{prefix}-rec-day", r#type: "number", min: "1", max: "31", required: true, value: form.read().day.clone(), oninput: move |e| {
+                            let day = e.value();
+                            if !manual_start() && !is_edit && let Ok(day) = day.parse() && let Ok(month) = default_recurring_month(today, day) {
+                                form.write().start = month.to_string();
+                            }
+                            form.write().day = day;
+                        } } }
+                        div { label { r#for: "{prefix}-rec-start", {crate::i18n::tr(if baseline.is_some() { "เริ่มใช้การแก้ไขตั้งแต่งวด (ค.ศ.)" } else { "เริ่มงวดเดือน (ค.ศ.)" })} } input { id: "{prefix}-rec-start", r#type: "month", min: "1900-01", max: "9999-12", required: true, value: form.read().start.clone(), onchange: move |e| {
+                let start = e.value();
+                manual_start.set(true);
+                    if let (Some(schedule), Ok(month)) = (&baseline, start.parse::<Month>()) {
+                        form.write().installments = recurring_edit_input(schedule, month).installments;
+                    }
+                    form.write().start = start;
+                } } }
+                        div { class: "installments-field",
+                            label { class: "flow-mode", input { r#type: "checkbox", checked: form.read().installments.is_some(), onchange: move |e| form.write().installments = e.checked().then(String::new) } {crate::i18n::text("กำหนดจำนวนงวด", &[])} }
+                            if let Some(count) = form.read().installments.clone() {
+                                label { r#for: "{prefix}-rec-count", {crate::i18n::text("จำนวนงวดทั้งหมด (นับจากเดือนเริ่ม)", &[])} }
+                                input { id: "{prefix}-rec-count", r#type: "number", min: "1", max: "1200", required: true, placeholder: crate::i18n::text("เช่น 12", &[]), value: count, oninput: move |e| form.write().installments = Some(e.value()) }
+                            } else { p { class: "field-hint", {crate::i18n::text("ไม่กำหนดจำนวนงวด — เกิดซ้ำทุกเดือนจนกว่าจะหยุดแผน", &[])} } }
+                        }
+                        div { label { r#for: "{prefix}-rec-account", {crate::i18n::text("บัญชีที่จะใช้จ่าย", &[])} }
+                            select { id: "{prefix}-rec-account", required: true, value: form.read().account.map(|id| id.to_string()).unwrap_or_default(), onchange: move |e| form.write().account = e.value().parse().ok(),
+                                option { value: "", selected: form.read().account.is_none(), {crate::i18n::text("เลือกบัญชี", &[])} }
+                                for a in &view.accounts { if a.account.accepts_cash_entries() { option { value: "{a.account.id()}", selected: form.read().account == Some(a.account.id()), "{a.account.name().as_str()}" } } }
+                            }
+                        }
+                        div { label { r#for: "{prefix}-rec-category", {crate::i18n::text("หมวดรายจ่าย", &[])} }
+                            select { id: "{prefix}-rec-category", required: true, value: form.read().category.map(|c| c.code()).unwrap_or(""), onchange: move |e| form.write().category = Category::from_code(&e.value()).ok(),
+                                option { value: "", selected: form.read().category.is_none(), {crate::i18n::text("เลือกหมวดหมู่", &[])} }
+                                for c in Category::EXPENSE { option { value: c.code(), selected: form.read().category == Some(c), "{crate::i18n::tr(c.label())}" } }
+                            }
+                        }
+                    }
+                    if !is_edit { p { class: "field-hint", {crate::i18n::tr("วันครบกำหนดที่ผ่านไปแล้วจะเริ่มเดือนถัดไปโดยอัตโนมัติ เลือกเดือนเองได้หากต้องการบันทึกย้อนหลัง")} } }
+    }
+}
+
+#[component]
+fn EditRecurringDialog(
+    schedule: RecurringExpense,
+    effective: Month,
+    view: Dashboard,
+    onclose: EventHandler,
+) -> Element {
+    let store = use_context::<UiState>();
+    let form = use_signal(|| recurring_edit_input(&schedule, effective));
+    let expected = schedule.clone();
+    rsx! {
+        dialog { id: "rec-edit-dialog", class: "account-dialog recurring-dialog", "aria-labelledby": "rec-edit-title",
+            onmounted: move |_| { let _ = document::eval("document.getElementById('rec-edit-dialog').showModal()"); },
+            oncancel: move |e| { e.prevent_default(); if !(store.busy)() { onclose.call(()); } },
+            div { class: "section-heading", h2 { id: "rec-edit-title", {crate::i18n::tr("แก้ไขแผน")} }
+                button { class: "icon-button", disabled: (store.busy)(), "aria-label": crate::i18n::tr("ปิดหน้าต่าง"), onclick: move |_| onclose.call(()), Icon { name: "close", size: 20 } }
+            }
+            p { class: "field-hint", {crate::i18n::tr("การแก้ไขมีผลตั้งแต่งวดที่เลือก งวดก่อนหน้านั้นและรายการที่จ่ายแล้วเก็บข้อมูลเดิม หากจ่ายล่วงหน้าแล้วให้เลือกงวดหลังรายการที่จ่ายล่าสุด")} }
+            form { onsubmit: move |e| {
+                e.prevent_default();
+                if form() == recurring_edit_input(&expected, effective) { onclose.call(()); }
+                else { store.send(Command::EditRecurring { expected: expected.clone(), input: form() }); }
+            },
+                RecurringFields { form, view, prefix: "edit", baseline: Some(schedule) }
+                if let Some((true, error)) = (store.notice)() { p { class: "form-error", role: "alert", "{crate::i18n::tr(&error)}" } }
+                div { class: "crypto-account-actions",
+                    button { class: "primary", r#type: "submit", disabled: (store.busy)(), {crate::i18n::tr("บันทึกการแก้ไข")} }
+                    button { class: "soft-button", r#type: "button", disabled: (store.busy)(), onclick: move |_| onclose.call(()), {crate::i18n::tr("ยกเลิก")} }
+                }
             }
         }
     }
