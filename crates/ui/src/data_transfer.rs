@@ -1,5 +1,5 @@
 use crate::{
-    components::{Icon, money_label},
+    components::{Icon, PagePanel, PageTabs, money_label},
     i18n::tr,
     state::UiState,
 };
@@ -140,6 +140,7 @@ impl Transfer {
 
 #[component]
 pub fn DataTransfer() -> Element {
+    let tab = use_signal(|| 1usize);
     let mut transfer = Transfer {
         store: use_context::<UiState>(),
         review: use_signal(|| None),
@@ -160,6 +161,8 @@ pub fn DataTransfer() -> Element {
     rsx! {
         section { class:"data-transfer", "aria-label":tr("นำเข้า ส่งออก และย้ายเครื่อง"),
         h2 {class:"preferences-section-title",{tr("นำเข้า ส่งออก และย้ายเครื่อง")}}
+        PageTabs { id: "data-transfer", tabs: vec![("notebook", "CSV"), ("wallet", "ย้ายเครื่อง")], selected: tab }
+        PagePanel { id: "data-transfer", index: 0, selected: tab(),
         div {class:"data-transfer-grid",
             section {class:"transfer-card",
                 span {class:"transfer-icon",Icon {name:"notebook",size:27}}
@@ -177,6 +180,8 @@ pub fn DataTransfer() -> Element {
                 p {{tr("ส่งออกบัญชีคู่ สมุดรายวัน และรายงานยอดเป็น CSV เลือกภาษาไทยหรืออังกฤษได้")}}
                 div {class:"transfer-actions",button {class:"soft-button",disabled:busy,onclick:move |_|transfer.store.export_form.set(true),Icon {name:"download",size:18}{tr("ส่งออก CSV สำหรับ Excel")}}}
             }
+        } }
+        PagePanel { id: "data-transfer", index: 1, selected: tab(), div {class:"data-transfer-grid",
             section {class:"transfer-card",
                 span {class:"transfer-icon",Icon {name:"wallet",size:27}}
                 h3 {{tr("สำรองข้อมูลผู้ใช้นี้")}}
@@ -191,6 +196,7 @@ pub fn DataTransfer() -> Element {
                 if !empty {p {class:"field-hint",{tr("ผู้ใช้นี้มีข้อมูลแล้ว สร้างผู้ใช้ใหม่เพื่อกู้คืน ข้อมูลเดิมจะไม่ถูกเขียนทับ")}}}
                 div {class:"transfer-actions",button {class:"soft-button",disabled:busy||!empty,onclick:move |_|transfer.pick(ImportFileKind::Backup),Icon {name:"file",size:18}{tr("เลือกไฟล์สำรองเพื่อกู้คืน")}}}
             }
+        }
         }
         if (transfer.review)().is_none() {
             if busy {p {class:"transfer-pending",role:"status",Icon {name:"refresh",size:20}{tr("กำลังดำเนินการ…")}}}

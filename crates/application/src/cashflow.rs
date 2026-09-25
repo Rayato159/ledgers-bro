@@ -1,5 +1,60 @@
 use crate::Dashboard;
-use ledger_domain::{DomainError, EntryKind, Money};
+use ledger_domain::{Category, DomainError, EntryKind, JournalEntry, Money, Month};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExpenseSlice {
+    pub category: Category,
+    pub description: Option<String>,
+    pub amount: Money,
+}
+
+pub fn expense_description(entry: &JournalEntry) -> String {
+    entry
+        .note()
+        .as_str()
+        .lines()
+        .find(|line| !line.trim().is_empty())
+        .unwrap_or("")
+        .trim()
+        .to_owned()
+}
+
+/// Keep other expenses identifiable instead of merging unrelated purchases.
+pub fn expense_slices(view: &Dashboard, month: Month) -> Result<Vec<ExpenseSlice>, DomainError> {
+    let mut groups = std::collections::BTreeMap::new();
+    for entry in &view.entries {
+        if entry.date() > view.today
+            || entry.date().month_key() != month.key()
+            || view.reversed.contains(&entry.id())
+        {
+            continue;
+        }
+        if let EntryKind::Expense {
+            category, amount, ..
+        } = entry.kind()
+        {
+            let description =
+                (*category == Category::OtherExpense).then(|| expense_description(entry));
+            let slice = groups
+                .entry((category.code(), description.clone()))
+                .or_insert(ExpenseSlice {
+                    category: *category,
+                    description,
+                    amount: Money::ZERO,
+                });
+            slice.amount = slice.amount.checked_add(amount.money())?;
+        }
+    }
+    let mut slices: Vec<_> = groups.into_values().collect();
+    slices.sort_by(|a, b| {
+        b.amount
+            .minor()
+            .cmp(&a.amount.minor())
+            .then(a.category.code().cmp(b.category.code()))
+            .then(a.description.cmp(&b.description))
+    });
+    Ok(slices)
+}
 
 /// Product indicator for recorded income/expenses, not a credit or solvency score.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -16,6 +71,63 @@ pub struct MonthlyFlow {
     pub month: u32,
     pub income: Money,
     pub expenses: Money,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CashflowBreakdown {
+    pub recorded: MonthlyFlow,
+    pub income_entries: Vec<JournalEntry>,
+    pub expense_entries: Vec<JournalEntry>,
+    pub pending_items: Vec<crate::RecurringOccurrence>,
+    pub pending_total: Money,
+}
+
+/// Drill-down uses the same effective-date and reversal rules as the chart.
+/// Pending plans stay separate: they have not moved cash or created an expense.
+pub fn cashflow_breakdown(
+    view: &Dashboard,
+    month: Month,
+) -> Result<CashflowBreakdown, DomainError> {
+    let (year, m) = month.key();
+    let mut result = CashflowBreakdown {
+        recorded: MonthlyFlow {
+            year,
+            month: m,
+            income: Money::ZERO,
+            expenses: Money::ZERO,
+        },
+        income_entries: Vec::new(),
+        expense_entries: Vec::new(),
+        pending_items: Vec::new(),
+        pending_total: Money::ZERO,
+    };
+    for entry in &view.entries {
+        if entry.date() > view.today
+            || entry.date().month_key() != month.key()
+            || view.reversed.contains(&entry.id())
+        {
+            continue;
+        }
+        match entry.kind() {
+            EntryKind::Income { amount, .. } => {
+                result.recorded.income = result.recorded.income.checked_add(amount.money())?;
+                result.income_entries.push(entry.clone());
+            }
+            EntryKind::Expense { amount, .. } => {
+                result.recorded.expenses = result.recorded.expenses.checked_add(amount.money())?;
+                result.expense_entries.push(entry.clone());
+            }
+            _ => {}
+        }
+    }
+    let recurring = crate::recurring_month(view, month)?;
+    result.pending_total = recurring.pending;
+    result.pending_items = recurring
+        .items
+        .into_iter()
+        .filter(|i| i.paid_entry.is_none())
+        .collect();
+    Ok(result)
 }
 
 impl MonthlyFlow {

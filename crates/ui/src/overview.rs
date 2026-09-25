@@ -1,11 +1,47 @@
-use crate::artwork::*;
 use crate::{HostInfo, components::*, pages::TransactionRows, state::*};
 use chrono::Datelike;
 use dioxus::prelude::*;
 use ledger_application::Dashboard;
 
+fn needs_annual_backup(
+    today: chrono::NaiveDate,
+    dismissed_year: Option<i32>,
+    entry_years: impl Iterator<Item = i32>,
+) -> bool {
+    today.month() == 1
+        && dismissed_year != Some(today.year())
+        && entry_years.into_iter().any(|year| year < today.year())
+}
+
+#[cfg(test)]
+mod annual_backup_tests {
+    use super::needs_annual_backup;
+    use chrono::NaiveDate;
+
+    #[test]
+    fn reminder_requires_new_year_history_and_respects_this_year_dismissal()
+    -> Result<(), &'static str> {
+        let january = NaiveDate::from_ymd_opt(2027, 1, 1).ok_or("test date")?;
+        assert!(needs_annual_backup(january, None, [2026, 2027].into_iter()));
+        assert!(!needs_annual_backup(january, None, [2027].into_iter()));
+        assert!(!needs_annual_backup(january, None, [].into_iter()));
+        assert!(!needs_annual_backup(
+            january,
+            Some(2027),
+            [2026].into_iter()
+        ));
+        assert!(needs_annual_backup(january, Some(2026), [2026].into_iter()));
+        for (month, day) in [(2, 1), (12, 31)] {
+            let date = NaiveDate::from_ymd_opt(2027, month, day).ok_or("test date")?;
+            assert!(!needs_annual_backup(date, None, [2026].into_iter()));
+        }
+        Ok(())
+    }
+}
+
 #[component]
 pub fn Overview(view: Dashboard) -> Element {
+    let tab = use_signal(|| 0usize);
     let market = use_context::<crate::crypto::CryptoMarket>();
     let mut view = view;
     let valuation = ledger_application::crypto_valuation(&view, (market.prices)(), (market.now)());
@@ -21,6 +57,7 @@ pub fn Overview(view: Dashboard) -> Element {
         view.net_worth = value.net_worth;
     }
     let mut store = use_context::<UiState>();
+    let mut backup_reminder_dismissed = store.backup_reminder_dismissed;
     let host = use_context::<HostInfo>();
     let date = view.today.date();
     let month = thai_month(date.month());
@@ -32,7 +69,15 @@ pub fn Overview(view: Dashboard) -> Element {
         .unwrap_or_else(|_| "—".into());
     rsx! {
         section { class: "page-heading", div { h1 { {crate::i18n::text("ภาพรวม", &[])} } } span { class: "date-pill", "{date.day()} {month} {year}" } }
-        if has_crypto { crate::crypto::CryptoMarketStatus {} }
+        if needs_annual_backup(date, backup_reminder_dismissed(), view.entries.iter().map(|e| e.date().month_key().0)) {
+            aside { class: "annual-backup-reminder", role: "status",
+                div { strong { {crate::i18n::tr("สำรองข้อมูลรับปีใหม่")} } p { {crate::i18n::tr("เก็บประวัติปีก่อนไว้ครบ แนะนำให้สำรองทั้งแอปก่อนเริ่มปีใหม่")} } }
+                button { class: "primary", onclick: move |_| { store.settings_tab.set(3); store.page.set(Page::Settings); }, {crate::i18n::tr("ไปสำรองข้อมูล")} }
+                button { class: "text-button", onclick: move |_| backup_reminder_dismissed.set(Some(date.year())), {crate::i18n::tr("ไว้ภายหลัง")} }
+            }
+        }
+        PageTabs { id: "overview", tabs: vec![("home", "สรุปบัญชี"), ("up", "รายจ่าย"), ("list", "รายการล่าสุด"), ("wallet", "ฐานะการเงิน"), ("up", "กระแสเงินสด"), ("file", "หนี้บัตรเครดิต"), ("user", "ลูกหนี้")], selected: tab }
+        PagePanel { lazy: true, id: "overview", index: 0, selected: tab(),
         if incomplete { p { class: "notice error", role: "status", {crate::i18n::tr("ยอดภาพรวมยังไม่ครบ: ยังไม่รวมพอร์ตที่ไม่มีราคา กรุณาอัปเดตราคาตลาด")} } }
         if invalid_value { p { class: "notice error", role: "alert", {crate::i18n::tr("มูลค่าเกินขอบเขตที่คำนวณได้")} } }
         div { class: "overview-top",
@@ -56,12 +101,12 @@ pub fn Overview(view: Dashboard) -> Element {
                 div { class: "cashflow", span { {crate::i18n::text("รายรับ − รายจ่ายที่บันทึก", &[])} } strong { "{crate::i18n::currency_prefix()}{cashflow}" } }
             }
         }
-        if !invalid_value { crate::debt_visuals::FinancialPosition { view: view.clone() } }
-        crate::debt_visuals::CreditDebtChart { view: view.clone() }
-        crate::cashflow::CashflowChart { view: view.clone() }
-        crate::receivables::ReceivablesChart { view: view.clone() }
-        div { class: "overview-bottom",
+        if has_crypto { div { class: "bottom-market", crate::crypto::CryptoMarketStatus {} } }
+        }
+        PagePanel { lazy: true, id: "overview", index: 1, selected: tab(),
             section { class: "card spending", div { class: "section-heading", h2 { {crate::i18n::text("เงินไปไหนบ้าง", &[])} } span { class: "muted small", {crate::i18n::text("เดือนนี้", &[])} } } ExpenseChart { view: view.clone() } }
+        }
+        PagePanel { lazy: true, id: "overview", index: 2, selected: tab(),
             section { class: "card recent", div { class: "section-heading", h2 { {crate::i18n::text("เรื่องเงินล่าสุด", &[])} } button { class: "text-button", onclick: move |_| store.page.set(Page::Transactions), {crate::i18n::text("ดูทั้งหมด", &[])} Icon { name: "arrow", size: 14 } } }
                 TransactionRows { view: view.clone(), limit: 4, allow_cancel: false }
                 if view.thai_tax_enabled && view.currency == ledger_domain::Currency::Thb {
@@ -69,53 +114,46 @@ pub fn Overview(view: Dashboard) -> Element {
                 }
             }
         }
-        button { class: "quick-banner", onclick: move |_| { store.page.set(Page::Chat); }, span { class: "quick-icon", Icon { name: "chat", size: 23 } } div { strong { {crate::i18n::text("เล่าให้ฟัง วันนี้จ่ายอะไรไปบ้าง?", &[])} } p { {crate::i18n::text("ลองพิมพ์ กาแฟ 80 แล้วเลือกบัญชีและหมวด", &[])} } } span { class: "round-arrow", Icon { name: "arrow", size: 22 } } }
+        PagePanel { lazy: true, id: "overview", index: 3, selected: tab(), if !invalid_value { crate::debt_visuals::FinancialPosition { view: view.clone() } } }
+        PagePanel { lazy: true, id: "overview", index: 4, selected: tab(), crate::cashflow::CashflowChart { view: view.clone() } }
+        PagePanel { lazy: true, id: "overview", index: 5, selected: tab(), crate::debt_visuals::CreditDebtChart { view: view.clone() } }
+        PagePanel { lazy: true, id: "overview", index: 6, selected: tab(), crate::receivables::ReceivablesChart { view: view.clone() } }
     }
 }
 
 #[component]
 fn ExpenseChart(view: Dashboard) -> Element {
-    const COLORS: [&str; 7] = [
-        "#9C79D8", "#E999BC", "#7FBFAD", "#8BBCE0", "#E9B58D", "#B3A5D5", "#D08AA4",
-    ];
-    let total = view.expenses.minor();
-    let mut offset = 0.0;
-    let arcs: Vec<_> = view
-        .category_expenses
+    let mut details = use_signal(|| None::<Option<ledger_application::ExpenseSlice>>);
+    let month = match ledger_domain::Month::of(view.today) {
+        Ok(m) => m,
+        Err(_) => return rsx! {},
+    };
+    let groups = match ledger_application::expense_slices(&view, month) {
+        Ok(s) => s,
+        Err(e) => return rsx! { p { role: "alert", "{e}" } },
+    };
+    let slices = groups
         .iter()
-        .enumerate()
-        .map(|(index, (category, amount))| {
-            // Floating point is only used for SVG geometry, never accounting.
-            let percentage = if total > 0 {
-                amount.minor() as f64 / total as f64 * 100.0
-            } else {
-                0.0
-            };
-            let arc = (
-                *category,
-                *amount,
-                percentage,
-                offset,
-                COLORS[index % COLORS.len()],
-            );
-            offset += percentage;
-            arc
+        .map(|s| crate::pie::PieSlice {
+            label: s
+                .description
+                .clone()
+                .map(|d| {
+                    if d.is_empty() {
+                        crate::i18n::tr("ไม่ระบุรายละเอียด")
+                    } else {
+                        d
+                    }
+                })
+                .unwrap_or_else(|| crate::i18n::tr(s.category.label())),
+            amount: s.amount,
         })
         .collect();
     rsx! {
-        div { class: "chart-layout",
-            div { class: "donut", svg { view_box: "0 0 160 160", role: "img", "aria-label": crate::i18n::text("กราฟสัดส่วนรายจ่าย รายละเอียดอยู่ในรายการข้างกราฟ", &[]),
-                circle { cx: "80", cy: "80", r: "62", fill: "none", stroke: "var(--surface)", stroke_width: "18" }
-                for (_, _, percentage, offset, color) in &arcs {
-                    circle { cx: "80", cy: "80", r: "62", fill: "none", stroke: *color, stroke_width: "18", path_length: "100", stroke_dasharray: "{percentage} {100.0 - percentage}", stroke_dashoffset: "{-offset}", transform: "rotate(-90 80 80)" }
-                }
-            } div { class: "donut-label", small { {crate::i18n::text("รายจ่ายรวม", &[])} } strong { "{crate::i18n::currency_prefix()}{money_label(view.expenses)}" } } }
-            div { class: "chart-legend",
-                if arcs.is_empty() { p { class: "muted", {crate::i18n::text("ยังไม่มีรายจ่ายเดือนนี้\nบันทึกครั้งแรก กราฟจะเริ่มเล่าเรื่องให้เรา", &[])} } }
-                for (category, amount, percentage, _, color) in arcs {
-                    div { class: "legend-item", span { class: "legend-art", style: "border-color:{color}", ArtIcon { name: category_art(category), size: 28 } } span { "{crate::i18n::tr(category.label())}" } strong { "{money_label(amount)}" } small { "{percentage:.0}%" } }
-                }
-            }
+        crate::pie::PieChart { slices, label: crate::i18n::tr("รายจ่ายรวม"), onselect: move |index: usize| { if let Some(group) = groups.get(index) { details.set(Some(Some(group.clone()))); } } }
+        button { class: "soft-button", "aria-haspopup": "dialog", onclick: move |_| details.set(Some(None)), {crate::i18n::tr("ดูรายการรายจ่ายทั้งหมด")} Icon { name: "arrow", size: 18 } }
+        if let Some(group) = details() {
+            crate::cashflow::CashflowDetailsDialog { view: view.clone(), month, initial: 0, include_pending: false, category: group.as_ref().map(|g| g.category), description: group.and_then(|g| g.description), onclose: move |_| details.set(None) }
         }
     }
 }

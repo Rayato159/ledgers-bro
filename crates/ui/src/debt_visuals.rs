@@ -190,61 +190,40 @@ pub(crate) fn CreditCardsPanel(view: Dashboard) -> Element {
 
 #[component]
 pub(crate) fn CreditDebtChart(view: Dashboard) -> Element {
-    const COLORS: [&str; 8] = [
-        "#9C79D8", "#E999BC", "#7FBFAD", "#8BBCE0", "#E9B58D", "#B3A5D5", "#D08AA4", "#80ACBF",
-    ];
+    let mut selected = use_signal(|| None::<usize>);
     let cards = match credit_cards(&view) {
         Ok(cards) => cards,
-        Err(error) => return rsx! { p { role: "alert", "{error}" } },
+        Err(e) => return rsx! { p { role: "alert", "{e}" } },
     };
     if cards.is_empty() {
         return rsx! {};
     }
-    let total = match credit_debt_total(&cards) {
-        Ok(total) => total,
-        Err(error) => return rsx! { p { role: "alert", "{error}" } },
-    };
-    let mut offset = 0.0;
-    // Geometry uses floating point; all displayed/aggregated money stays in Money.
-    let slices: Vec<_> = cards
+    let cards: Vec<_> = cards
+        .into_iter()
+        .filter(|c| c.outstanding > Money::ZERO)
+        .collect();
+    let slices = cards
         .iter()
-        .filter(|card| card.outstanding > Money::ZERO)
-        .enumerate()
-        .map(|(index, card)| {
-            let share = percentage(card.outstanding.minor(), total.minor());
-            let slice = (card, share, offset, COLORS[index % COLORS.len()]);
-            offset += share;
-            slice
+        .map(|c| crate::pie::PieSlice {
+            label: c.account.name().as_str().into(),
+            amount: c.outstanding,
         })
         .collect();
     rsx! {
         section { class: "card credit-debt-chart",
             div { class: "section-heading credit-chart-heading", h2 { {text("สัดส่วนหนี้บัตรเครดิต", &[])} } span { class: "status-pill", {text("ยอดคงค้าง ณ วันนี้", &[])} } }
-            div { class: "credit-chart-layout",
-                div { class: "credit-donut",
-                    svg { view_box: "0 0 200 200", role: "img", "aria-label": text("กราฟวงกลมหนี้บัตรเครดิต แยกตามบัตร รายละเอียดอยู่ข้างกราฟ", &[]),
-                        circle { cx: "100", cy: "100", r: "78", fill: "none", stroke: "var(--surface)", stroke_width: "26" }
-                        for (card, share, offset, color) in &slices {
-                            circle { key: "{card.account.id()}", cx: "100", cy: "100", r: "78", fill: "none", stroke: *color, stroke_width: "26", path_length: "100", stroke_dasharray: "{share} {100.0 - share}", stroke_dashoffset: "{-offset}", transform: "rotate(-90 100 100)",
-                                title { "{card.account.name().as_str()}: {crate::i18n::currency_prefix()}{money_label(card.outstanding)} ({share:.1}%)" }
-                            }
-                        }
-                    }
-                    div { class: "credit-donut-label", small { {text("หนี้บัตรรวม", &[])} } strong { "{money_label(total)}" } small { "{view.currency.code()}" } }
-                }
-                div { class: "credit-chart-legend",
-                    if total == Money::ZERO { p { class: "debt-clear", Icon { name: "check", size: 24 } {text("ไม่มีหนี้บัตรเครดิตค้างชำระ", &[])} } }
-                    for (card, share, _, color) in slices {
-                        div { class: "credit-chart-row", key: "{card.account.id()}",
-                            span { class: "credit-chart-dot", style: "background:{color};", "aria-hidden": "true" }
-                            span { "{card.account.name().as_str()}" }
-                            strong { "{crate::i18n::currency_prefix()}{money_label(card.outstanding)}" }
-                            small { "{share:.1}%" }
-                        }
-                    }
-                }
-            }
+            crate::pie::PieChart { slices, label: text("หนี้บัตรรวม", &[]), onselect: move |i| selected.set(Some(i)) }
+            if cards.is_empty() { p { class: "debt-clear", {text("ไม่มีหนี้บัตรเครดิตค้างชำระ", &[])} } }
             p { class: "field-hint credit-chart-note", {text("รวมยอดยกมาและรอบที่ยังไม่ตัดบิล หักยอดที่ชำระแล้ว · ไม่รวมยอดจ่ายเกินเป็นหนี้", &[])} }
+        }
+        if let Some(card) = selected().and_then(|i| cards.get(i)) {
+            dialog { id: "credit-chart-details", class: "account-dialog recurring-dialog", "aria-labelledby": "credit-chart-detail-title",
+                onmounted: move |_| { let _ = document::eval("document.getElementById('credit-chart-details').showModal()"); },
+                oncancel: move |e| { e.prevent_default(); selected.set(None); },
+                div { class: "section-heading", h2 { id: "credit-chart-detail-title", "{card.account.name().as_str()}" } button { class: "icon-button", "aria-label": text("ปิดหน้าต่าง", &[]), onclick: move |_| selected.set(None), Icon { name: "close", size: 20 } } }
+                p { {text("ยอดรอชำระทั้งหมด", &[])} } strong { "{crate::i18n::currency_prefix()}{money_label(card.outstanding)}" }
+                p { class: "field-hint", {text("รวมยอดยกมาและรอบที่ยังไม่ตัดบิล หักยอดที่ชำระแล้ว · ไม่รวมยอดจ่ายเกินเป็นหนี้", &[])} }
+            }
         }
     }
 }

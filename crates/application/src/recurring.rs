@@ -20,10 +20,9 @@ pub fn revised_recurring(
     state: &LedgerState,
     expected: &RecurringExpense,
     replacement: &RecurringExpense,
-) -> Result<RecurringExpense, StorageError> {
+) -> Result<(RecurringExpense, RecurringExpense), StorageError> {
     let effective = replacement.due().start();
     if !state.recurring.contains(expected)
-        || expected.stopped_from().is_some()
         || !expected.occurs_in(effective)
         || replacement.stopped_from().is_some()
         || state.recurring.iter().any(|s| s.id() == replacement.id())
@@ -40,14 +39,20 @@ pub fn revised_recurring(
         return Err(StorageError::RecurringEditPaid);
     }
     let stopped = expected.clone().stop_from(effective)?;
+    // Arrears of a stopped/replaced plan remain editable, but must never
+    // resume beyond its original end and overlap its successor.
+    let replacement = match expected.stopped_from() {
+        Some(end) => replacement.clone().stop_from(end)?,
+        None => replacement.clone(),
+    };
     let mut updated = state.clone();
     for schedule in &mut updated.recurring {
         if schedule.id() == expected.id() {
             *schedule = stopped.clone();
         }
     }
-    validate_new_recurring(&updated, replacement)?;
-    Ok(stopped)
+    validate_new_recurring(&updated, &replacement)?;
+    Ok((stopped, replacement))
 }
 
 pub fn recurring_edit_input(schedule: &RecurringExpense, effective: Month) -> RecurringInput {
@@ -180,6 +185,19 @@ pub struct RecurringMonth {
 }
 
 pub fn recurring_month(view: &Dashboard, month: Month) -> Result<RecurringMonth, DomainError> {
+    // Index once instead of scanning all settlements and entries for every plan.
+    let entries: std::collections::BTreeMap<_, _> = view
+        .entries
+        .iter()
+        .filter(|e| e.date() <= view.today && !view.reversed.contains(&e.id()))
+        .map(|e| (e.id(), e))
+        .collect();
+    let paid_by_schedule: std::collections::BTreeMap<_, _> = view
+        .settlements
+        .iter()
+        .filter(|s| s.month == month)
+        .filter_map(|s| entries.get(&s.entry).map(|entry| (s.recurring, *entry)))
+        .collect();
     let mut result = RecurringMonth {
         items: vec![],
         planned: Money::ZERO,
@@ -187,15 +205,7 @@ pub fn recurring_month(view: &Dashboard, month: Month) -> Result<RecurringMonth,
         pending: Money::ZERO,
     };
     for schedule in &view.recurring {
-        let paid = view
-            .settlements
-            .iter()
-            .find(|s| s.recurring == schedule.id() && s.month == month)
-            .and_then(|s| {
-                view.entries.iter().find(|e| {
-                    e.id() == s.entry && e.date() <= view.today && !view.reversed.contains(&e.id())
-                })
-            });
+        let paid = paid_by_schedule.get(&schedule.id()).copied();
         if !schedule.occurs_in(month) && paid.is_none() {
             continue;
         }

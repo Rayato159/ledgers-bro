@@ -1,4 +1,4 @@
-use crate::components::money_label;
+use crate::components::{PagePanel, PageTabs, money_label};
 use dioxus::prelude::*;
 use ledger_application::{
     TAX_RULE_VERSION, TAX_SOURCES, TaxWorksheet, annual_tax_income, calculate_tax,
@@ -44,6 +44,7 @@ fn TaxAmount(label: String, group: u8, index: usize) -> Element {
 
 #[component]
 pub(crate) fn TaxPage() -> Element {
+    let mut tab = use_signal(|| 0usize);
     let mut session = use_context::<Signal<TaxSession>>();
     let store = use_context::<crate::state::UiState>();
     let state = session.read().clone();
@@ -60,10 +61,11 @@ pub(crate) fn TaxPage() -> Element {
             .and_then(|worksheet| calculate_tax(&worksheet))
     });
     rsx! {
-        section { class: "page-heading", div { h1 { {crate::i18n::text("คำนวณภาษีบุคคลธรรมดา", &[])} } p { class: "muted", {crate::i18n::text("คำนวณรายปีจากข้อมูลและสิทธิที่ยืนยัน · ยังไม่ได้ยื่นแบบ", &[])} } } crate::artwork::Companion {role:"tax"} }
-        div { class: "tax-calculator",
-            form { class: "card tax-inputs", onsubmit: move |event| {
-                event.prevent_default(); session.write().submitted = true;
+        section { class: "page-heading", div { h1 { {crate::i18n::text("คำนวณภาษีบุคคลธรรมดา", &[])} } p { class: "muted", {crate::i18n::text("คำนวณรายปีจากข้อมูลและสิทธิที่ยืนยัน · ยังไม่ได้ยื่นแบบ", &[])} } } }
+        PageTabs { id: "tax", tabs: vec![("down", "เงินได้"), ("heart", "ค่าลดหย่อน"), ("check", "ตรวจและคำนวณ"), ("file", "ผลคำนวณ")], selected: tab }
+        div { class: "tax-calculator tax-categories",
+            form { class: "card tax-inputs", hidden: tab() == 3, onsubmit: move |event| {
+                event.prevent_default(); session.write().submitted = true; tab.set(3);
                 let _ = document::eval("requestAnimationFrame(() => { const result = document.getElementById('tax-result'); result.focus({preventScroll: true}); result.scrollIntoView({block: 'start'}); })");
             },
                 label { r#for: "tax-year", {crate::i18n::text("ปีภาษี (ปีที่ได้รับเงิน)", &[])} }
@@ -71,6 +73,7 @@ pub(crate) fn TaxPage() -> Element {
                     if let Ok(year) = event.value().parse() { let mut state = session.write(); state.worksheet.year = year; state.worksheet.eligibility_confirmed = false; state.submitted = false; }
                 }, option { value: "2569", {crate::i18n::text("2569 · ประมาณการปีปัจจุบัน", &[])} } option { value: "2568", if crate::i18n::english() { "2025" } else { "2568" } } }
                 p { class: "field-hint", {crate::i18n::text("ทุกช่องเป็นยอดรวมทั้งปี หน่วยบาท กรอก 0 ถ้าไม่มี ข้อมูลค้างไว้ระหว่างเปลี่ยนหน้า แต่ยังไม่บันทึกแบบภาษีเมื่อปิดแอป", &[])} }
+                PagePanel { id: "tax", index: 0, selected: tab(), fieldset { class: "tax-tab-fields", disabled: tab() != 0,
                 section { class: "tax-auto-summary",
                     h2 { {crate::i18n::text("รายได้จากรายการที่เลือกไว้", &[])} }
                     match &automatic {
@@ -96,6 +99,8 @@ pub(crate) fn TaxPage() -> Element {
                     }
                     p { class: "field-hint", {crate::i18n::text("ค่าใช้จ่ายจริงต้องจำเป็น สมควร เกี่ยวกับเงินได้นั้น และมีหลักฐาน รุ่นนี้ยังไม่เปรียบเทียบวิธีเหมาตามประเภทย่อยให้ ถ้าต้องการวิธีเหมาให้เลือกกรณีที่ยังไม่รองรับด้านล่าง", &[])} }
                 }
+                } }
+                PagePanel { id: "tax", index: 1, selected: tab(), fieldset { class: "tax-tab-fields", disabled: tab() != 1,
                 h2 { {crate::i18n::text("2. ค่าลดหย่อนที่มีสิทธิ", &[])} }
                 p { {crate::i18n::text("ส่วนตัว 60,000 บาท คำนวณให้อัตโนมัติ", &[])} }
                 label { class: "tax-check", input { r#type: "checkbox", checked: state.worksheet.spouse_no_income, onchange: move |event| { let mut state = session.write(); state.worksheet.spouse_no_income = event.checked(); state.submitted = false; } } {crate::i18n::text("คู่สมรสจดทะเบียนไม่มีเงินได้และเข้าเงื่อนไขสิทธิ 60,000 บาท", &[])} }
@@ -108,6 +113,8 @@ pub(crate) fn TaxPage() -> Element {
                 }
                 for (index, label) in [(0, "เบี้ยประกันชีวิตตนเองที่เข้าเงื่อนไข"), (1, "เบี้ยประกันสุขภาพตนเองที่เข้าเงื่อนไข"), (2, "ประกันสุขภาพบิดามารดา เฉพาะส่วนสิทธิของตน"), (3, "ดอกเบี้ยบ้าน เฉพาะส่วนสิทธิของตน"), (4, "ประกันสังคม ม.33 ของตนเอง ตามจ่ายจริง"), (5, "บริจาคทั่วไปที่มีสิทธิหัก 1 เท่า")] { TaxAmount { label: label.to_owned(), group: 2, index } }
                 p { class: "field-hint", {crate::i18n::text("ประกันชีวิตต้องเข้าเงื่อนไขสัญญา 10 ปีขึ้นไปและแจ้งใช้สิทธิ ประกันสุขภาพไม่เกิน 25,000 บาท รวมประกันชีวิตไม่เกิน 100,000 บาท บริจาคทั่วไปไม่เกิน 10% หลังลดหย่อน; กรณี e-Donation ให้ตรวจหลักฐานของปีที่ใช้สิทธิ", &[])} }
+                } }
+                PagePanel { id: "tax", index: 2, selected: tab(), fieldset { class: "tax-tab-fields", disabled: tab() != 2,
                 h2 { {crate::i18n::text("3. ภาษีที่ชำระไว้แล้ว", &[])} }
                 TaxAmount { label: crate::i18n::text("หัก ณ ที่จ่ายเพิ่มเติมที่ยังไม่อยู่ในรายการ", &[]), group: 2, index: 6 }
                 TaxAmount { label: crate::i18n::text("ภาษีครึ่งปี/ชำระล่วงหน้าที่นำมาเครดิตได้", &[]), group: 2, index: 7 }
@@ -119,7 +126,10 @@ pub(crate) fn TaxPage() -> Element {
                     label { class: "tax-check", input { r#type: "checkbox", checked: state.worksheet.eligibility_confirmed, onchange: move |event| { let mut state = session.write(); state.worksheet.eligibility_confirmed = event.checked(); state.submitted = false; } } {crate::i18n::text("ตรวจแล้วว่าข้อมูลเงินได้ครบ ค่าใช้จ่ายมีหลักฐาน และจำนวนสิทธิลดหย่อนที่กรอกเข้าเงื่อนไขของปีนี้ ไม่ใช้สิทธิซ้ำ", &[])} }
                 }
                 button { class: "primary full-width", r#type: "submit", {crate::i18n::text("คำนวณภาษีตามข้อมูลที่กรอก", &[])} }
+                } }
+                if tab() < 2 { div { class: "receivable-dialog-actions", button { class: "primary", r#type: "button", onclick: move |_| { tab.set(tab() + 1); }, {crate::i18n::tr("ถัดไป")} } } }
             }
+            PagePanel { id: "tax", index: 3, selected: tab(),
             section { class: "card tax-result", id: "tax-result", tabindex: "-1", "aria-live": "polite",
                 h2 { {crate::i18n::text("ผลคำนวณและที่มา", &[])} }
                 if let Some(result) = result {
@@ -156,7 +166,7 @@ pub(crate) fn TaxPage() -> Element {
                     for (label, url) in TAX_SOURCES { p { a { href: url, target: "_blank", rel: "noopener noreferrer", "{crate::i18n::tr(&label)} ↗" } } }
                     p { a { href: "https://efiling.rd.go.th/rd-cms/bank", target: "_blank", rel: "noopener noreferrer", {crate::i18n::text("กรมสรรพากร: การตัดเศษสตางค์เมื่อชำระภาษี ↗", &[])} } }
                 }
-            }
+            } }
         }
     }
 }

@@ -24,6 +24,12 @@ pub struct ModelOperation {
     pub generated_tokens: Arc<AtomicU64>,
 }
 
+impl PartialEq for ModelOperation {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.cancelled, &other.cancelled)
+    }
+}
+
 #[derive(Clone, Copy)]
 #[repr(u8)]
 pub enum ModelPhase {

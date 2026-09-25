@@ -170,3 +170,77 @@ fn long_receipt_blocks_bypass_ai_and_keep_every_item() {
     .expect_err("malformed receipt");
     assert!(!error.to_string().contains("ดาวน์โหลด"));
 }
+
+#[test]
+fn model_catalog_selection_is_persistent_and_cancelled_switch_keeps_previous_choice() {
+    let directory = tempfile::tempdir().expect("test directory");
+    std::fs::write(directory.path().join("selected-model.json"), "\"Compact\"")
+        .expect("test choice");
+    let worker = ModelWorker::start(directory.path().to_owned()).expect("worker");
+    let settings = block_on(worker.settings()).expect("settings");
+    assert_eq!(settings.selected, LocalModelId::Compact);
+    assert!(settings.downloaded.is_empty());
+    let operation = ModelOperation::default();
+    operation.cancelled.store(true, Ordering::Relaxed);
+    assert!(block_on(worker.activate(LocalModelId::Balanced, operation)).is_err());
+    assert_eq!(
+        block_on(worker.settings())
+            .expect("unchanged selection")
+            .selected,
+        LocalModelId::Compact
+    );
+    drop(worker);
+    let reopened = ModelWorker::start(directory.path().to_owned()).expect("reopen");
+    assert_eq!(
+        block_on(reopened.settings())
+            .expect("persisted choice")
+            .selected,
+        LocalModelId::Compact
+    );
+    assert!(
+        !directory
+            .path()
+            .join(LocalModelId::Balanced.info().filename)
+            .exists()
+    );
+}
+
+#[test]
+fn model_fit_distinguishes_capacity_current_pressure_and_unknown_device() {
+    let spec = LocalModelId::Balanced.info();
+    let mut device = ModelDevice {
+        total_memory: Some(16 << 30),
+        available_memory: Some(12 << 30),
+        free_disk: Some(30 << 30),
+        cpu_threads: 4,
+        mobile: false,
+    };
+    assert_eq!(model_fit(&spec, &device, true), ModelFit::FitsEstimate);
+    device.free_disk = Some(1);
+    assert_eq!(model_fit(&spec, &device, true), ModelFit::InsufficientDisk);
+    assert_eq!(model_fit(&spec, &device, false), ModelFit::FitsEstimate);
+    device.free_disk = Some(30 << 30);
+    device.total_memory = Some(2 << 30);
+    assert_eq!(
+        model_fit(&spec, &device, true),
+        ModelFit::InsufficientMemory
+    );
+    device.total_memory = Some(16 << 30);
+    device.available_memory = Some(1 << 30);
+    assert_eq!(model_fit(&spec, &device, true), ModelFit::LowMemory);
+    device.available_memory = Some(12 << 30);
+    device.mobile = true;
+    assert_eq!(model_fit(&spec, &device, true), ModelFit::MobileCaution);
+    assert_eq!(
+        model_fit(&spec, &ModelDevice::default(), true),
+        ModelFit::Unknown
+    );
+    for id in LocalModelId::ALL {
+        assert_eq!(LocalModelId::from_code(id.code()), Some(id));
+        let info = id.info();
+        assert!(info.working_memory_bytes > info.bytes);
+        assert_eq!(info.sha256.len(), 64);
+        assert!(!info.url.contains("/main/"));
+    }
+    assert!(LocalModelId::from_code("../../arbitrary-model").is_none());
+}

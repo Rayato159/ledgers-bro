@@ -182,10 +182,14 @@ pub(crate) fn CryptoAccountCard(account: Account, book_balance: Money) -> Elemen
     let id = account.id();
     rsx! {
         article { class: "card account-card crypto-account",
-            div { class: "crypto-account-title", span { class: "account-icon", crate::artwork::ArtIcon { name: "crypto", size: 48 } }
-                div { small { {crate::i18n::tr("คริปโต")} } h2 { "{account.name().as_str()}" } }
-            }
+            span { class: "account-icon", crate::artwork::ArtIcon { name: "crypto", size: 48 } }
+            small { {crate::i18n::tr("คริปโต")} } h2 { "{account.name().as_str()}" }
             if let Some(holdings) = holdings {
+                div { class: "crypto-account-total",
+                    strong { "THB " {value.and_then(Result::ok).map(money_label).unwrap_or_else(|| "—".into())} }
+                    small { {crate::i18n::tr("มูลค่าประเมินรวม")} }
+                    if invalid_value { small { class: "form-error", {crate::i18n::tr("มูลค่าเกินขอบเขตที่คำนวณได้")} } }
+                }
                 div { class: "crypto-holdings", for asset in CryptoAsset::ALL {
                     div { class: "crypto-holding", span { class: "coin-symbol", "{asset.symbol()}" }
                         div { strong { "{holdings.quantity(asset)}" }
@@ -193,10 +197,6 @@ pub(crate) fn CryptoAccountCard(account: Account, book_balance: Money) -> Elemen
                         }
                     }
                 } }
-                div { class: "crypto-account-total", small { {crate::i18n::tr("มูลค่าประเมินรวม")} }
-                    strong { "THB " {value.and_then(Result::ok).map(money_label).unwrap_or_else(|| "—".into())} }
-                    if invalid_value { small { class: "form-error", {crate::i18n::tr("มูลค่าเกินขอบเขตที่คำนวณได้")} } }
-                }
             } else {
                 strong { "{crate::i18n::currency_prefix()}{money_label(book_balance)}" }
                 p { class: "muted small", {crate::i18n::tr("ยอดเดิมที่บันทึกด้วยมือ · ยังไม่ได้ระบุจำนวนเหรียญ")} }

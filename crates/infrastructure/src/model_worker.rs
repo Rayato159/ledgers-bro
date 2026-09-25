@@ -1,7 +1,8 @@
 use crate::{LedgerWorker, local_model::LocalModel};
 use futures_channel::oneshot;
 use ledger_application::{
-    AppError, Command, ModelAvailability, ModelOperation, ModelPhase, QuickEntryModel, Response,
+    AppError, Command, LocalModelId, LocalModelInfo, ModelAvailability, ModelDevice, ModelFit,
+    ModelOperation, ModelPhase, ModelSettingsSnapshot, QuickEntryModel, Response, model_fit,
 };
 use sha2::{Digest, Sha256};
 use std::{
@@ -17,17 +18,17 @@ use std::{
 
 pub const LOCAL_MODEL_FILENAME: &str = "Qwen3-0.6B-Q4_K_M.gguf";
 pub const LOCAL_MODEL_BYTES: u64 = 396_705_472;
-const HASH: &str = "ac2d97712095a558e31573f62f466a3f9d93990898b0ec79d7c974c1780d524a";
-const URL: &str = "https://huggingface.co/unsloth/Qwen3-0.6B-GGUF/resolve/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_K_M.gguf";
 
 enum Work {
     Status,
-    Install,
+    Install(LocalModelId),
+    Settings,
     Propose(String),
 }
 enum Answer {
     Status(ModelAvailability),
     Installed,
+    Settings(ModelSettingsSnapshot),
     Proposal(String),
 }
 struct Envelope {
@@ -58,6 +59,7 @@ impl ModelWorker {
             .name("local-interpretation".into())
             .spawn(move || {
                 let mut model: Option<LocalModel> = None;
+                let mut selected = read_selection(&directory);
                 loop {
                     let envelope = match receiver.recv_timeout(Duration::from_secs(60)) {
                         Ok(envelope) => envelope,
@@ -69,24 +71,57 @@ impl ModelWorker {
                     };
                     let result = (|| {
                         check_cancel(&envelope.operation)?;
-                        let path = directory.join(LOCAL_MODEL_FILENAME);
+                        let spec = selected.info();
+                        let path = directory.join(spec.filename);
                         match envelope.work {
                             Work::Status => Ok(Answer::Status(
-                                if verified(&path, &envelope.operation).is_ok() {
+                                if verified(&path, &spec, &envelope.operation).is_ok() {
                                     ModelAvailability::Installed
                                 } else {
                                     ModelAvailability::Missing
                                 },
                             )),
-                            Work::Install => {
+                            Work::Settings => {
+                                Ok(Answer::Settings(settings_snapshot(&directory, selected)))
+                            }
+                            Work::Install(id) => {
+                                // Release old weights before estimating or loading another model.
                                 model = None;
-                                install(&directory, &envelope.operation)?;
+                                let spec = id.info();
+                                let snapshot = settings_snapshot(&directory, selected);
+                                match model_fit(
+                                    &spec,
+                                    &snapshot.device,
+                                    !snapshot.downloaded.contains(&id),
+                                ) {
+                                    ModelFit::InsufficientDisk => {
+                                        return Err(model_error("พื้นที่ว่างไม่พอสำหรับโมเดลนี้"));
+                                    }
+                                    ModelFit::InsufficientMemory => {
+                                        return Err(model_error(
+                                            "หน่วยความจำเครื่องไม่พอ เลือกโมเดลที่เล็กลง",
+                                        ));
+                                    }
+                                    _ => {}
+                                }
+                                install(&directory, &spec, &envelope.operation)?;
+                                check_cancel(&envelope.operation)?;
+                                write_selection(&directory, id)?;
+                                selected = id;
                                 Ok(Answer::Installed)
                             }
                             Work::Propose(source) => {
                                 if model.is_none() {
                                     envelope.operation.set_phase(ModelPhase::Verifying);
-                                    verified(&path, &envelope.operation)?;
+                                    verified(&path, &spec, &envelope.operation)?;
+                                    if device_snapshot(&directory)
+                                        .available_memory
+                                        .is_some_and(|free| free < spec.working_memory_bytes)
+                                    {
+                                        return Err(model_error(
+                                            "RAM ว่างไม่พอเปิดโมเดลนี้ ปิดแอปอื่นหรือเลือกโมเดลที่เล็กลง",
+                                        ));
+                                    }
                                     check_cancel(&envelope.operation)?;
                                     envelope.operation.set_phase(ModelPhase::Loading);
                                     model = Some(LocalModel::load(&path)?);
@@ -132,7 +167,23 @@ impl ModelWorker {
         }
     }
     pub async fn install(&self, operation: ModelOperation) -> Result<(), AppError> {
-        match self.request(Work::Install, operation).await? {
+        self.activate(LocalModelId::Small, operation).await
+    }
+    pub async fn settings(&self) -> Result<ModelSettingsSnapshot, AppError> {
+        match self
+            .request(Work::Settings, ModelOperation::default())
+            .await?
+        {
+            Answer::Settings(snapshot) => Ok(snapshot),
+            _ => Err(model_error("อ่านการตั้งค่า AI ไม่สำเร็จ")),
+        }
+    }
+    pub async fn activate(
+        &self,
+        id: LocalModelId,
+        operation: ModelOperation,
+    ) -> Result<(), AppError> {
+        match self.request(Work::Install(id), operation).await? {
             Answer::Installed => Ok(()),
             _ => Err(model_error("ติดตั้ง AI ไม่สำเร็จ")),
         }
@@ -192,11 +243,15 @@ impl ModelWorker {
     }
 }
 
-fn verified(path: &Path, operation: &ModelOperation) -> Result<(), AppError> {
+fn verified(
+    path: &Path,
+    spec: &LocalModelInfo,
+    operation: &ModelOperation,
+) -> Result<(), AppError> {
     let invalid =
         || model_error("ยังไม่มีโมเดล AI ที่พร้อมใช้ กดดาวน์โหลด AI ในเครื่องก่อน หรือใช้ตัวอย่างคำสั่งได้ทันที");
     let mut file = File::open(path).map_err(|_| invalid())?;
-    if file.metadata().map_err(|_| invalid())?.len() != LOCAL_MODEL_BYTES {
+    if file.metadata().map_err(|_| invalid())?.len() != spec.bytes {
         return Err(invalid());
     }
     let mut digest = Sha256::new();
@@ -209,56 +264,125 @@ fn verified(path: &Path, operation: &ModelOperation) -> Result<(), AppError> {
         }
         digest.update(&buffer[..count]);
     }
-    if format!("{:x}", digest.finalize()) != HASH {
+    if format!("{:x}", digest.finalize()) != spec.sha256 {
         return Err(invalid());
     }
     Ok(())
 }
 
-fn install(directory: &Path, operation: &ModelOperation) -> Result<(), AppError> {
+fn install(
+    directory: &Path,
+    spec: &LocalModelInfo,
+    operation: &ModelOperation,
+) -> Result<(), AppError> {
     let fail = || model_error("ดาวน์โหลด AI ไม่สำเร็จ ตรวจอินเทอร์เน็ตและพื้นที่ว่างแล้วลองใหม่");
     std::fs::create_dir_all(directory).map_err(|_| fail())?;
-    let path = directory.join(LOCAL_MODEL_FILENAME);
-    if verified(&path, operation).is_ok() {
+    let path = directory.join(spec.filename);
+    if verified(&path, spec, operation).is_ok() {
         return Ok(());
     }
     check_cancel(operation)?;
+    // A corrupt old file is kept until the replacement is fully validated.
+    if device_snapshot(directory)
+        .free_disk
+        .is_some_and(|free| free < spec.bytes + 256 * 1024 * 1024)
+    {
+        return Err(model_error("พื้นที่ว่างไม่พอสำหรับโมเดลนี้"));
+    }
     let mut temporary = tempfile::NamedTempFile::new_in(directory).map_err(|_| fail())?;
     let client = reqwest::blocking::Client::builder()
         .https_only(true)
         .connect_timeout(Duration::from_secs(15))
-        .timeout(Duration::from_secs(20))
+        .timeout(Duration::from_secs(30))
         .redirect(reqwest::redirect::Policy::limited(5))
         .build()
-        .map_err(|_| fail())?;
-    // Only this pinned model URL is sent. No financial text, identity or auth token.
-    let mut response = client
-        .get(URL)
-        .send()
-        .and_then(reqwest::blocking::Response::error_for_status)
         .map_err(|_| fail())?;
     let mut total = 0_u64;
     let started = Instant::now();
     let mut buffer = [0_u8; 64 * 1024];
-    loop {
+    // Bounded range requests avoid a short whole-file timeout on multi-GB weights.
+    // Cancellation and stalls are bounded by one 30-second request.
+    while total < spec.bytes {
         check_cancel(operation)?;
-        if started.elapsed() > Duration::from_secs(900) {
+        if started.elapsed() > Duration::from_secs(7200) {
             return Err(fail());
         }
-        let count = response.read(&mut buffer).map_err(|_| fail())?;
-        if count == 0 {
-            break;
-        }
-        total += count as u64;
-        if total > LOCAL_MODEL_BYTES {
+        let end = (total + 8 * 1024 * 1024).min(spec.bytes) - 1;
+        let mut response = client
+            .get(spec.url)
+            .header(reqwest::header::RANGE, format!("bytes={total}-{end}"))
+            .send()
+            .and_then(reqwest::blocking::Response::error_for_status)
+            .map_err(|_| fail())?;
+        if response.status() != reqwest::StatusCode::PARTIAL_CONTENT {
             return Err(fail());
         }
-        temporary.write_all(&buffer[..count]).map_err(|_| fail())?;
-        operation.downloaded_bytes.store(total, Ordering::Relaxed);
+        loop {
+            check_cancel(operation)?;
+            let count = response.read(&mut buffer).map_err(|_| fail())?;
+            if count == 0 {
+                break;
+            }
+            total += count as u64;
+            if total > end + 1 {
+                return Err(fail());
+            }
+            temporary.write_all(&buffer[..count]).map_err(|_| fail())?;
+            operation.downloaded_bytes.store(total, Ordering::Relaxed);
+        }
+        if total != end + 1 {
+            return Err(fail());
+        }
     }
     temporary.as_file().sync_all().map_err(|_| fail())?;
-    verified(temporary.path(), operation)?;
+    operation.set_phase(ModelPhase::Verifying);
+    verified(temporary.path(), spec, operation)?;
     check_cancel(operation)?;
     temporary.persist(&path).map_err(|_| fail())?;
     Ok(())
+}
+
+fn read_selection(directory: &Path) -> LocalModelId {
+    std::fs::read_to_string(directory.join("selected-model.json"))
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or(LocalModelId::Small)
+}
+fn write_selection(directory: &Path, id: LocalModelId) -> Result<(), AppError> {
+    let fail = || model_error("บันทึกโมเดลที่เลือกไม่สำเร็จ โมเดลเดิมยังเป็นตัวหลัก");
+    let mut temp = tempfile::NamedTempFile::new_in(directory).map_err(|_| fail())?;
+    serde_json::to_writer(temp.as_file_mut(), &id).map_err(|_| fail())?;
+    temp.as_file().sync_all().map_err(|_| fail())?;
+    temp.persist(directory.join("selected-model.json"))
+        .map_err(|_| fail())?;
+    Ok(())
+}
+fn device_snapshot(directory: &Path) -> ModelDevice {
+    let mut system = sysinfo::System::new();
+    system.refresh_memory();
+    let nonzero = |value| if value == 0 { None } else { Some(value) };
+    let existing = directory.ancestors().find(|p| p.exists());
+    ModelDevice {
+        total_memory: nonzero(system.total_memory()),
+        available_memory: nonzero(system.available_memory()),
+        free_disk: existing.and_then(|p| fs2::available_space(p).ok()),
+        cpu_threads: std::thread::available_parallelism()
+            .map(usize::from)
+            .unwrap_or(1),
+        mobile: cfg!(any(target_os = "android", target_os = "ios")),
+    }
+}
+fn settings_snapshot(directory: &Path, selected: LocalModelId) -> ModelSettingsSnapshot {
+    ModelSettingsSnapshot {
+        selected,
+        downloaded: LocalModelId::ALL
+            .into_iter()
+            .filter(|id| {
+                let spec = id.info();
+                std::fs::metadata(directory.join(spec.filename))
+                    .is_ok_and(|m| m.is_file() && m.len() == spec.bytes)
+            })
+            .collect(),
+        device: device_snapshot(directory),
+    }
 }

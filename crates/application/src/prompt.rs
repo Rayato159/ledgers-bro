@@ -812,13 +812,13 @@ impl LedgerRepository for PlanningRepository {
         expected: &RecurringExpense,
         replacement: &RecurringExpense,
     ) -> Result<(), StorageError> {
-        let stopped = revised_recurring(&self.state, expected, replacement)?;
+        let (stopped, replacement) = revised_recurring(&self.state, expected, replacement)?;
         for schedule in &mut self.state.recurring {
             if schedule.id() == expected.id() {
                 *schedule = stopped.clone();
             }
         }
-        self.state.recurring.push(replacement.clone());
+        self.state.recurring.push(replacement);
         Ok(())
     }
     fn add_recurring(&mut self, schedule: &RecurringExpense) -> Result<(), StorageError> {

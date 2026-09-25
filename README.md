@@ -6,14 +6,14 @@ An open-source, local-first ledger built with **Rust + Dioxus + SQLite**. Thai /
 
 ## Download & install 📦
 
-Download **[0.1.3](https://github.com/Rayato159/ledgers-bro/releases/tag/v0.1.3)**. No Rust or build tools needed to try the packaged apps.
+Download **[0.1.4](https://github.com/Rayato159/ledgers-bro/releases/tag/v0.1.4)**. No Rust or build tools needed to try the packaged apps.
 
 - **Windows x64:** install the `.msi`, or extract the portable `.zip` and open `ledgers-bro.exe` inside it. Keep its `ocr` and `licenses` folders alongside the executable.
 - **Android phone:** use the **arm64** `.apk`. This is an experimental, debug-signed test app, not a Play Store build.
 - **Android emulator:** use the **x86_64** `.apk` for an x86_64 virtual device.
 - **macOS / Linux / iOS:** no ready-to-install packages announced yet.
 
-The release includes SHA-256 checksums. Windows packages include receipt OCR; download the optional local AI model inside the app. Windows packages are not code-signed. Upgrade the existing app in place; do not uninstall the Android app or clear its storage. Version 0.1.3 adds opt-in **Remember me for 7 days** and aligns the Settings heading with its tabs and content. Existing users, passwords and ledgers from 0.1.2 are retained. The financial ledger stays at schema 10; the user registry upgrades to version 2, which older builds cannot reopen. See [preserving your data during an update](docs/update-0.1.3-th.md), [local users](docs/local-users-th.md), [crypto portfolios](docs/crypto-portfolios-th.md), and [CSV / device migration](docs/data-transfer-th.md). Keep a pre-update data backup if you need to roll back. The source code below is for building it yourself. 🛠️
+The release includes SHA-256 checksums. Windows packages include receipt OCR; download the optional local AI model inside the app. Windows packages are not code-signed. Upgrade the existing app in place; do not uninstall the Android app or clear its storage. Version 0.1.4 adds grouped pages, clearer bill editing, expense drilldowns, monthly bill charts and selectable local Qwen3 models. It keeps existing users, passwords and ledger data. The financial ledger remains at schema 10 and the user registry at version 2. See [what changed and how to update](docs/update-0.1.4.md), [local model selection](docs/local-model-selection.md), [local users](docs/local-users-th.md), and [CSV / device migration](docs/data-transfer-th.md). Keep a pre-update backup if you need to roll back. The source code below is for building it yourself. 🛠️
 
 ## The receipts 📸
 
@@ -46,7 +46,9 @@ Install your platform's [Dioxus native prerequisites](https://dioxuslabs.com/lea
 cargo run -p ledgers-bro --locked -- --data-dir .data/sandbox
 ```
 
-That builds and opens the app with a separate test ledger. Add `--mobile-preview` after `--data-dir .data/sandbox` to check the phone-width layout on desktop. For an optimized build:
+Use a clearly named test profile such as `ui_test_only` inside this separate directory, and populate it with synthetic data. Do not copy a real ledger or backup into a test directory. Verify the running process has the expected `--data-dir` before automated UI actions; a separate profile alone is not a substitute for a separate test directory.
+
+Add `--mobile-preview` after `--data-dir .data/sandbox` to check the phone-width layout on desktop. For an optimized build:
 
 ```sh
 cargo build -p ledgers-bro --release --locked
@@ -108,8 +110,8 @@ Credit cards require a statement closing day and payment day. **Debts & bills** 
 
 [MIT](LICENSE). Fork it, fix it, make your wallet less embarrassing. Third-party [models / OCR](licenses/) and [fonts](crates/ui/assets/fonts/LICENSE.txt) retain their own licenses. Early software: try synthetic data first; the local database is not encrypted.
 
-## อัปเดต 0.1.1
+## Version 0.1.1 highlights
 
-- เลือกชำระบัตรเครดิตเต็มยอดหรือบางส่วนจากหน้ากรอกรายการ พร้อมกราฟวงกลมหนี้แยกบัตร
-- ผูกรายรับกับประเภทเงินได้ ยอดก่อนหัก VAT และหัก ณ ที่จ่าย เพื่อรวมภาษีรายปี
-- [วิธีอัปเดตโดยเก็บข้อมูลเดิม](docs/update-0.1.1-th.md) · [รายละเอียดรายรับภาษี](docs/tax-income-entries-th.md)
+- Make full or partial credit card repayments from the entry form, with a chart showing debt by card.
+- Classify taxable income and record its gross amount, VAT and withholding tax for annual tax calculations.
+- [Update without losing existing data (Thai)](docs/update-0.1.1-th.md) · [Taxable income entries (Thai)](docs/tax-income-entries-th.md)

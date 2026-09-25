@@ -13,8 +13,8 @@ pub fn stylesheet() -> &'static str {
         ];
         faces.into_iter().map(|(style, weight, bytes)| {
             format!(
-                "@font-face {{ font-family: 'TH Sarabun New'; font-style: {style}; font-weight: {weight}; font-display: swap; src: url(data:font/ttf;base64,{}) format('truetype'); }}",
-                STANDARD.encode(bytes)
+                "@font-face {{ font-family: 'TH Sarabun New'; font-style: {style}; font-weight: {weight}; font-display: swap; src: url(data:font/ttf;base64,{encoded}) format('truetype'); }}\n@font-face {{ font-family: 'Thai UI Matched'; font-style: {style}; font-weight: {weight}; size-adjust: 145%; unicode-range: U+0E00-0E7F; font-display: swap; src: url(data:font/ttf;base64,{encoded}) format('truetype'); }}",
+                encoded = STANDARD.encode(bytes)
             )
         }).collect()
     })

@@ -59,3 +59,6 @@ pub use currency::normalize_prompt_currency;
 
 mod preferences;
 pub use preferences::*;
+
+mod model_catalog;
+pub use model_catalog::*;

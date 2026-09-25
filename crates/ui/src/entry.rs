@@ -12,6 +12,8 @@ use ledger_domain::*;
 
 #[component]
 pub fn QuickEntryPage(view: Dashboard) -> Element {
+    let mut tab = use_signal(|| 0usize);
+    let mut had_review = use_signal(|| false);
     let mut store = use_context::<UiState>();
     let host = use_context::<HostInfo>();
     let mut text = store.composer;
@@ -38,10 +40,23 @@ pub fn QuickEntryPage(view: Dashboard) -> Element {
     use_drop(move || store.cancel_model());
     let input = store.input.read().clone();
     let prepared = store.prepared.read().clone();
+    use_effect(move || {
+        let ready = store.prompt_drafts.read().is_some()
+            || store.batch.read().is_some()
+            || store.prepared.read().is_some()
+            || store.model_choices.read().is_some()
+            || store.input.read().is_some();
+        if ready && !*had_review.peek() {
+            tab.set(1);
+        }
+        had_review.set(ready);
+    });
     rsx! {
         section { class: "page-heading", div { h1 { {crate::i18n::text("เพิ่มรายการ", &[])} } p { class: "muted", {crate::i18n::text("พิมพ์ พูด หรือสแกนใบเสร็จ แล้วตรวจให้ตรงก่อนบันทึก", &[])} } } }
         crate::navigation::EntryToolbar { manual: false }
-        div { class: "entry-layout",
+        PageTabs { id: "quick-entry", tabs: vec![("chat", "เขียนรายการ"), ("check", "ตรวจรายการ"), ("settings", "AI ในเครื่อง"), ("list", "ตัวอย่างคำสั่ง")], selected: tab }
+        div { class: "entry-categories",
+            PagePanel { id: "quick-entry", index: 0, selected: tab(),
             section { class: "card chat-card",
                 div { class: "chat-greeting illustrated-greeting", img { class: "phone-mascot", src: host.art.phone.clone(), alt: "Ren" } div { strong { {crate::i18n::text("จดไว้ เดี๋ยวช่วยจัดให้", &[])} } p { {crate::i18n::text("เล่าเรื่องเงินวันนี้ให้ฟัง\nหรือหยิบใบเสร็จมาให้ช่วยอ่าน", &[])} } } }
                 form { class: if dragging() { "chat-compose receipt-drag-over" } else { "chat-compose" },
@@ -62,9 +77,9 @@ pub fn QuickEntryPage(view: Dashboard) -> Element {
                 if store.model_operation.read().is_some() { crate::model::ModelProgress {} }
                 else if !store.guidance.read().is_empty() { div { class: "assistant-message", role: "status", "{crate::i18n::tr(&store.guidance.read())}" } }
                 p { class: "field-hint receipt-privacy", {crate::i18n::text("JPG / PNG / HEIC / HEIF · รูปละไม่เกิน 32 MB · อ่านในเครื่อง ภาพใช้ตรวจชั่วคราว ไม่ส่งขึ้น Cloud", &[])} }
-                details { class: "model-disclosure", summary { Icon { name: "chat", size: 19 } {crate::i18n::text("AI ในเครื่อง", &[])} } crate::model::ModelSettings { capturing } }
-
             }
+            }
+            PagePanel { id: "quick-entry", index: 1, selected: tab(),
             section { class: "card entry-editor",
                 if let Some((source, drafts)) = store.prompt_drafts.read().clone() {
                     crate::prompt_review::PromptReview { source, drafts, view: view.clone() }
@@ -82,7 +97,10 @@ pub fn QuickEntryPage(view: Dashboard) -> Element {
                     }
                 }
             }
+            }
         }
+        PagePanel { id: "quick-entry", index: 2, selected: tab(), section { class: "card recurring-card", crate::model::ModelSettings { capturing } } }
+        PagePanel { id: "quick-entry", index: 3, selected: tab(),
         details { class: "chat-help prompt-catalog", summary { {crate::i18n::text("คำสั่งบันทึกทั้งหมด · กดเพื่อดูตัวอย่าง", &[])} }
             if crate::i18n::english() { p { class: "field-hint", "Prompts and voice currently use Thai. Manual forms work in either language." } }
             p { {crate::i18n::text("หลายคำสั่งใช้ขึ้นบรรทัดใหม่ ครั้งละไม่เกิน 8 คำสั่ง ชื่อที่มีคำว่า และ ให้ใส่เครื่องหมายคำพูด", &[])} }
@@ -91,12 +109,13 @@ pub fn QuickEntryPage(view: Dashboard) -> Element {
                     { let (icon, tone) = crate::prompt_examples::example_art(kind); rsx! {
                         crate::prompt_examples::PromptExample { title: crate::i18n::tr(kind.label()), sample: kind.example(), icon, tone, compact: true,
                             selected: *text.read() == crate::prompt_examples::currency_example(kind.example()), disabled: *capturing.read() || *store.busy.read(),
-                            onselect: move |sample| text.set(sample),
+                            onselect: move |sample| { text.set(sample); tab.set(0); },
                         }
                     } }
                 }
             }
             div { class: "chat-help", strong { {crate::i18n::text("ตัวอย่างรูปแบบที่รองรับ", &[])} } code { {crate::i18n::text("จ่าย 80 จาก เงินสด หมวด อาหาร", &[])} } code { {crate::i18n::text("โอน 1000 จาก ธนาคาร ไป เงินสด", &[])} } code { {crate::i18n::text("… วันที่ เมื่อวาน โน้ต \"ข้าวกลางวัน\"", &[])} } p { {crate::i18n::text("การจ่ายหนี้บัตรใช้โอนไปบัญชีบัตรเครดิต ดอกเบี้ยหรือค่าธรรมเนียมให้บันทึกเป็นรายจ่ายแยก", &[])} } }
+        }
         }
     }
 }
@@ -108,7 +127,7 @@ pub fn ManualEntryPage(view: Dashboard) -> Element {
     let prepared = store.prepared.read().clone();
     rsx! {
         section { class: "page-heading",
-            div { h1 { {crate::i18n::text("เพิ่มรายการ", &[])} } p { class: "muted", {crate::i18n::text("กรอกข้อมูล แล้วตรวจให้ตรงก่อนบันทึก", &[])} } } crate::artwork::Companion { role:"history" }
+            div { h1 { {crate::i18n::text("เพิ่มรายการ", &[])} } p { class: "muted", {crate::i18n::text("กรอกข้อมูล แล้วตรวจให้ตรงก่อนบันทึก", &[])} } }
 
         }
         crate::navigation::EntryToolbar { manual: true }

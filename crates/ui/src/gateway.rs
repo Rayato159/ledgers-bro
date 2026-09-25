@@ -32,6 +32,20 @@ pub trait UiGateway: Send + Sync {
             Err(AppError::Input("รุ่นนี้ยังติดตั้ง AI ไม่ได้".into()))
         })
     }
+    fn model_settings(&self) -> UiFuture<ledger_application::ModelSettingsSnapshot> {
+        Box::pin(async {
+            Err(AppError::Input("การเลือกโมเดลยังไม่พร้อมบนอุปกรณ์นี้".into()))
+        })
+    }
+    fn activate_model(
+        &self,
+        _id: ledger_application::LocalModelId,
+        _operation: ModelOperation,
+    ) -> UiFuture<()> {
+        Box::pin(async {
+            Err(AppError::Input("การเลือกโมเดลยังไม่พร้อมบนอุปกรณ์นี้".into()))
+        })
+    }
     fn resolve_text(&self, text: String, _operation: ModelOperation) -> UiFuture<Response> {
         self.request(Command::Resolve(text))
     }

@@ -7,9 +7,9 @@ use ledger_domain::Currency;
 pub fn SettingsPage(view: Dashboard) -> Element {
     let store = use_context::<UiState>();
     let mut selected = use_signal(|| view.currency);
-    let mut tab = use_signal(|| 0usize);
+    let mut tab = store.settings_tab;
     rsx! {
-        section { class: "page-heading settings-page-heading", div { h1 { {text("ตั้งค่า", &[])} } p { class: "muted", {text("จัดสมุดบัญชีให้เป็นของเรา", &[])} } } crate::artwork::Companion {role:"settings"} }
+        section { class: "page-heading settings-page-heading", div { h1 { {text("ตั้งค่า", &[])} } p { class: "muted", {text("จัดสมุดบัญชีให้เป็นของเรา", &[])} } } }
         div { class: "preferences-page",
             div { class: "preferences-tabs", role: "tablist", "aria-label": text("หมวดการตั้งค่า", &[]),
                 onkeydown: move |e| {

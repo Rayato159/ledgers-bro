@@ -47,6 +47,19 @@ impl UiGateway for DesktopGateway {
         let model = self.model.clone();
         Box::pin(async move { model.install(operation).await })
     }
+    fn model_settings(&self) -> UiFuture<ledger_application::ModelSettingsSnapshot> {
+        let model = self.model.clone();
+        Box::pin(async move { model.settings().await })
+    }
+    fn activate_model(
+        &self,
+        id: ledger_application::LocalModelId,
+        operation: ModelOperation,
+    ) -> UiFuture<()> {
+        let model = self.model.clone();
+        Box::pin(async move { model.activate(id, operation).await })
+    }
+
     fn resolve_text(&self, text: String, operation: ModelOperation) -> UiFuture<Response> {
         let model = self.model.clone();
         let worker = self.worker.clone();

@@ -140,6 +140,83 @@ fn finite_plan_edit_defaults_to_remaining_contractual_months() {
     );
 }
 
+#[test]
+fn edit_stopped_arrears_keeps_successor_and_paid_history_after_reopen() {
+    let dir = TempDir::new().expect("dir");
+    let path = dir.path().join("ledger.sqlite3");
+    let (mut app, cash) = setup(SqliteLedger::open(&path).expect("db"));
+    let old = add(&mut app, cash, "Insurance", "200", "11", "2026-08");
+    let august = "2026-08".parse().expect("august");
+    let october = "2026-10".parse().expect("october");
+    let paid = payment(&mut app, &old, august, "200");
+    app.execute(Command::PayRecurring(paid)).expect("paid");
+    let mut future = recurring_edit_input(&old, october);
+    future.amount = "300".into();
+    app.execute(Command::EditRecurring {
+        expected: old.clone(),
+        input: future,
+    })
+    .expect("successor");
+    let before = view(&mut app);
+    let stopped = before
+        .recurring
+        .iter()
+        .find(|s| s.id() == old.id())
+        .expect("stopped old")
+        .clone();
+    let mut input = recurring_edit_input(&stopped, month());
+    input.amount = "250".into();
+    input.name = "Updated arrears".into();
+    app.execute(Command::EditRecurring {
+        expected: stopped.clone(),
+        input: input.clone(),
+    })
+    .expect("edit stopped arrears");
+    let after = view(&mut app);
+    assert_eq!(after.entries, before.entries);
+    assert_eq!(after.settlements, before.settlements);
+    let september = recurring_month(&after, month()).expect("september");
+    assert_eq!(september.items.len(), 1);
+    assert_eq!(september.pending.to_string(), "250.00");
+    assert_eq!(september.items[0].schedule.stopped_from(), Some(october));
+    for period in [october, "2026-11".parse().expect("november")] {
+        assert_eq!(
+            recurring_month(&before, period),
+            recurring_month(&after, period),
+            "no overlap with successor"
+        );
+    }
+    assert!(
+        app.execute(Command::EditRecurring {
+            expected: stopped,
+            input
+        })
+        .is_err(),
+        "stale edits cannot duplicate arrears"
+    );
+    let revised = september.items[0].schedule.clone();
+    let invalid = recurring_edit_input(&revised, october);
+    assert!(
+        app.execute(Command::EditRecurring {
+            expected: revised.clone(),
+            input: invalid
+        })
+        .is_err(),
+        "cannot edit at the stop boundary"
+    );
+    let paid = payment(&mut app, &revised, month(), "250");
+    app.execute(Command::PayRecurring(paid))
+        .expect("pay edited arrears");
+    let final_view = view(&mut app);
+    assert_eq!(
+        recurring_month(&final_view, month()).expect("paid").pending,
+        Money::ZERO
+    );
+    drop(app);
+    let mut reopened = self::app(SqliteLedger::open(&path).expect("reopen"));
+    assert_eq!(view(&mut reopened), final_view);
+}
+
 struct FixedClock;
 impl Clock for FixedClock {
     fn today(&self) -> Result<EntryDate, AppError> {
@@ -239,6 +316,184 @@ fn projection(app: &mut App) -> MonthlyFlow {
     let v = view(app);
     let actual = monthly_cashflow(&v).expect("flow").pop().expect("current");
     projected_cashflow(&v, &actual).expect("projected")
+}
+
+#[test]
+fn expense_drilldown_reconciles_actual_pending_payment_and_reversal() {
+    let (mut app, cash) = setup(SqliteLedger::in_memory().expect("db"));
+    let expense = record(&mut app, cash, "13337.65", TransactionKind::Expense);
+    let plan = add(&mut app, cash, "Pending bills", "20658.27", "11", "2026-09");
+    let v = view(&mut app);
+    let details = cashflow_breakdown(&v, month()).expect("breakdown");
+    assert_eq!(details.recorded.expenses.to_string(), "13337.65");
+    assert_eq!(details.pending_total.to_string(), "20658.27");
+    assert_eq!(details.expense_entries.len(), 1);
+    assert_eq!(details.pending_items.len(), 1);
+    let projected = projection(&mut app);
+    assert_eq!(projected.expenses.to_string(), "33995.92");
+    assert_eq!(projected.rate(), Some(-10000));
+    assert_eq!(
+        details
+            .recorded
+            .expenses
+            .checked_add(details.pending_total)
+            .expect("sum"),
+        projected.expenses
+    );
+    assert_eq!(
+        details.recorded,
+        monthly_cashflow(&v)
+            .expect("recorded")
+            .pop()
+            .expect("current")
+    );
+    let prepared = payment(&mut app, &plan, month(), "20658.27");
+    app.execute(Command::PayRecurring(prepared)).expect("pay");
+    let paid = cashflow_breakdown(&view(&mut app), month()).expect("paid details");
+    assert_eq!(paid.pending_total, Money::ZERO);
+    assert!(paid.pending_items.is_empty());
+    assert_eq!(
+        paid.recorded.expenses, projected.expenses,
+        "paid plan is not counted twice"
+    );
+    app.execute(Command::Reverse(expense.entry.id()))
+        .expect("reverse");
+    let reversed = cashflow_breakdown(&view(&mut app), month()).expect("after reversal");
+    assert_eq!(reversed.recorded.expenses.to_string(), "20658.27");
+    assert_eq!(reversed.expense_entries.len(), 1);
+    assert!(reversed.income_entries.is_empty());
+}
+
+#[test]
+fn other_expenses_are_split_by_description_and_exclude_reversals_and_future_dates() {
+    let (mut app, cash) = setup(SqliteLedger::in_memory().expect("db"));
+    let mut v = view(&mut app);
+    for (i, note, category, date, amount) in [
+        (
+            1,
+            "Domain renewal",
+            Category::OtherExpense,
+            "2026-09-24",
+            "200",
+        ),
+        (
+            2,
+            "Domain renewal\n• Hosting add-on",
+            Category::OtherExpense,
+            "2026-09-24",
+            "100",
+        ),
+        (
+            3,
+            "Drawing software",
+            Category::OtherExpense,
+            "2026-09-24",
+            "350",
+        ),
+        (4, "Lunch", Category::Food, "2026-09-24", "50"),
+        (5, "Cancelled", Category::OtherExpense, "2026-09-24", "500"),
+        (6, "Future", Category::OtherExpense, "2026-09-30", "600"),
+        (7, "Last year", Category::OtherExpense, "2025-09-24", "700"),
+    ] {
+        let id = format!("00000000-0000-4000-8000-{i:012}")
+            .parse()
+            .expect("id");
+        v.entries.push(
+            JournalEntry::record(
+                id,
+                date.parse().expect("date"),
+                Note::new(note).expect("note"),
+                EntryKind::Expense {
+                    account: cash,
+                    amount: PositiveMoney::new(amount.parse().expect("amount")).expect("positive"),
+                    category,
+                },
+            )
+            .expect("entry"),
+        );
+        if i == 5 {
+            v.reversed.insert(id);
+        }
+    }
+    let slices = expense_slices(&v, month()).expect("slices");
+    assert_eq!(slices.len(), 3);
+    assert_eq!(slices[0].description.as_deref(), Some("Drawing software"));
+    assert_eq!(slices[1].amount.to_string(), "300.00");
+    assert_eq!(slices[1].description.as_deref(), Some("Domain renewal"));
+    let total = slices
+        .iter()
+        .try_fold(Money::ZERO, |s, v| s.checked_add(v.amount))
+        .expect("sum");
+    assert_eq!(total.to_string(), "700.00");
+    assert_eq!(
+        total,
+        cashflow_breakdown(&v, month())
+            .expect("breakdown")
+            .recorded
+            .expenses
+    );
+}
+
+#[test]
+fn large_history_monthly_lookup_preserves_totals() {
+    let (mut app, cash) = setup(SqliteLedger::in_memory().expect("db"));
+    let mut v = view(&mut app);
+    let today = v.today;
+    for i in 0..20_000 {
+        v.entries.push(
+            JournalEntry::record(
+                format!("00000000-0000-4000-8000-{i:012}")
+                    .parse()
+                    .expect("id"),
+                today,
+                Note::new("Historical entry").expect("note"),
+                EntryKind::Expense {
+                    account: cash,
+                    amount: PositiveMoney::new("1".parse().expect("amount")).expect("positive"),
+                    category: Category::Food,
+                },
+            )
+            .expect("entry"),
+        );
+    }
+    for i in 0..500 {
+        let id = format!("10000000-0000-4000-8000-{i:012}")
+            .parse()
+            .expect("id");
+        v.recurring.push(
+            RecurringExpense::new(
+                id,
+                AccountName::new(&format!("Plan {i}")).expect("name"),
+                PositiveMoney::new("100".parse().expect("amount")).expect("positive"),
+                Category::Rent,
+                Some(cash),
+                MonthlyDue::new(11, month()).expect("due"),
+            )
+            .expect("plan"),
+        );
+        if i % 2 == 0 {
+            v.settlements.push(RecurringSettlement {
+                recurring: id,
+                month: month(),
+                entry: v.entries[19_000 + i].id(),
+            });
+        }
+    }
+    let started = std::time::Instant::now();
+    let current = recurring_month(&v, month()).expect("large history");
+    let elapsed = started.elapsed();
+    assert_eq!(current.items.len(), 500);
+    assert_eq!(current.pending.to_string(), "25000.00");
+    assert_eq!(current.paid.to_string(), "250.00");
+    assert_eq!(
+        cashflow_breakdown(&v, month())
+            .expect("breakdown")
+            .recorded
+            .expenses
+            .to_string(),
+        "20000.00"
+    );
+    eprintln!("20,000 entries / 500 plans: monthly lookup {:?}", elapsed);
 }
 
 #[test]

@@ -40,31 +40,39 @@ pub(crate) fn ModelProgress() -> Element {
     }
 }
 
+fn gib(bytes: u64) -> String {
+    format!("{:.1} GiB", bytes as f64 / 1_073_741_824.0)
+}
+fn optional_gib(value: Option<u64>) -> String {
+    value.map(gib).unwrap_or_else(|| "—".into())
+}
+fn fit_label(fit: ModelFit) -> &'static str {
+    match fit {
+        ModelFit::FitsEstimate => "หน่วยความจำเพียงพอตามค่าประเมิน",
+        ModelFit::LowMemory => "RAM ว่างตอนนี้น้อยไป ควรปิดแอปอื่นหรือเลือกโมเดลเล็กลง",
+        ModelFit::InsufficientMemory => "RAM ทั้งเครื่องไม่พอสำหรับโมเดลนี้ เลือกตัวที่เล็กลง",
+        ModelFit::InsufficientDisk => "พื้นที่ว่างไม่พอสำหรับดาวน์โหลดโมเดลนี้",
+        ModelFit::MobileCaution => "มือถืออาจจำกัด RAM ต่อแอป แนะนำเริ่มที่ 0.6B หรือ 1.7B",
+        ModelFit::Unknown => "อ่านข้อมูลเครื่องได้ไม่ครบ จึงยังยืนยันความเหมาะสมไม่ได้",
+    }
+}
+
 #[component]
 pub(crate) fn ModelSettings(capturing: Signal<bool>) -> Element {
-    use base64::Engine;
-    let bundled_notices = use_memo(|| {
-        let text = [
-            include_str!("../../../licenses/local-ai/Qwen3-APACHE-2.0.txt"),
-            include_str!("../../../licenses/local-ai/llama-cpp-rs-MIT.txt"),
-            include_str!("../../../licenses/local-ai/llama-cpp-MIT.txt"),
-        ]
-        .join("\n\n");
-        format!(
-            "data:text/plain;charset=utf-8;base64,{}",
-            base64::engine::general_purpose::STANDARD.encode(text)
-        )
-    });
     let mut store = use_context::<UiState>();
-    let mut installed = use_signal(|| false);
+    let mut snapshot = use_signal(|| None::<ModelSettingsSnapshot>);
+    let mut selected = use_signal(|| LocalModelId::Small);
     let mut checking = use_signal(|| true);
+    let mut confirmation = use_signal(|| false);
     let mut operation = use_signal(|| None::<ModelOperation>);
     let mut message = use_signal(String::new);
     use_future(move || async move {
         let gateway = store.gateway.peek().clone();
-        match gateway.0.model_availability().await {
-            Ok(ModelAvailability::Installed) => installed.set(true),
-            Ok(ModelAvailability::Missing) => {}
+        match gateway.0.model_settings().await {
+            Ok(value) => {
+                selected.set(value.selected);
+                snapshot.set(Some(value));
+            }
             Err(error) => message.set(error.to_string()),
         }
         checking.set(false);
@@ -74,46 +82,104 @@ pub(crate) fn ModelSettings(capturing: Signal<bool>) -> Element {
             active.cancelled.store(true, Ordering::Relaxed);
         }
     });
+    let spec = selected().info();
+    let data = snapshot();
+    let downloaded = data
+        .as_ref()
+        .is_some_and(|s| s.downloaded.contains(&selected()));
+    let fit = data
+        .as_ref()
+        .map(|s| model_fit(&spec, &s.device, !downloaded))
+        .unwrap_or(ModelFit::Unknown);
     rsx! {
         div { class: "model-settings",
-            strong { if *installed.read() { {crate::i18n::text("AI ในเครื่องพร้อมใช้", &[])} } else if *checking.read() { {crate::i18n::text("กำลังตรวจ AI ในเครื่อง…", &[])} } else { {crate::i18n::text("เปิดใช้ AI สำหรับข้อความอิสระ", &[])} } }
-            p { class: "field-hint", {crate::i18n::text("ข้อความบัญชีประมวลผลบนเครื่อง ดาวน์โหลดโมเดลครั้งแรกประมาณ 397 MB หลังจากนั้นใช้ได้ออฟไลน์", &[])} }
-            if !*installed.read() {
-                if operation.read().is_some() {
-                    p { role: "status", {crate::i18n::text("กำลังดาวน์โหลดและตรวจไฟล์ AI…", &[])} }
-                    button { class: "text-button", onclick: move |_| { if let Some(active) = operation.peek().as_ref() { active.cancelled.store(true, Ordering::Relaxed); message.set("กำลังยกเลิกการดาวน์โหลด…".into()); } }, {crate::i18n::text("ยกเลิกดาวน์โหลด", &[])} }
-                } else {
-                    button { class: "soft-button", disabled: *checking.read() || *capturing.read() || *store.busy.read(), onclick: move |_| {
-                        let active = ModelOperation::default();
-                        operation.set(Some(active.clone()));
-                        store.busy.set(true);
-                        message.set(String::new());
-                        let gateway = store.gateway.peek().clone();
-                        // Root-owned cleanup clears global busy even if this page unmounts.
-                        // Component signals are only touched while mounted via try_write.
-                        crate::state::spawn_session(async move {
-                            let result = gateway.0.install_model(active).await;
-                            if let Ok(mut value) = installed.try_write() { *value = result.is_ok(); }
-                            if let Ok(mut value) = message.try_write() { *value = match result { Ok(()) => "ดาวน์โหลด AI พร้อมใช้แล้ว".into(), Err(error) => error.to_string() }; }
-                            if let Ok(mut value) = operation.try_write() { *value = None; }
-                            store.busy.set(false);
-                        });
-                    }, {crate::i18n::text("ดาวน์โหลด AI ในเครื่อง", &[])} }
+            h2 { {crate::i18n::tr("เลือก AI ในเครื่อง")} }
+            p { class: "field-hint", {crate::i18n::tr("ข้อความประมวลผลในเครื่อง โมเดลที่เลือกใช้ร่วมกันทุกผู้ใช้บนอุปกรณ์นี้")} }
+            if let Some(data) = &data {
+                p { {crate::i18n::tr("โมเดลที่ใช้อยู่")} strong { " · {data.selected.info().name}" } }
+            }
+            label { r#for: "local-model-choice", {crate::i18n::tr("โมเดล")} }
+            select { id: "local-model-choice", value: selected().code(), disabled: checking() || operation.read().is_some() || *store.busy.read(),
+                onchange: move |e| { if let Some(id) = LocalModelId::from_code(&e.value()) { selected.set(id); message.set(String::new()); } },
+                for id in LocalModelId::ALL { option { value: id.code(), "{id.info().name} · {gib(id.info().bytes)}" } }
+            }
+            div { class: "model-device-summary",
+                p { {crate::i18n::tr("ขนาดดาวน์โหลด")} strong { "{gib(spec.bytes)}" } }
+                p { {crate::i18n::tr("RAM ที่โมเดลต้องใช้โดยประมาณ")} strong { "{gib(spec.working_memory_bytes)}" } }
+                if let Some(data) = &data {
+                    p { {crate::i18n::tr("RAM ทั้งเครื่อง / ว่างตอนนี้")} strong { "{optional_gib(data.device.total_memory)} / {optional_gib(data.device.available_memory)}" } }
+                    p { {crate::i18n::tr("พื้นที่ว่างสำหรับโมเดล")} strong { "{optional_gib(data.device.free_disk)}" } }
                 }
             }
+            p { class: "model-fit-note", "data-warning": fit != ModelFit::FitsEstimate, {crate::i18n::tr(fit_label(fit))} }
+            p { class: "field-hint", {crate::i18n::tr("รุ่นนี้ประมวลผลด้วย CPU โมเดลใหญ่จะช้าลง ค่าหน่วยความจำเป็นการประเมิน ไม่ใช่การรับประกันความเร็วหรือความแม่นยำ")} }
+            if let Some(active) = operation.read().clone() {
+                ModelDownloadProgress { operation: active, total: spec.bytes }
+                button { class: "soft-button", onclick: move |_| { if let Some(active) = operation.peek().as_ref() { active.cancelled.store(true, Ordering::Relaxed); message.set(crate::i18n::tr("กำลังยกเลิกการดาวน์โหลด…")); } }, {crate::i18n::tr("ยกเลิกดาวน์โหลด")} }
+            } else {
+                div { class: "model-settings-actions",
+                    button { class: "primary", disabled: checking() || data.is_none() || fit.blocked() || *capturing.read() || *store.busy.read(), onclick: move |_| confirmation.set(true),
+                        if downloaded { {crate::i18n::tr("ตรวจไฟล์และใช้โมเดลนี้")} } else { {crate::i18n::tr("ดาวน์โหลดและใช้โมเดลนี้")} }
+                    }
+                    button { class: "soft-button", disabled: checking() || *store.busy.read(), onclick: move |_| {
+                        checking.set(true);
+                        spawn(async move { let gateway = store.gateway.peek().clone();
+        match gateway.0.model_settings().await { Ok(value) => snapshot.set(Some(value)), Err(error) => message.set(error.to_string()) } checking.set(false); });
+                    }, {crate::i18n::tr("ตรวจเครื่องอีกครั้ง")} }
+                }
+            }
+            if checking() { p { role: "status", {crate::i18n::tr("กำลังตรวจ AI ในเครื่อง…")} } }
             if !message.read().is_empty() { p { class: "field-hint", role: "status", "{message}" } }
-            details { class: "model-licenses",
-                summary { {crate::i18n::text("โมเดลและสัญญาอนุญาต", &[])} }
-                p { {crate::i18n::text("Qwen3 0.6B · Unsloth Q4_K_M · ประมวลผลในเครื่องด้วย llama.cpp", &[])} }
-                a { href: bundled_notices(), download: "local-ai-licenses.txt", {crate::i18n::text("ดาวน์โหลดสำเนาสัญญาที่มากับแอป (.txt)", &[])} }
-                ul {
-                    li { a { href: "https://huggingface.co/Qwen/Qwen3-0.6B/raw/main/LICENSE", target: "_blank", rel: "noopener noreferrer", {crate::i18n::text("Qwen3 — อ่าน Apache License 2.0 ↗", &[])} } }
-                    li { a { href: "https://github.com/utilityai/llama-cpp-rs/blob/main/LICENSE-MIT", target: "_blank", rel: "noopener noreferrer", {crate::i18n::text("llama-cpp-rs — อ่าน MIT License ↗", &[])} } }
-                    li { a { href: "https://github.com/ggml-org/llama.cpp/blob/master/LICENSE", target: "_blank", rel: "noopener noreferrer", {crate::i18n::text("llama.cpp — อ่าน MIT License ↗", &[])} } }
+            details { class: "model-licenses", summary { {crate::i18n::tr("โมเดลและสัญญาอนุญาต")} }
+                p { "Qwen3 · Q4_K_M · Apache-2.0 · llama.cpp (MIT)" }
+                a { href: spec.source, target: "_blank", rel: "noopener noreferrer", {crate::i18n::tr("ข้อมูลและสัญญาอนุญาตจากผู้เผยแพร่โมเดล")} }
+            }
+        }
+        if confirmation() {
+            dialog { id: "model-install-dialog", class: "account-dialog model-install-dialog", "aria-labelledby": "model-install-title",
+                onmounted: move |_| { let _ = document::eval("document.getElementById('model-install-dialog').showModal()"); },
+                oncancel: move |e| { e.prevent_default(); confirmation.set(false); },
+                h2 { id: "model-install-title", "{spec.name}" }
+                p { {crate::i18n::tr("ขนาดดาวน์โหลด")} ": {gib(spec.bytes)}" }
+                p { {crate::i18n::tr("RAM ที่โมเดลต้องใช้โดยประมาณ")} ": {gib(spec.working_memory_bytes)}" }
+                p { class: "model-fit-note", "data-warning": fit != ModelFit::FitsEstimate, {crate::i18n::tr(fit_label(fit))} }
+                p { {crate::i18n::tr("โมเดลเดิมจะยังอยู่ การเปลี่ยน AI ไม่เปลี่ยนข้อมูลบัญชี และต้องตรวจรายการก่อนบันทึกเสมอ")} }
+                div { class: "model-settings-actions",
+                    button { class: "primary", disabled: *store.busy.read() || fit.blocked(), onclick: move |_| {
+                        confirmation.set(false);
+                        let id = selected(); let active = ModelOperation::default(); operation.set(Some(active.clone())); store.busy.set(true); message.set(String::new());
+                        let gateway = store.gateway.peek().clone();
+                        crate::state::spawn_session(async move {
+                            let result = gateway.0.activate_model(id, active).await;
+                            if result.is_ok() && let Ok(value) = gateway.0.model_settings().await && let Ok(mut target) = snapshot.try_write() { *target = Some(value); }
+                            if let Ok(mut target) = message.try_write() { *target = match result { Ok(()) => crate::i18n::tr("ตรวจไฟล์แล้ว เปลี่ยนโมเดลเรียบร้อย"), Err(error) => error.to_string() }; }
+                            if let Ok(mut target) = operation.try_write() { *target = None; }
+                            store.busy.set(false);
+                        });
+                    }, {crate::i18n::tr("ยืนยันใช้โมเดลนี้")} }
+                    button { class: "soft-button", onclick: move |_| confirmation.set(false), {crate::i18n::tr("ยกเลิก")} }
                 }
             }
         }
     }
+}
+
+#[component]
+fn ModelDownloadProgress(operation: ModelOperation, total: u64) -> Element {
+    let mut tick = use_signal(|| 0u64);
+    use_future(move || async move {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            tick += 1;
+        }
+    });
+    let _tick = tick();
+    let done = operation.downloaded_bytes.load(Ordering::Relaxed);
+    rsx! { div { class: "model-download-progress", role: "status",
+        p { {crate::i18n::tr("กำลังดาวน์โหลดและตรวจไฟล์ AI…")} }
+        progress { max: "{total}", value: "{done}", "aria-label": crate::i18n::tr("ดาวน์โหลดโมเดล") }
+        p { "{gib(done)} / {gib(total)}" }
+    } }
 }
 
 #[component]

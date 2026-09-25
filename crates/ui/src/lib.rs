@@ -14,6 +14,7 @@ mod gateway;
 mod model;
 mod overview;
 mod pages;
+mod pie;
 mod receipt;
 mod receipt_editor;
 mod state;

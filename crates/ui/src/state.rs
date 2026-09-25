@@ -64,6 +64,8 @@ pub struct UiState {
     pub gateway: Signal<Gateway>,
     pub view: Signal<Option<Dashboard>>,
     pub page: Signal<Page>,
+    pub settings_tab: Signal<usize>,
+    pub backup_reminder_dismissed: Signal<Option<i32>>,
     pub busy: Signal<bool>,
     pub notice: Signal<Option<(bool, String)>>,
     pub account_form: Signal<bool>,
@@ -725,6 +727,8 @@ mod tests {
         use_context_provider(|| SessionTaskScope(dioxus::dioxus_core::current_scope_id()));
         let gateway = use_context::<Gateway>();
         UiState {
+            backup_reminder_dismissed: use_signal(|| None),
+            settings_tab: use_signal(|| 0),
             gateway: use_signal(|| gateway),
             view: use_signal(|| None),
             page: use_signal(|| Page::Overview),

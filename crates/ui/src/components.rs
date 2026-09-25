@@ -2,6 +2,45 @@ use crate::state::UiState;
 use dioxus::prelude::*;
 use ledger_domain::*;
 
+/// Shared category navigation. Panels stay mounted so switching tabs keeps drafts.
+#[component]
+pub fn PageTabs(
+    id: &'static str,
+    tabs: Vec<(&'static str, &'static str)>,
+    mut selected: Signal<usize>,
+) -> Element {
+    let count = tabs.len();
+    rsx! {
+        div { class: "preferences-tabs page-tabs", role: "tablist", "aria-label": crate::i18n::tr("หมวดหมู่"),
+            onkeydown: move |e| {
+                let next = match e.key() {
+                    Key::ArrowRight | Key::ArrowDown => (selected() + 1) % count,
+                    Key::ArrowLeft | Key::ArrowUp => (selected() + count - 1) % count,
+                    Key::Home => 0, Key::End => count - 1, _ => return,
+                };
+                e.prevent_default(); selected.set(next);
+                let _ = document::eval(&format!("document.getElementById('{id}-tab-{next}').focus()"));
+            },
+            for (index, (icon, label)) in tabs.into_iter().enumerate() {
+                button { id: "{id}-tab-{index}", r#type: "button", role: "tab", "aria-selected": selected() == index, "aria-controls": "{id}-panel-{index}", tabindex: if selected() == index { "0" } else { "-1" }, onclick: move |_| selected.set(index),
+                    Icon { name: icon, size: 19 } {crate::i18n::tr(label)}
+                }
+            }
+        }
+    }
+}
+
+#[component]
+pub fn PagePanel(
+    id: &'static str,
+    index: usize,
+    selected: usize,
+    #[props(default = false)] lazy: bool,
+    children: Element,
+) -> Element {
+    rsx! { section { id: "{id}-panel-{index}", class: "page-tab-panel", role: "tabpanel", "aria-labelledby": "{id}-tab-{index}", hidden: selected != index, tabindex: "0", if !lazy || selected == index { {children} } } }
+}
+
 #[component]
 pub fn Icon(name: &'static str, size: u32) -> Element {
     let path = match name {
