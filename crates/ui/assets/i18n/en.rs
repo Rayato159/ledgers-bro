@@ -1,4 +1,12 @@
 &[
+    ("แผนที่จะเปลี่ยน", "Plan to update"),
+    ("เลือกแผนของงวดนี้", "Choose a plan for this month"),
+    ("เลือกเดือนก่อน แล้วเลือกแผนที่จะเปลี่ยน การเลือกแผนอื่นจะโหลดเงื่อนไขของแผนนั้นมาให้แก้", "Choose the effective month, then the plan. Selecting a different plan loads its terms for editing."),
+    ("ไม่มีแผนในเดือนที่เลือก เลือกเดือนอื่นหรือเพิ่มแผนใหม่", "There is no plan in this month. Choose another month or add a new plan."),
+    ("แผนที่เปิดมาไม่ได้ใช้ในเดือนนี้ กรุณาเลือกแผนของงวดนี้ก่อนแก้ไข", "The opened plan does not apply in this month. Choose the plan you want to update."),
+    ("แผนนี้มีประวัติชำระตั้งแต่งวดที่เลือก ให้เลือกเดือนหลังงวดที่ชำระล่าสุด", "This plan has payment history from the selected month onward. Choose a month after its latest payment."),
+    ("การแก้ไขช่วงนี้สิ้นสุดก่อน {0} หากต้องการแก้ตั้งแต่เดือนนั้น ให้เลือกเดือนและแผนที่ใช้อยู่ในช่วงนั้น", "Changes to this period end before {0}. To update later terms, select that month and the plan that applies then."),
+    ("เปลี่ยนแท็บได้ การดาวน์โหลดจะทำงานต่อจนกว่าจะเสร็จหรือกดยกเลิก", "You can switch tabs. The download continues until it finishes or you cancel it."),
     ("ยังไม่อ่าน", "Unread"),
     ("เก็บถาวร", "Archived"),
     ("อ่านและเก็บทั้งหมด", "Read and archive all"),

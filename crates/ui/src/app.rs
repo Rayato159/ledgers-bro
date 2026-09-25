@@ -76,6 +76,7 @@ pub fn App() -> Element {
         repayment_selection: use_signal(|| None),
     };
     use_context_provider(|| store);
+    crate::model::use_model_library();
     let updates = crate::updates::use_updates();
     crate::notifications::use_notifications(store, updates);
     let market = crate::crypto::use_crypto_market(store);

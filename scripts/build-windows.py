@@ -32,7 +32,7 @@ def main():
         raise RuntimeError('Run this MSI build on Windows with the MSVC Rust toolchain.')
     for command in ['cargo', 'dx', 'cmake']:
         if not shutil.which(command):
-            raise RuntimeError(f'Missing {command}; see docs/windows-install-th.md')
+            raise RuntimeError(f'Missing {command}; see docs/windows-install.md')
     if subprocess.check_output(['dx', '--version'], text=True).split()[:2] != ['dioxus', '0.7.2']:
         raise RuntimeError('This packaging script is verified with Dioxus CLI 0.7.2.')
 

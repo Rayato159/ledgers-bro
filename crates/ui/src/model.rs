@@ -3,6 +3,10 @@ use dioxus::prelude::*;
 use ledger_application::*;
 use std::sync::atomic::Ordering;
 
+#[cfg(test)]
+#[path = "model_tests.rs"]
+mod tests;
+
 #[component]
 pub(crate) fn ModelProgress() -> Element {
     let store = use_context::<UiState>();
@@ -57,6 +61,93 @@ fn fit_label(fit: ModelFit) -> &'static str {
     }
 }
 
+/// Session-owned state: switching tabs must not cancel installation or lose progress.
+#[derive(Clone, Copy)]
+pub(crate) struct ModelLibrary {
+    snapshot: Signal<Option<ModelSettingsSnapshot>>,
+    selected: Signal<LocalModelId>,
+    checking: Signal<bool>,
+    operation: Signal<Option<ModelOperation>>,
+    message: Signal<String>,
+}
+
+pub(crate) fn use_model_library() -> ModelLibrary {
+    let library = ModelLibrary {
+        snapshot: use_signal(|| None),
+        selected: use_signal(|| LocalModelId::Small),
+        checking: use_signal(|| false),
+        operation: use_signal(|| None),
+        message: use_signal(String::new),
+    };
+    use_context_provider(|| library);
+    use_drop(move || {
+        if let Some(active) = library.operation.peek().as_ref() {
+            active.cancelled.store(true, Ordering::Relaxed);
+        }
+    });
+    library
+}
+
+impl ModelLibrary {
+    fn refresh(mut self, store: UiState) {
+        if *self.checking.peek() || self.operation.peek().is_some() || *store.busy.peek() {
+            return;
+        }
+        self.checking.set(true);
+        let gateway = store.gateway.peek().clone();
+        crate::state::spawn_session(async move {
+            match gateway.0.model_settings().await {
+                Ok(value) => {
+                    if self.snapshot.peek().is_none() {
+                        self.selected.set(value.selected);
+                    }
+                    self.snapshot.set(Some(value));
+                }
+                Err(error) => self.message.set(error.to_string()),
+            }
+            self.checking.set(false);
+        });
+    }
+
+    fn activate(mut self, mut store: UiState, id: LocalModelId) {
+        if *store.busy.peek() || *self.checking.peek() || self.operation.peek().is_some() {
+            return;
+        }
+        let active = ModelOperation::default();
+        self.selected.set(id);
+        self.operation.set(Some(active.clone()));
+        store.busy.set(true);
+        self.message.set(String::new());
+        let gateway = store.gateway.peek().clone();
+        crate::state::spawn_session(async move {
+            let result = gateway.0.activate_model(id, active).await;
+            match result {
+                Ok(()) => {
+                    self.message
+                        .set(crate::i18n::tr("ตรวจไฟล์แล้ว เปลี่ยนโมเดลเรียบร้อย"));
+                    match gateway.0.model_settings().await {
+                        Ok(value) => {
+                            self.selected.set(value.selected);
+                            self.snapshot.set(Some(value));
+                        }
+                        Err(error) => self.message.set(error.to_string()),
+                    }
+                }
+                Err(error) => self.message.set(error.to_string()),
+            }
+            self.operation.set(None);
+            store.busy.set(false);
+        });
+    }
+
+    fn cancel(mut self) {
+        if let Some(active) = self.operation.peek().as_ref() {
+            active.cancelled.store(true, Ordering::Relaxed);
+        }
+        self.message.set(crate::i18n::tr("กำลังยกเลิกการดาวน์โหลด…"));
+    }
+}
+
 #[component]
 pub(crate) fn ModelSettings(
     capturing: Signal<bool>,
@@ -64,28 +155,14 @@ pub(crate) fn ModelSettings(
     #[props(default = false)] compact: bool,
 ) -> Element {
     let mut store = use_context::<UiState>();
-    let mut snapshot = use_signal(|| None::<ModelSettingsSnapshot>);
-    let mut selected = use_signal(|| LocalModelId::Small);
-    let mut checking = use_signal(|| true);
+    let library = use_context::<ModelLibrary>();
+    let mut snapshot = library.snapshot;
+    let mut selected = library.selected;
+    let checking = library.checking;
+    let operation = library.operation;
+    let mut message = library.message;
     let mut confirmation = use_signal(|| false);
-    let mut operation = use_signal(|| None::<ModelOperation>);
-    let mut message = use_signal(String::new);
-    use_future(move || async move {
-        let gateway = store.gateway.peek().clone();
-        match gateway.0.model_settings().await {
-            Ok(value) => {
-                selected.set(value.selected);
-                snapshot.set(Some(value));
-            }
-            Err(error) => message.set(error.to_string()),
-        }
-        checking.set(false);
-    });
-    use_drop(move || {
-        if let Some(active) = operation.peek().as_ref() {
-            active.cancelled.store(true, Ordering::Relaxed);
-        }
-    });
+    use_hook(move || library.refresh(store));
     let spec = selected().info();
     let data = snapshot();
     let downloaded = data
@@ -128,8 +205,9 @@ pub(crate) fn ModelSettings(
             p { class: "field-hint", {crate::i18n::tr("รุ่นนี้ประมวลผลด้วย CPU โมเดลใหญ่จะช้าลง ค่าหน่วยความจำเป็นการประเมิน ไม่ใช่การรับประกันความเร็วหรือความแม่นยำ")} }
             }
             if let Some(active) = operation.read().clone() {
+                p { class: "field-hint", {crate::i18n::tr("เปลี่ยนแท็บได้ การดาวน์โหลดจะทำงานต่อจนกว่าจะเสร็จหรือกดยกเลิก")} }
                 ModelDownloadProgress { operation: active, total: spec.bytes }
-                button { r#type: "button", class: "soft-button", onclick: move |_| { if let Some(active) = operation.peek().as_ref() { active.cancelled.store(true, Ordering::Relaxed); message.set(crate::i18n::tr("กำลังยกเลิกการดาวน์โหลด…")); } }, {crate::i18n::tr("ยกเลิกดาวน์โหลด")} }
+                button { r#type: "button", class: "soft-button", onclick: move |_| library.cancel(), {crate::i18n::tr("ยกเลิกดาวน์โหลด")} }
             } else {
                 div { class: "model-settings-actions",
                     button { r#type: "button", class: if compact { "icon-button" } else { "primary" }, title: crate::i18n::tr(if downloaded { "ตรวจไฟล์และใช้โมเดลนี้" } else { "ดาวน์โหลดและใช้โมเดลนี้" }), disabled: checking() || data.is_none() || fit.blocked() || *capturing.read() || *store.busy.read(), onclick: move |_| confirmation.set(true),
@@ -137,11 +215,7 @@ pub(crate) fn ModelSettings(
                         span { class: if compact { "sr-only" } else { "" },
                         if downloaded { {crate::i18n::tr("ตรวจไฟล์และใช้โมเดลนี้")} } else { {crate::i18n::tr("ดาวน์โหลดและใช้โมเดลนี้")} } }
                     }
-                    if !compact { button { r#type: "button", class: "soft-button", disabled: checking() || *store.busy.read(), onclick: move |_| {
-                        checking.set(true);
-                        spawn(async move { let gateway = store.gateway.peek().clone();
-        match gateway.0.model_settings().await { Ok(value) => snapshot.set(Some(value)), Err(error) => message.set(error.to_string()) } checking.set(false); });
-                    }, {crate::i18n::tr("ตรวจเครื่องอีกครั้ง")} } }
+                    if !compact { button { r#type: "button", class: "soft-button", disabled: checking() || *store.busy.read(), onclick: move |_| { library.refresh(store); }, {crate::i18n::tr("ตรวจเครื่องอีกครั้ง")} } }
                 }
             }
             if checking() { p { role: "status", {crate::i18n::tr("กำลังตรวจ AI ในเครื่อง…")} } }
@@ -186,15 +260,7 @@ pub(crate) fn ModelSettings(
                 div { class: "model-settings-actions",
                     button { r#type: "button", class: "primary", disabled: *store.busy.read() || fit.blocked(), onclick: move |_| {
                         confirmation.set(false);
-                        let id = selected(); let active = ModelOperation::default(); operation.set(Some(active.clone())); store.busy.set(true); message.set(String::new());
-                        let gateway = store.gateway.peek().clone();
-                        crate::state::spawn_session(async move {
-                            let result = gateway.0.activate_model(id, active).await;
-                            if result.is_ok() && let Ok(value) = gateway.0.model_settings().await && let Ok(mut target) = snapshot.try_write() { *target = Some(value); }
-                            if let Ok(mut target) = message.try_write() { *target = match result { Ok(()) => crate::i18n::tr("ตรวจไฟล์แล้ว เปลี่ยนโมเดลเรียบร้อย"), Err(error) => error.to_string() }; }
-                            if let Ok(mut target) = operation.try_write() { *target = None; }
-                            store.busy.set(false);
-                        });
+                        library.activate(store, selected());
                     }, {crate::i18n::tr("ยืนยันใช้โมเดลนี้")} }
                     button { r#type: "button", class: "soft-button", onclick: move |_| confirmation.set(false), {crate::i18n::tr("ยกเลิก")} }
                 }

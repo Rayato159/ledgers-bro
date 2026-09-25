@@ -2802,7 +2802,7 @@ checksum = "7a79a3332a6609480d7d0c9eab957bca6b455b91bb84e66d19f5ff66294b85b8"
 
 [[package]]
 name = "ledger-application"
-version = "0.1.6"
+version = "0.1.7"
 dependencies = [
  "chrono",
  "csv",
@@ -2815,7 +2815,7 @@ dependencies = [
 
 [[package]]
 name = "ledger-domain"
-version = "0.1.6"
+version = "0.1.7"
 dependencies = [
  "chrono",
  "thiserror 2.0.20",
@@ -2824,7 +2824,7 @@ dependencies = [
 
 [[package]]
 name = "ledger-infrastructure"
-version = "0.1.6"
+version = "0.1.7"
 dependencies = [
  "argon2",
  "chrono",
@@ -2851,7 +2851,7 @@ dependencies = [
 
 [[package]]
 name = "ledger-ui"
-version = "0.1.6"
+version = "0.1.7"
 dependencies = [
  "base64",
  "chrono",
@@ -2866,7 +2866,7 @@ dependencies = [
 
 [[package]]
 name = "ledgers-bro"
-version = "0.1.6"
+version = "0.1.7"
 dependencies = [
  "dioxus",
  "dioxus-ssr",
@@ -2883,7 +2883,7 @@ dependencies = [
 
 [[package]]
 name = "ledgers-bro-android"
-version = "0.1.6"
+version = "0.1.7"
 dependencies = [
  "dioxus",
  "futures-channel",

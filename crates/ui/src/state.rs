@@ -704,7 +704,7 @@ async fn await_receipt<T>(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     #![allow(clippy::expect_used)]
     use super::*;
     use crate::{UiFuture, UiGateway};
@@ -795,7 +795,7 @@ mod tests {
         }
     }
 
-    fn use_test_state() -> UiState {
+    pub(crate) fn use_test_state() -> UiState {
         use_context_provider(|| SessionTaskScope(dioxus::dioxus_core::current_scope_id()));
         let gateway = use_context::<Gateway>();
         UiState {
@@ -1302,6 +1302,7 @@ mod tests {
     #[component]
     fn ReceiptDropHarness() -> Element {
         let mut store = use_test_state();
+        crate::model::use_model_library();
         use_context_provider(|| store);
         let view = use_hook(|| {
             dashboard(LedgerState::default(), "2026-09-24".parse().expect("date")).expect("view")

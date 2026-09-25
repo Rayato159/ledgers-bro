@@ -3,6 +3,10 @@ use dioxus::prelude::*;
 use ledger_application::*;
 use ledger_domain::*;
 
+#[cfg(test)]
+#[path = "recurring_tests.rs"]
+mod tests;
+
 fn empty_form(month: Month) -> RecurringInput {
     RecurringInput {
         installments: None,
@@ -446,32 +450,14 @@ fn RecurringFields(
     view: Dashboard,
     prefix: &'static str,
     baseline: Option<RecurringExpense>,
+    #[props(default = false)] blocked: bool,
 ) -> Element {
     let store = use_context::<UiState>();
     let mut manual_start = use_signal(|| baseline.is_some());
     let is_edit = baseline.is_some();
     let today = view.today;
-    let minimum_month = baseline
-        .as_ref()
-        .map(|s| s.due().start().to_string())
-        .unwrap_or_else(|| "1900-01".into());
-    let maximum_month = baseline
-        .as_ref()
-        .and_then(|s| {
-            let stopped = s.stopped_from().and_then(|m| m.shifted(-1).ok());
-            let finite = s
-                .due()
-                .installments()
-                .and_then(|n| s.due().start().shifted(n as i32 - 1).ok());
-            match (stopped, finite) {
-                (Some(a), Some(b)) => Some(a.min(b)),
-                (a, b) => a.or(b),
-            }
-        })
-        .map(|m| m.to_string())
-        .unwrap_or_else(|| "9999-12".into());
     rsx! {
-                    fieldset { disabled: *store.busy.read(), class: "recurring-fields",
+                    fieldset { disabled: *store.busy.read() || blocked, class: "recurring-fields",
                         div { label { r#for: "{prefix}-rec-name", {crate::i18n::text("ชื่อค่าใช้จ่าย", &[])} } input { id: "{prefix}-rec-name", required: true, maxlength: 60, placeholder: crate::i18n::text("เช่น ค่าเช่าห้อง", &[]), value: form.read().name.clone(), oninput: move |e| form.write().name = e.value() } }
                         div { label { r#for: "{prefix}-rec-amount", {crate::i18n::text("ยอดต่อเดือน (บาท)", &[])} } input { id: "{prefix}-rec-amount", required: true, inputmode: "decimal", placeholder: "8500.00", value: form.read().amount.clone(), oninput: move |e| form.write().amount = e.value() } }
                         div { label { r#for: "{prefix}-rec-day", {crate::i18n::text("ทุกวันที่ของเดือน (1–31)", &[])} } input { id: "{prefix}-rec-day", r#type: "number", min: "1", max: "31", required: true, value: form.read().day.clone(), oninput: move |e| {
@@ -481,14 +467,11 @@ fn RecurringFields(
                             }
                             form.write().day = day;
                         } } }
-                        div { label { r#for: "{prefix}-rec-start", {crate::i18n::tr(if baseline.is_some() { "เริ่มใช้การแก้ไขตั้งแต่งวด (ค.ศ.)" } else { "เริ่มงวดเดือน (ค.ศ.)" })} } input { id: "{prefix}-rec-start", r#type: "month", min: minimum_month, max: maximum_month, required: true, value: form.read().start.clone(), onchange: move |e| {
+                        if !is_edit { div { label { r#for: "{prefix}-rec-start", {crate::i18n::tr("เริ่มงวดเดือน (ค.ศ.)")} } input { id: "{prefix}-rec-start", r#type: "month", min: "1900-01", max: "9999-12", required: true, value: form.read().start.clone(), oninput: move |e| {
                 let start = e.value();
                 manual_start.set(true);
-                    if let (Some(schedule), Ok(month)) = (&baseline, start.parse::<Month>()) {
-                        form.write().installments = recurring_edit_input(schedule, month).installments;
-                    }
                     form.write().start = start;
-                } } }
+                } } } }
                         div { class: "installments-field",
                             label { class: "flow-mode", input { r#type: "checkbox", checked: form.read().installments.is_some(), onchange: move |e| form.write().installments = e.checked().then(String::new) } {crate::i18n::text("กำหนดจำนวนงวด", &[])} }
                             if let Some(count) = form.read().installments.clone() {
@@ -520,9 +503,32 @@ fn EditRecurringDialog(
     view: Dashboard,
     onclose: EventHandler,
 ) -> Element {
-    let store = use_context::<UiState>();
-    let form = use_signal(|| recurring_edit_input(&schedule, effective));
-    let expected = schedule.clone();
+    let mut store = use_context::<UiState>();
+    let mut selected = use_signal(|| schedule.clone());
+    let mut form = use_signal(|| recurring_edit_input(&schedule, effective));
+    let expected = selected();
+    let period = form.read().start.parse::<Month>().ok();
+    let eligible: Vec<_> = view
+        .recurring
+        .iter()
+        .filter(|s| period.is_some_and(|m| s.occurs_in(m)))
+        .cloned()
+        .collect();
+    let in_plan = period.is_some_and(|m| expected.occurs_in(m));
+    let has_paid = period.is_some_and(|m| {
+        view.settlements
+            .iter()
+            .any(|s| s.recurring == expected.id() && s.month >= m)
+    });
+    let editable = in_plan && !has_paid;
+    let options = eligible.clone();
+    use_effect(move || {
+        if let Some(view) = store.view.read().as_ref()
+            && !view.recurring.contains(&selected())
+        {
+            onclose.call(());
+        }
+    });
     rsx! {
         dialog { id: "rec-edit-dialog", class: "account-dialog recurring-dialog", "aria-labelledby": "rec-edit-title",
             onmounted: move |_| { let _ = document::eval("document.getElementById('rec-edit-dialog').showModal()"); },
@@ -531,16 +537,54 @@ fn EditRecurringDialog(
                 button { class: "icon-button", disabled: (store.busy)(), "aria-label": crate::i18n::tr("ปิดหน้าต่าง"), onclick: move |_| onclose.call(()), Icon { name: "close", size: 20 } }
             }
             p { class: "field-hint", {crate::i18n::tr("การแก้ไขมีผลตั้งแต่งวดที่เลือก งวดก่อนหน้านั้นและรายการที่จ่ายแล้วเก็บข้อมูลเดิม หากจ่ายล่วงหน้าแล้วให้เลือกงวดหลังรายการที่จ่ายล่าสุด")} }
-            if let Some(end) = schedule.stopped_from() { p { class: "field-hint", {crate::i18n::text("แผนนี้หยุดตั้งแต่ {0} · แก้ไขได้เฉพาะงวดก่อนเดือนนี้ โดยไม่เปิดแผนกลับมา", &[end.to_string()])} } }
             form { onsubmit: move |e| {
                 e.prevent_default();
-                if form() == recurring_edit_input(&expected, effective) { onclose.call(()); }
+                if !editable { return; }
+                if form() == recurring_edit_input(&expected, period.unwrap_or(effective)) { onclose.call(()); }
                 else { store.send(Command::EditRecurring { expected: expected.clone(), input: form() }); }
             },
-                RecurringFields { form, view, prefix: "edit", baseline: Some(schedule) }
+                div { class: "recurring-edit-scope",
+                    div { label { r#for: "edit-rec-start", {crate::i18n::tr("เริ่มใช้การแก้ไขตั้งแต่งวด (ค.ศ.)")} }
+                        input { id: "edit-rec-start", r#type: "month", min: "1900-01", max: "9999-12", required: true, disabled: (store.busy)(), value: form.read().start.clone(),
+                            oninput: move |e| {
+                                let start = e.value();
+                                if let Ok(month) = start.parse::<Month>() && selected.peek().occurs_in(month) {
+                                    form.write().installments = recurring_edit_input(&selected.peek(), month).installments;
+                                }
+                                form.write().start = start;
+                                store.notice.set(None);
+                            }
+                        }
+                    }
+                    div { label { r#for: "edit-rec-plan", {crate::i18n::tr("แผนที่จะเปลี่ยน")} }
+                        select { id: "edit-rec-plan", required: true, disabled: (store.busy)(), value: if in_plan { selected().id().to_string() } else { String::new() },
+                            onchange: move |e| {
+                                let month = form.peek().start.parse::<Month>();
+                                if let Some(schedule) = options.iter().find(|s| s.id().to_string() == e.value()) && let Ok(month) = month {
+                                    form.set(recurring_edit_input(schedule, month));
+                                    selected.set(schedule.clone());
+                                    store.notice.set(None);
+                                }
+                            },
+                            option { value: "", disabled: true, {crate::i18n::tr("เลือกแผนของงวดนี้")} }
+                            for schedule in &eligible { option { value: schedule.id().to_string(),
+                                "{schedule.name().as_str()} · {crate::i18n::currency_prefix()}{money_label(schedule.amount().money())} · {schedule.due().start()}"
+                            } }
+                        }
+                    }
+                    p { class: "field-hint", {crate::i18n::tr("เลือกเดือนก่อน แล้วเลือกแผนที่จะเปลี่ยน การเลือกแผนอื่นจะโหลดเงื่อนไขของแผนนั้นมาให้แก้")} }
+                }
+                if !in_plan {
+                    p { class: "form-error", role: "status", {crate::i18n::tr(if eligible.is_empty() { "ไม่มีแผนในเดือนที่เลือก เลือกเดือนอื่นหรือเพิ่มแผนใหม่" } else { "แผนที่เปิดมาไม่ได้ใช้ในเดือนนี้ กรุณาเลือกแผนของงวดนี้ก่อนแก้ไข" })} }
+                } else if has_paid {
+                    p { class: "form-error", role: "status", {crate::i18n::tr("แผนนี้มีประวัติชำระตั้งแต่งวดที่เลือก ให้เลือกเดือนหลังงวดที่ชำระล่าสุด")} }
+                } else if let Some(end) = selected().stopped_from() {
+                    p { class: "field-hint", {crate::i18n::text("การแก้ไขช่วงนี้สิ้นสุดก่อน {0} หากต้องการแก้ตั้งแต่เดือนนั้น ให้เลือกเดือนและแผนที่ใช้อยู่ในช่วงนั้น", &[end.to_string()])} }
+                }
+                RecurringFields { form, view, prefix: "edit", baseline: Some(selected()), blocked: !editable }
                 if let Some((true, error)) = (store.notice)() { p { class: "form-error", role: "alert", "{crate::i18n::tr(&error)}" } }
                 div { class: "crypto-account-actions",
-                    button { class: "primary", r#type: "submit", disabled: (store.busy)(), {crate::i18n::tr("บันทึกการแก้ไข")} }
+                    button { class: "primary", r#type: "submit", disabled: (store.busy)() || !editable, {crate::i18n::tr("บันทึกการแก้ไข")} }
                     button { class: "soft-button", r#type: "button", disabled: (store.busy)(), onclick: move |_| onclose.call(()), {crate::i18n::tr("ยกเลิก")} }
                 }
             }

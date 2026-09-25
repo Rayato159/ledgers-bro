@@ -1,6 +1,6 @@
 # Local model selection
 
-Open **Add transaction → AI** to choose a model. The selection applies to all local profiles on this device; it is independent of financial accounts and login credentials.
+Open **Settings → On-device AI**, or use the model selector beneath the quick-entry composer. The selection applies to all local profiles on this device; it is independent of financial accounts and login credentials. Downloaded models can be removed from Settings.
 
 | Model | Approximate download | Estimated working RAM |
 | --- | ---: | ---: |
@@ -17,3 +17,5 @@ The app displays total RAM, currently available RAM, free storage and an assessm
 Clearly insufficient total RAM or storage blocks installation. Low available RAM produces a warning; before actually loading weights, the worker checks available RAM again and returns an error instead of intentionally loading a model that exceeds the estimate. Download requests are bounded in size and time, show progress, and can be cancelled. Partial files are temporary. Existing weights and the active selection are retained until the replacement is fully verified and its selection is saved. Switching back to a downloaded model verifies its file before activation.
 
 Models are not included in installers or financial backups. Downloads send only requests for pinned public model files. Financial text stays in the local runtime. Model output still passes through the same domain validation and user confirmation; changing models cannot directly write ledger entries.
+
+From version 0.1.7, downloads continue when switching tabs. Return to either model control to see progress, completion, or an error. Explicit cancellation or closing the app session stops the operation; restarting the app does not resume a partial file.

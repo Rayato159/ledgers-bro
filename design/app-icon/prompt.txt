@@ -1,2 +1,0 @@
-Final generation prompt set: ../modern-fantasy/prompts.md
-Primary launcher character: Lumi. Modern Fantasy outfit; new original kawaii anime identity.
