@@ -27,6 +27,20 @@ pub fn LoginRoot() -> Element {
     });
     let mut selected = use_signal(|| None::<UserProfile>);
     let mut creating = use_signal(|| false);
+    let mut resume_finished = use_signal(|| false);
+    let mut resume_error = use_signal(|| None::<String>);
+    let resume_gateway = gateway.clone();
+    use_future(move || {
+        let gateway = resume_gateway.clone();
+        async move {
+            match gateway.0.profiles(ProfileCommand::Resume).await {
+                Ok(ProfileResponse::Authenticated(session)) => state.session.set(Some(session)),
+                Ok(_) => {}
+                Err(error) => resume_error.set(Some(error.to_string())),
+            }
+            resume_finished.set(true);
+        }
+    });
     use_effect(move || {
         if (state.session)().is_none() {
             selected.set(None);
@@ -52,7 +66,9 @@ pub fn LoginRoot() -> Element {
                 h1 { "Ledgers Bro" }
                 p { class:"muted", {tr("เลือกผู้ใช้เพื่อเปิดสมุดบัญชีของตัวเอง")} }
                 div { class:"login-language", select {"aria-label":"Language / ภาษา",value:if language()==crate::i18n::Language::English {"en"}else{"th"},onchange:move |e|language.set(if e.value()=="en"{crate::i18n::Language::English}else{crate::i18n::Language::Thai}),option {value:"th","ไทย"} option {value:"en","English"}} }
-                match profiles.read().as_ref() {
+                if let Some(error) = resume_error() { p {class:"form-error",role:"alert",{tr(&error)}} }
+                if !resume_finished() { p {role:"status",{tr("กำลังตรวจสอบการเข้าสู่ระบบที่จดจำไว้…")}} }
+                else { match profiles.read().as_ref() {
                     Some(Ok(ProfileResponse::Profiles(users)))=>rsx! {
                         if !users.is_empty() {
                             div { class:"profile-list", role:"group", "aria-label":tr("ผู้ใช้ในเครื่องนี้"),
@@ -74,7 +90,7 @@ pub fn LoginRoot() -> Element {
                     },
                     Some(Err(error))=>rsx! { p { class:"form-error",role:"alert","{error}" } button {class:"soft-button",onclick:move |_|state.refresh+=1,{tr("ลองอีกครั้ง")}} },
                     _=>rsx! { p {role:"status",{tr("กำลังอ่านข้อมูลผู้ใช้…")}} },
-                }
+                } }
                 p { class:"field-hint", {tr("ผู้ใช้และข้อมูลเก็บในเครื่องนี้ ไม่มีการส่งรหัสผ่านขึ้นเซิร์ฟเวอร์")} }
             }
         }
@@ -98,6 +114,7 @@ fn LoginForm(profile: Option<UserProfile>, onlogin: EventHandler<ProfileSession>
     });
     let mut password = use_signal(String::new);
     let mut confirmation = use_signal(String::new);
+    let mut remember = use_signal(|| false);
     let mut busy = use_signal(|| false);
     let mut error = use_signal(|| None::<String>);
     let setup = profile.as_ref().is_none_or(|p| p.needs_password);
@@ -108,9 +125,9 @@ fn LoginForm(profile: Option<UserProfile>, onlogin: EventHandler<ProfileSession>
             if busy() {return;}
             if setup && password()!=confirmation() {error.set(Some(tr("รหัสผ่านทั้งสองช่องไม่ตรงกัน")));return;}
             let command=match &profile {
-                Some(p) if p.needs_password=>ProfileCommand::ClaimLegacy {id:p.id.clone(),username:username(),password:password()},
-                Some(p)=>ProfileCommand::Login {id:p.id.clone(),password:password()},
-                None=>ProfileCommand::Create {username:username(),password:password()},
+                Some(p) if p.needs_password=>ProfileCommand::ClaimLegacy {id:p.id.clone(),username:username(),password:password(),remember:remember()},
+                Some(p)=>ProfileCommand::Login {id:p.id.clone(),password:password(),remember:remember()},
+                None=>ProfileCommand::Create {username:username(),password:password(),remember:remember()},
             };
             let gateway=gateway.clone();busy.set(true);error.set(None);
             spawn(async move {
@@ -131,6 +148,11 @@ fn LoginForm(profile: Option<UserProfile>, onlogin: EventHandler<ProfileSession>
                 label {r#for:"login-confirm",{tr("ยืนยันรหัสผ่าน")}}
                 input {id:"login-confirm",r#type:"password",autocomplete:"new-password",value:confirmation(),required:true,disabled:busy(),oninput:move |e|confirmation.set(e.value())}
             }
+            label {class:"remember-login",r#for:"login-remember",
+                input {id:"login-remember",r#type:"checkbox",checked:remember(),disabled:busy(),onchange:move |e|remember.set(e.checked()),"aria-describedby":"login-remember-hint"}
+                span {{tr("จดจำฉัน 7 วัน")}}
+            }
+            p {id:"login-remember-hint",class:"field-hint",{tr("เปิดแอปแล้วเข้าใช้ผู้ใช้นี้อัตโนมัติบนเครื่องนี้ ออกจากระบบเพื่อยกเลิก")}}
             if let Some(message)=error() {p {class:"form-error",role:"alert","{message}"}}
             button {class:"primary full-width",r#type:"submit",disabled:busy(),{tr(if busy(){"กำลังตรวจสอบ…"}else if setup{"บันทึกและเข้าใช้งาน"}else{"เข้าสู่ระบบ"})}}
         }

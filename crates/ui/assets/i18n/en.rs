@@ -1,4 +1,8 @@
 &[
+    ("จดจำฉัน 7 วัน", "Remember me for 7 days"),
+    ("เปิดแอปแล้วเข้าใช้ผู้ใช้นี้อัตโนมัติบนเครื่องนี้ ออกจากระบบเพื่อยกเลิก", "Sign in as this user automatically on this device. Sign out to stop remembering."),
+    ("กำลังตรวจสอบการเข้าสู่ระบบที่จดจำไว้…", "Checking remembered sign-in…"),
+    ("บันทึกการจดจำผู้ใช้ไม่สำเร็จ กรุณาลองอีกครั้ง", "Unable to save remembered sign-in. Please try again."),
     ("วันครบกำหนดที่ผ่านไปแล้วจะเริ่มเดือนถัดไปโดยอัตโนมัติ เลือกเดือนเองได้หากต้องการบันทึกย้อนหลัง", "A due day that has already passed defaults to next month. Select a month manually to record an earlier plan."),
     ("เพิ่มพอร์ตคริปโตจากหน้าบัญชี แล้วระบุจำนวน BTC และ SOL", "Add a crypto portfolio from Accounts and enter BTC and SOL quantities."),
     ("แก้ไขแผน", "Edit plan"),

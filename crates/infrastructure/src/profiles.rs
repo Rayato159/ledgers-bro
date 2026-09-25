@@ -1,3 +1,4 @@
+use crate::remembered_login::RememberedLoginStore;
 use crate::{LedgerWorker, SqliteLedger};
 use argon2::{
     Argon2, PasswordHasher, PasswordVerifier,
@@ -53,6 +54,7 @@ struct Registry {
     connection: Connection,
     directory: PathBuf,
     active: SharedSession,
+    remembered: RememberedLoginStore,
 }
 impl Registry {
     fn open(directory: PathBuf, active: SharedSession) -> Result<Self, AppError> {
@@ -71,7 +73,7 @@ impl Registry {
         let version: i64 = tx
             .pragma_query_value(None, "user_version", |r| r.get(0))
             .map_err(|_| profile_error())?;
-        if version > 1 {
+        if version > 2 {
             return Err(AppError::Input(
                 "ข้อมูลผู้ใช้มาจากแอปรุ่นใหม่กว่า กรุณาอัปเดตแอป".into(),
             ));
@@ -88,9 +90,13 @@ impl Registry {
                 tx.execute("INSERT INTO profiles(id,username,name_key,legacy) VALUES (?1,'Lookhin','lookhin',1)", [Uuid::new_v4().to_string()]).map_err(|_| profile_error())?;
             }
         }
+        if version < 2 {
+            tx.execute_batch("CREATE TABLE remembered_login(singleton INTEGER PRIMARY KEY CHECK(singleton=1), profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE, token_hash BLOB NOT NULL CHECK(length(token_hash)=32), issued_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, last_used_at INTEGER NOT NULL); PRAGMA user_version=2;").map_err(|_| profile_error())?;
+        }
         tx.commit().map_err(|_| profile_error())?;
         Ok(Self {
             connection,
+            remembered: RememberedLoginStore::new(&directory),
             directory,
             active,
         })
@@ -193,7 +199,11 @@ impl Registry {
             self.directory.join(format!("ledger-{parsed}.sqlite3"))
         })
     }
-    fn authenticate(&mut self, id: &str) -> Result<ProfileResponse, AppError> {
+    fn authenticate(
+        &mut self,
+        id: &str,
+        remember: Option<bool>,
+    ) -> Result<ProfileResponse, AppError> {
         let path = self.ledger_path(id)?;
         // Detect storage failures before replacing a usable session.
         drop(SqliteLedger::open(&path)?);
@@ -203,6 +213,18 @@ impl Registry {
             token: Uuid::new_v4().to_string(),
             profile: self.profile(id)?,
         };
+        if let Some(remember) = remember {
+            let tx = self
+                .connection
+                .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+                .map_err(|_| profile_error())?;
+            if remember {
+                self.remembered.save(&tx, id, now()?)?;
+            } else {
+                self.remembered.revoke(&tx)?;
+            }
+            tx.commit().map_err(|_| profile_error())?;
+        }
         let mut active = self.active.lock().map_err(|_| profile_error())?;
         if let Some(previous) = active.take() {
             previous.active.store(false, Ordering::Release);
@@ -217,7 +239,26 @@ impl Registry {
     fn execute(&mut self, command: ProfileCommand) -> Result<ProfileResponse, AppError> {
         match command {
             ProfileCommand::List => Ok(ProfileResponse::Profiles(self.list()?)),
-            ProfileCommand::Create { username, password } => {
+            ProfileCommand::Resume => {
+                if self.active.lock().map_err(|_| profile_error())?.is_some() {
+                    return Err(login_required());
+                }
+                let tx = self
+                    .connection
+                    .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+                    .map_err(|_| profile_error())?;
+                let remembered = self.remembered.resume(&tx, now()?)?;
+                tx.commit().map_err(|_| profile_error())?;
+                match remembered {
+                    Some(id) => self.authenticate(&id, None),
+                    None => Ok(ProfileResponse::SignedOut),
+                }
+            }
+            ProfileCommand::Create {
+                username,
+                password,
+                remember,
+            } => {
                 let password = Zeroizing::new(password);
                 let name = Username::new(&username)?;
                 self.unique(&name, None)?;
@@ -227,17 +268,22 @@ impl Registry {
                 let hash = hash_password(&password)?;
                 let id = Uuid::new_v4().to_string();
                 self.connection.execute("INSERT INTO profiles(id,username,name_key,password_hash,legacy) VALUES(?1,?2,?3,?4,0)",params![id,name.as_str(),name.key(),hash]).map_err(|_| profile_error())?;
-                self.authenticate(&id)
+                self.authenticate(&id, Some(remember))
             }
-            ProfileCommand::Login { id, password } => {
+            ProfileCommand::Login {
+                id,
+                password,
+                remember,
+            } => {
                 let password = Zeroizing::new(password);
                 self.verify(&id, &password)?;
-                self.authenticate(&id)
+                self.authenticate(&id, Some(remember))
             }
             ProfileCommand::ClaimLegacy {
                 id,
                 username,
                 password,
+                remember,
             } => {
                 let password = Zeroizing::new(password);
                 let name = Username::new(&username)?;
@@ -247,7 +293,7 @@ impl Registry {
                 if count != 1 {
                     return Err(login_required());
                 }
-                self.authenticate(&id)
+                self.authenticate(&id, Some(remember))
             }
             ProfileCommand::Edit {
                 token,
@@ -272,7 +318,15 @@ impl Registry {
                     .as_ref()
                     .map(|p| hash_password(p))
                     .transpose()?;
-                self.connection.execute("UPDATE profiles SET username=?1,name_key=?2,password_hash=COALESCE(?3,password_hash) WHERE id=?4",params![name.as_str(),name.key(),hash,session.profile.id]).map_err(|_| profile_error())?;
+                let tx = self
+                    .connection
+                    .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+                    .map_err(|_| profile_error())?;
+                tx.execute("UPDATE profiles SET username=?1,name_key=?2,password_hash=COALESCE(?3,password_hash) WHERE id=?4",params![name.as_str(),name.key(),hash,session.profile.id]).map_err(|_| profile_error())?;
+                if hash.is_some() {
+                    self.remembered.revoke(&tx)?;
+                }
+                tx.commit().map_err(|_| profile_error())?;
                 let updated = self.profile(&session.profile.id)?;
                 let mut active = self.active.lock().map_err(|_| profile_error())?;
                 let active = active
@@ -287,6 +341,12 @@ impl Registry {
                 if active.as_ref().is_none_or(|a| a.session.token != token) {
                     return Err(login_required());
                 }
+                let tx = self
+                    .connection
+                    .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+                    .map_err(|_| profile_error())?;
+                self.remembered.revoke(&tx)?;
+                tx.commit().map_err(|_| profile_error())?;
                 if let Some(previous) = active.take() {
                     previous.active.store(false, Ordering::Release);
                 }

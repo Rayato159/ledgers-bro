@@ -620,7 +620,8 @@ footer { display: flex; justify-content: space-between; align-items: center; gap
   .palette-preview { height: 72px; }
 }
 /* Settings use compact rows, with descriptions and controls aligned across a group. */
-.preferences-page { max-width: 1060px; margin: 0 auto; padding-bottom: 28px; }
+.settings-page-heading, .preferences-page { max-width: 1060px; margin-inline: auto; }
+.preferences-page { padding-bottom: 28px; }
 .preferences-tabs { display: flex; gap: 24px; border-bottom: 1px solid var(--line); margin-bottom: 28px; }
 .preferences-tabs button { display: flex; align-items: center; justify-content: center; gap: 9px; padding: 12px 4px; background: transparent; border-bottom: 3px solid transparent; color: var(--muted); }
 .preferences-tabs button[aria-selected="true"] { border-bottom-color: var(--ink); color: var(--ink); font-weight: 700; }
@@ -895,6 +896,8 @@ footer { display: flex; justify-content: space-between; align-items: center; gap
 .login-form { text-align: left; display: grid; gap: 9px; padding: 18px 0; }
 .login-form label { margin: 0; }
 .login-form p { margin: 0; }
+.login-form .remember-login { display: flex; align-items: center; gap: 12px; min-height: 44px; cursor: pointer; }
+.remember-login input { width: 20px; height: 20px; min-height: 20px; padding: 0; margin: 0; flex: none; accent-color: var(--accent); }
 .profile-list { display: grid; gap: 10px; margin: 20px 0; }
 .profile-choice { display: flex; align-items: center; gap: 12px; text-align: left; width: 100%; padding: 15px 18px; border: 1px solid var(--line); border-radius: 20px; background: var(--surface); color: var(--ink); }
 .profile-choice.selected { background: var(--surface); outline: 2px solid var(--accent); }

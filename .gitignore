@@ -32,6 +32,7 @@
 *.ipa
 
 # Credentials and signing material.
+remembered-login.token
 .env
 .env.*
 !.env.example

@@ -2,6 +2,7 @@
 mod backup;
 mod crypto_prices;
 mod profiles;
+mod remembered_login;
 pub use profiles::ProfileWorker;
 mod local_model;
 mod model_worker;
