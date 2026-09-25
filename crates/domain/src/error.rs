@@ -2,6 +2,8 @@ use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum DomainError {
+    #[error("บัตรเครดิตต้องกำหนดวันตัดรอบและวันครบกำหนดชำระเป็นวันที่ 1–31")]
+    InvalidCreditCycle,
     #[error("Unsupported ledger currency. Choose THB, USD, EUR, GBP, AUD, CAD, SGD, or CNY.")]
     InvalidCurrency,
     #[error("เรื่องหนี้ต้องมี 1–300 ตัวอักษร วันเริ่มเก็บต้องไม่ก่อนตั้งหนี้ และยอดต้องเพียงพอสำหรับจำนวนงวด")]

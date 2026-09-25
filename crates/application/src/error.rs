@@ -3,6 +3,8 @@ use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum StorageError {
+    #[error("รอบบัตรถูกกำหนดไปแล้วหรือบัญชีเปลี่ยนไป กรุณาโหลดข้อมูลใหม่")]
+    CreditCycleChanged,
     #[error(
         "Currency is locked after the first account, bill, or receivable. Use a new ledger for a different currency."
     )]

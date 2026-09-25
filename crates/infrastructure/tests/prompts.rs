@@ -50,6 +50,23 @@ fn setup(repo: SqliteLedger) -> App {
     app
 }
 #[test]
+fn credit_card_prompt_requires_dates_and_commits_them_atomically() {
+    let mut app = app(SqliteLedger::in_memory().expect("db"));
+    let missing = drafts(&mut app, "เพิ่มบัญชี ชื่อ Visa ประเภท บัตรเครดิต ยอดหนี้ 0");
+    assert!(app.execute(Command::PreviewPrompt(missing)).is_err());
+    assert!(view(&mut app).accounts.is_empty());
+    run(
+        &mut app,
+        "เพิ่มบัญชี ชื่อ Visa ประเภท บัตรเครดิต ยอดหนี้ 0 วันตัดรอบ 20 วันชำระ 5",
+    );
+    let v = view(&mut app);
+    assert_eq!(
+        v.accounts[0].account.credit_cycle(),
+        Some(CreditCardCycle::new(20, 5).expect("cycle"))
+    );
+}
+
+#[test]
 fn mixed_create_account_expense_income_transfer_is_one_idempotent_commit() {
     let mut app = app(SqliteLedger::in_memory().expect("db"));
     let p = run(
@@ -265,11 +282,12 @@ fn prompt_schema_upgrade_preserves_existing_receivable_and_settlement_history() 
     let raw = Connection::open(&path).expect("raw");
     raw.execute_batch("DROP TABLE user_preferences; DROP TRIGGER lock_currency_accounts; DROP TRIGGER lock_currency_recurring; DROP TRIGGER lock_currency_receivables; DROP TABLE ledger_settings; DROP TABLE prompt_submissions; PRAGMA user_version=4;")
         .expect("v4");
+    raw.execute_batch("ALTER TABLE accounts DROP COLUMN payment_day; ALTER TABLE accounts DROP COLUMN closing_day;").expect("remove v8 columns for old schema fixture");
     let mut migrated = app(SqliteLedger::open(&path).expect("migrate"));
     assert_eq!(view(&mut migrated), expected);
     assert_eq!(
         raw.pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0))
             .expect("version"),
-        7
+        8
     );
 }

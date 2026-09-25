@@ -18,3 +18,5 @@ pub use receivable::*;
 
 mod currency;
 pub use currency::Currency;
+mod credit;
+pub use credit::*;

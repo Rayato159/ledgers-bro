@@ -144,6 +144,8 @@ impl PromptKind {
                 f("name", "ชื่อบัญชี", true, T::Text),
                 f("kind", "ประเภทบัญชี", true, T::AccountKind),
                 f("opening", "ยอดเริ่มต้น / ยอดหนี้บัตร (บาท)", true, T::Money),
+                f("closing_day", "วันตัดรอบบัตรเครดิต (1–31)", false, T::Text),
+                f("payment_day", "วันชำระบัตรเครดิต (1–31)", false, T::Text),
             ],
             Self::Recurring => vec![
                 f("name", "ชื่อแผน", true, T::Text),
@@ -599,6 +601,22 @@ fn command_for_draft(
                 })
                 .ok_or_else(|| input_error("กรุณาเลือกประเภทบัญชี"))?,
             opening: s("opening"),
+            credit_cycle: if draft.get("closing_day").is_empty()
+                && draft.get("payment_day").is_empty()
+            {
+                None
+            } else {
+                Some(CreditCardCycle::new(
+                    draft
+                        .get("closing_day")
+                        .parse()
+                        .map_err(|_| DomainError::InvalidCreditCycle)?,
+                    draft
+                        .get("payment_day")
+                        .parse()
+                        .map_err(|_| DomainError::InvalidCreditCycle)?,
+                )?)
+            },
         },
         PromptKind::Recurring => Command::AddRecurring(RecurringInput {
             name: s("name"),
@@ -697,6 +715,22 @@ impl PlanningRepository {
     }
 }
 impl LedgerRepository for PlanningRepository {
+    fn set_credit_cycle(
+        &mut self,
+        expected: &Account,
+        cycle: CreditCardCycle,
+    ) -> Result<(), StorageError> {
+        let updated = configure_credit_cycle(&self.state, expected, cycle)?;
+        if let Some(account) = self
+            .state
+            .accounts
+            .iter_mut()
+            .find(|a| a.id() == expected.id())
+        {
+            *account = updated;
+        }
+        Ok(())
+    }
     fn preferences(&mut self) -> Result<UserPreferences, StorageError> {
         Err(StorageError::Corrupt)
     }

@@ -36,9 +36,10 @@ pub fn Overview(view: Dashboard) -> Element {
             div { class: "month-cards",
                 section { class: "card metric income", div { class: "metric-title", span { {crate::i18n::text("รายรับเดือนนี้", &[])} } span { class: "metric-icon", Icon { name: "down", size: 19 } } } strong { "{crate::i18n::currency_prefix()}{money_label(view.income)}" } small { "{month} {year}" } }
                 section { class: "card metric expense", div { class: "metric-title", span { {crate::i18n::text("รายจ่ายเดือนนี้", &[])} } span { class: "metric-icon", Icon { name: "up", size: 19 } } } strong { "{crate::i18n::currency_prefix()}{money_label(view.expenses)}" } small { {crate::i18n::text("ไม่รวมการโอนระหว่างบัญชี", &[])} } }
-                div { class: "cashflow", span { {crate::i18n::text("เงินเข้า − เงินออก", &[])} } strong { "{crate::i18n::currency_prefix()}{cashflow}" } }
+                div { class: "cashflow", span { {crate::i18n::text("รายรับ − รายจ่ายที่บันทึก", &[])} } strong { "{crate::i18n::currency_prefix()}{cashflow}" } }
             }
         }
+        crate::debt_visuals::FinancialPosition { view: view.clone() }
         crate::cashflow::CashflowChart { view: view.clone() }
         crate::receivables::ReceivablesChart { view: view.clone() }
         div { class: "overview-bottom",

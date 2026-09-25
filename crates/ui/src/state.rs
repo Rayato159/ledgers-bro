@@ -29,7 +29,7 @@ impl Page {
             Self::Chat => "เพิ่มรายการ",
             Self::Manual => "กรอกเอง",
             Self::Tax => "ภาษี",
-            Self::Recurring => "รายจ่ายประจำ",
+            Self::Recurring => "หนี้และบิล",
             Self::Receivables => "ลูกหนี้",
         }
     }
@@ -405,6 +405,7 @@ impl UiState {
         let recurring_change = matches!(
             &command,
             Command::AddRecurring(_)
+                | Command::SetCreditCycle { .. }
                 | Command::CreateReceivable(_)
                 | Command::ReceiveRepayment(_)
                 | Command::SetRecurringInstallments { .. }
@@ -745,6 +746,7 @@ mod tests {
         let store = use_context::<UiState>();
         use_effect(move || {
             store.send(Command::CreateAccount {
+                credit_cycle: None,
                 name: "cash".into(),
                 kind: ledger_domain::AccountKind::Cash,
                 opening: "0".into(),
@@ -788,6 +790,7 @@ mod tests {
                 }],
             });
             store.send(Command::CreateAccount {
+                credit_cycle: None,
                 name: "เงินสด".into(),
                 kind: ledger_domain::AccountKind::Cash,
                 opening: "0".into(),

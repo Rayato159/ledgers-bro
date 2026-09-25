@@ -10,6 +10,8 @@
 
 ผู้ใช้มี iPhone แต่ยังไม่มี Mac จึงเลือกพัฒนา/ทดลอง Windows Desktop และ Android ก่อน ใช้ Rust core, parser, SQLite และ Dioxus components ร่วมกัน Android build/test ทำบน Windows ด้วย SDK/NDK/JDK และ emulator ได้ การมีกล้อง/biometric/notification บนเครื่องจริงยังต้องทดสอบบน Android จริงก่อนขาย; iOS ค่อยใช้ macOS + Xcode เมื่อเริ่มพอร์ต ดู [Dioxus setup](https://dioxuslabs.com/learn/0.7/getting_started/)
 
+อัปเดตจากผู้ใช้ 22 กันยายน 2026: เครื่องเป้าหมาย iOS คือ **iPhone 15 บน iOS 26.5.2** ตามที่ผู้ใช้แจ้ง ยังไม่ได้ทดสอบบนเครื่องจริง และไม่ใช่การกำหนดรุ่น/iOS ต่ำสุดที่รองรับ ดูด่านติดตั้ง การเก็บข้อมูล และการวัด LLM บนเครื่องจริงใน [แผนทดสอบ](testing-and-release-th.md)
+
 Windows Desktop เป็นแอปทดลองใช้จริงในเครื่อง ไม่ใช่แค่ภาพ responsive website และไม่ถือว่าการทดสอบ desktop ผ่านยืนยันพฤติกรรม Android แล้ว ฐานข้อมูลคอม/มือถือแยกกัน ไม่มี sync อัตโนมัติ; ย้ายด้วย encrypted backup/restore เมื่อฟีเจอร์นี้พร้อม
 
 ผู้ใช้เปลี่ยนทิศทาง UI ล่าสุด: layout โปร่ง การ์ดมุมมน เส้นบาง pill navigation และตัวละครเด่นตามภาพ profile UI ที่แนบใหม่ ใช้ palette mint/seafoam/sage/cream/slate/dusty peach จากภาพถนนฝนตก รักษามาสคอตแว่นกลมของผู้ใช้ ไม่ใช้สีชมพู/ขอบ comic ของคอนเซปต์เก่า และไม่ใช้รูป Shopee ผู้ใช้วาด final art เองได้

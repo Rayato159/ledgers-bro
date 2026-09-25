@@ -24,6 +24,7 @@ fn view(app: &mut App) -> Dashboard {
 fn setup(repo: SqliteLedger) -> (App, AccountId) {
     let mut app = app(repo);
     app.execute(Command::CreateAccount {
+        credit_cycle: None,
         name: "เงินสด".into(),
         kind: AccountKind::Cash,
         opening: "10000".into(),
@@ -423,7 +424,7 @@ fn v3_upgrade_preserves_accounts_postings_and_recurring_plans() {
     drop(first);
     let raw = Connection::open(&path).expect("raw");
     raw.execute_batch(
-        "DROP TABLE user_preferences; DROP TRIGGER lock_currency_accounts; DROP TRIGGER lock_currency_recurring; DROP TRIGGER lock_currency_receivables; DROP TABLE ledger_settings; DROP TABLE prompt_submissions; DROP TABLE receivables; PRAGMA user_version=3;",
+        "ALTER TABLE accounts DROP COLUMN payment_day; ALTER TABLE accounts DROP COLUMN closing_day; DROP TABLE user_preferences; DROP TRIGGER lock_currency_accounts; DROP TRIGGER lock_currency_recurring; DROP TRIGGER lock_currency_receivables; DROP TABLE ledger_settings; DROP TABLE prompt_submissions; DROP TABLE receivables; PRAGMA user_version=3;",
     )
     .expect("v3");
     let mut migrated = app(SqliteLedger::open(&path).expect("migrate"));
@@ -431,7 +432,7 @@ fn v3_upgrade_preserves_accounts_postings_and_recurring_plans() {
     assert_eq!(
         raw.pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0))
             .expect("version"),
-        7
+        8
     );
     assert_eq!(
         raw.query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |r| r
@@ -452,6 +453,7 @@ fn cumulative_principal_bounds_are_checked_even_after_old_loans_are_repaid() {
         .expect("maximum")
         .to_string();
     app.execute(Command::CreateAccount {
+        credit_cycle: None,
         name: "เงินสด".into(),
         kind: AccountKind::Cash,
         opening: maximum.clone(),
@@ -481,6 +483,7 @@ fn unlimited_collection_at_calendar_end_keeps_remaining_balance_without_invalid_
     let mut app =
         LedgerApplication::new(SqliteLedger::in_memory().expect("db"), LastDay, RandomIds);
     app.execute(Command::CreateAccount {
+        credit_cycle: None,
         name: "เงินสด".into(),
         kind: AccountKind::Cash,
         opening: "0".into(),

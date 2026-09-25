@@ -5,6 +5,7 @@ Generated with Codex's built-in image generation using the app's existing tanuki
 - `tanuki-icon-source.png`: original generated RGBA artwork, retained unchanged.
 - `launcher-1024.png`: square master with a warm yellow background.
 - `launcher-512.png`: smaller preview.
+- `launcher.ico`: Windows installer icon, mechanically exported from `launcher-1024.png` at 16–256 px; no artwork changes.
 - `../../apps/android/native/res/`: adaptive icon layers and legacy launcher PNGs for five Android densities.
 
 Android resources and previews were generated with a local Windows helper (no longer tracked). The export used ImageMagick only for mechanical trimming, resizing, padding, and export; it does not redraw the artwork.

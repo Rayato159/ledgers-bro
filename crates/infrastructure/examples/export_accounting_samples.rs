@@ -24,6 +24,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         ("บัตรทดสอบ", AccountKind::CreditCard, "50"),
     ] {
         app.execute(Command::CreateAccount {
+            credit_cycle: if kind == ledger_domain::AccountKind::CreditCard {
+                Some(ledger_domain::CreditCardCycle::new(20, 5)?)
+            } else {
+                None
+            },
             name: name.into(),
             kind,
             opening: opening.into(),

@@ -65,6 +65,7 @@ fn model_interpretation_and_preview_do_not_write_until_an_explicit_commit() {
     let directory = tempfile::tempdir().expect("temporary directory");
     let worker = LedgerWorker::start(directory.path().join("ledger.sqlite3")).expect("worker");
     block_on(worker.request(Command::CreateAccount {
+        credit_cycle: None,
         name: "เงินสด".into(),
         kind: AccountKind::Cash,
         opening: "1000".into(),

@@ -98,6 +98,11 @@ pub enum Command {
         name: String,
         kind: AccountKind,
         opening: String,
+        credit_cycle: Option<CreditCardCycle>,
+    },
+    SetCreditCycle {
+        expected: Account,
+        cycle: CreditCardCycle,
     },
     Resolve(String),
     ResolveModel {
@@ -393,8 +398,15 @@ impl<R: LedgerRepository, C: Clock, I: IdSource> LedgerApplication<R, C, I> {
                 name,
                 kind,
                 opening,
+                credit_cycle,
             } => {
-                let account = Account::new(self.ids.account_id()?, AccountName::new(&name)?, kind);
+                let mut account =
+                    Account::new(self.ids.account_id()?, AccountName::new(&name)?, kind);
+                if let Some(cycle) = credit_cycle {
+                    account = account.with_credit_cycle(cycle)?;
+                } else if kind == AccountKind::CreditCard {
+                    return Err(DomainError::InvalidCreditCycle.into());
+                }
                 let state = self.repository.snapshot()?;
                 account.ensure_can_add(&state.accounts)?;
                 let entered: Money = opening.parse()?;
@@ -418,6 +430,10 @@ impl<R: LedgerRepository, C: Clock, I: IdSource> LedgerApplication<R, C, I> {
                     &entry,
                     self.ids.submission_id()?,
                 )?))
+            }
+            Command::SetCreditCycle { expected, cycle } => {
+                self.repository.set_credit_cycle(&expected, cycle)?;
+                Ok(Response::RecurringChanged)
             }
             Command::Resolve(text) => Ok(Response::Resolved(resolve_prompt_text(
                 &text,

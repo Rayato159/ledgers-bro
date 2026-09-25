@@ -51,24 +51,27 @@ pub fn Navigation(show_tax: bool) -> Element {
 }
 
 #[component]
-pub fn EntryMode(manual: bool) -> Element {
+pub fn EntryToolbar(manual: bool) -> Element {
     let mut store = use_context::<UiState>();
     rsx! {
-        div { class: "entry-mode", role: "group", "aria-label": tr("วิธีเพิ่มรายการ"),
-            button { r#type: "button", "aria-pressed": !manual,
-                disabled: *store.busy.read(), onclick: move |_| store.page.set(Page::Chat),
-                Icon { name: "chat", size: 19 } {tr("พิมพ์ prompt")}
+        div { class: "entry-toolbar",
+            div { class: "entry-mode", role: "group", "aria-label": tr("วิธีเพิ่มรายการ"),
+                button { r#type: "button", "aria-pressed": !manual,
+                    disabled: *store.busy.read(), onclick: move |_| store.page.set(Page::Chat),
+                    Icon { name: "chat", size: 19 } {tr("พิมพ์ prompt")}
+                }
+                button { r#type: "button", "aria-pressed": manual,
+                    disabled: *store.busy.read(), onclick: move |_| {
+                        if store.input.peek().is_none() && store.batch.peek().is_none()
+                            && let Some(today) = store.view.peek().as_ref().map(|v| v.today) {
+                            store.input.set(Some(ledger_application::EntryInput::empty(today)));
+                        }
+                        store.page.set(Page::Manual);
+                    },
+                    Icon { name: "edit", size: 19 } {tr("กรอกเอง")}
+                }
             }
-            button { r#type: "button", "aria-pressed": manual,
-                disabled: *store.busy.read(), onclick: move |_| {
-                    if store.input.peek().is_none() && store.batch.peek().is_none()
-                        && let Some(today) = store.view.peek().as_ref().map(|v| v.today) {
-                        store.input.set(Some(ledger_application::EntryInput::empty(today)));
-                    }
-                    store.page.set(Page::Manual);
-                },
-                Icon { name: "edit", size: 19 } {tr("กรอกเอง")}
-            }
+            crate::receivables::RepaymentShortcut {}
         }
     }
 }

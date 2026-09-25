@@ -36,20 +36,11 @@ pub fn QuickEntryPage(view: Dashboard) -> Element {
         }
     });
     use_drop(move || store.cancel_model());
-    let first_account = view
-        .accounts
-        .iter()
-        .find(|a| !a.account.is_archived())
-        .map(|a| format!("\"{}\"", a.account.name().as_str()))
-        .unwrap_or_else(|| "\"ชื่อบัญชี\"".into());
-    let expense_sample = format!("จ่าย 80 จาก {first_account} หมวด อาหาร");
-    let income_sample = format!("รับ 30000 เข้า {first_account} หมวด เงินเดือน");
     let input = store.input.read().clone();
     let prepared = store.prepared.read().clone();
     rsx! {
         section { class: "page-heading", div { h1 { {crate::i18n::text("เพิ่มรายการ", &[])} } p { class: "muted", {crate::i18n::text("พิมพ์ พูด หรือสแกนใบเสร็จ แล้วตรวจให้ตรงก่อนบันทึก", &[])} } } }
-        crate::navigation::EntryMode { manual: false }
-        crate::receivables::RepaymentShortcut {}
+        crate::navigation::EntryToolbar { manual: false }
         div { class: "entry-layout",
             section { class: "card chat-card",
                 div { class: "chat-greeting illustrated-greeting", img { class: "phone-mascot", src: host.art.phone.clone(), alt: crate::i18n::text("ทานูกิถือโทรศัพท์พร้อมจดรายการ", &[]) } div { strong { {crate::i18n::text("จดไว้ เดี๋ยวช่วยจัดให้", &[])} } p { {crate::i18n::text("เล่าเรื่องเงินวันนี้ให้ฟัง\nหรือหยิบใบเสร็จมาให้ช่วยอ่าน", &[])} } } }
@@ -92,42 +83,20 @@ pub fn QuickEntryPage(view: Dashboard) -> Element {
                 }
             }
         }
-        section { class: "card prompt-suggestions",
-                div { class: "prompt-examples-heading",
-                    div { h2 { {crate::i18n::text("เริ่มจากเรื่องไหนดี?", &[])} } p { {crate::i18n::text("เลือกตัวอย่าง แล้วแก้ให้เป็นเรื่องเงินของเรา", &[])} } }
-                    span { class: "prompt-examples-badge", {crate::i18n::text("ลองได้เลย", &[])} }
-                }
-                if crate::i18n::english() { p { class: "field-hint", "Prompts and voice currently use Thai. Manual forms work in either language." } }
-                fieldset { class: "prompt-example-grid input-methods", disabled: *capturing.read() || *store.busy.read(),
-                    legend { class: "sr-only", {crate::i18n::text("ตัวอย่างข้อความบันทึกด่วน", &[])} }
-                    for (title, sample, icon, tone) in [
-                        ("กาแฟแก้วโปรด", "กาแฟ 80".to_owned(), "snacks", "peach"),
-                        ("จ่ายค่าอาหาร", expense_sample.clone(), "food", "peach"),
-                        ("เงินเดือนเข้าแล้ว", income_sample.clone(), "salary", "mint"),
-                        ("หลายรายการในครั้งเดียว", "ซื้อไก่ทอดไป 30 บาท และได้เงินจาก Facebook 400 บาท บันทึกลงเงินสด และ กรุงไทยตามลำดับ".into(), "receipt", "lilac"),
-                        ("ตั้งบิลประจำเดือน", format!("เพิ่มรายจ่ายประจำ ชื่อ ค่าเช่าห้อง ยอด 4500 ทุกวันที่ 5 จาก {first_account} หมวด ค่าเช่า"), "calendar", "blue"),
-                        ("เดือนนี้เป็นยังไง", "สรุป เดือนนี้".into(), "investment", "mint"),
-                    ] {
-                        crate::prompt_examples::PromptExample { title, sample: sample.clone(), icon, tone,
-                            selected: *text.read() == crate::prompt_examples::currency_example(&sample), disabled: *capturing.read() || *store.busy.read(),
+        details { class: "chat-help prompt-catalog", summary { {crate::i18n::text("คำสั่งบันทึกทั้งหมด · กดเพื่อดูตัวอย่าง", &[])} }
+            if crate::i18n::english() { p { class: "field-hint", "Prompts and voice currently use Thai. Manual forms work in either language." } }
+            p { {crate::i18n::text("หลายคำสั่งใช้ขึ้นบรรทัดใหม่ ครั้งละไม่เกิน 8 คำสั่ง ชื่อที่มีคำว่า และ ให้ใส่เครื่องหมายคำพูด", &[])} }
+            div { class: "prompt-example-grid prompt-catalog-grid",
+                for kind in PromptKind::ALL {
+                    { let (icon, tone) = crate::prompt_examples::example_art(kind); rsx! {
+                        crate::prompt_examples::PromptExample { title: crate::i18n::tr(kind.label()), sample: kind.example(), icon, tone, compact: true,
+                            selected: *text.read() == crate::prompt_examples::currency_example(kind.example()), disabled: *capturing.read() || *store.busy.read(),
                             onselect: move |sample| text.set(sample),
                         }
-                    }
+                    } }
                 }
-                details { class: "chat-help prompt-catalog", summary { {crate::i18n::text("คำสั่งบันทึกทั้งหมด · กดเพื่อดูตัวอย่าง", &[])} }
-                    p { {crate::i18n::text("หลายคำสั่งใช้ขึ้นบรรทัดใหม่ ครั้งละไม่เกิน 8 คำสั่ง ชื่อที่มีคำว่า และ ให้ใส่เครื่องหมายคำพูด", &[])} }
-                    div { class: "prompt-example-grid prompt-catalog-grid",
-                        for kind in PromptKind::ALL {
-                            { let (icon, tone) = crate::prompt_examples::example_art(kind); rsx! {
-                                crate::prompt_examples::PromptExample { title: crate::i18n::tr(kind.label()), sample: kind.example(), icon, tone, compact: true,
-                                    selected: *text.read() == crate::prompt_examples::currency_example(kind.example()), disabled: *capturing.read() || *store.busy.read(),
-                                    onselect: move |sample| text.set(sample),
-                                }
-                            } }
-                        }
-                    }
-                }
-                div { class: "chat-help", strong { {crate::i18n::text("ตัวอย่างรูปแบบที่รองรับ", &[])} } code { {crate::i18n::text("จ่าย 80 จาก เงินสด หมวด อาหาร", &[])} } code { {crate::i18n::text("โอน 1000 จาก ธนาคาร ไป เงินสด", &[])} } code { {crate::i18n::text("… วันที่ เมื่อวาน โน้ต \"ข้าวกลางวัน\"", &[])} } p { {crate::i18n::text("การจ่ายหนี้บัตรใช้โอนไปบัญชีบัตรเครดิต ดอกเบี้ยหรือค่าธรรมเนียมให้บันทึกเป็นรายจ่ายแยก", &[])} } }
+            }
+            div { class: "chat-help", strong { {crate::i18n::text("ตัวอย่างรูปแบบที่รองรับ", &[])} } code { {crate::i18n::text("จ่าย 80 จาก เงินสด หมวด อาหาร", &[])} } code { {crate::i18n::text("โอน 1000 จาก ธนาคาร ไป เงินสด", &[])} } code { {crate::i18n::text("… วันที่ เมื่อวาน โน้ต \"ข้าวกลางวัน\"", &[])} } p { {crate::i18n::text("การจ่ายหนี้บัตรใช้โอนไปบัญชีบัตรเครดิต ดอกเบี้ยหรือค่าธรรมเนียมให้บันทึกเป็นรายจ่ายแยก", &[])} } }
         }
     }
 }
@@ -142,8 +111,7 @@ pub fn ManualEntryPage(view: Dashboard) -> Element {
             div { h1 { {crate::i18n::text("เพิ่มรายการ", &[])} } p { class: "muted", {crate::i18n::text("กรอกข้อมูล แล้วตรวจให้ตรงก่อนบันทึก", &[])} } }
 
         }
-        crate::navigation::EntryMode { manual: true }
-        crate::receivables::RepaymentShortcut {}
+        crate::navigation::EntryToolbar { manual: true }
         section { class: "card entry-editor manual-entry-editor",
             div { class: "composer-receipt-toolbar",
                 ReceiptUpload { destination: ReceiptDestination::Manual }

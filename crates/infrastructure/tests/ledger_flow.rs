@@ -24,6 +24,11 @@ fn snapshot(app: &mut Application) -> Dashboard {
 }
 fn account(app: &mut Application, name: &str, kind: AccountKind, opening: &str) -> AccountId {
     app.execute(Command::CreateAccount {
+        credit_cycle: if kind == ledger_domain::AccountKind::CreditCard {
+            Some(ledger_domain::CreditCardCycle::new(20, 5).expect("cycle"))
+        } else {
+            None
+        },
         name: name.into(),
         kind,
         opening: opening.into(),
@@ -666,6 +671,7 @@ fn opening_failure_rolls_back_account_creation() {
     raw.execute_batch("CREATE TRIGGER injected_failure BEFORE INSERT ON postings WHEN NEW.ordinal=1 BEGIN SELECT RAISE(ABORT,'failure'); END;").expect("inject");
     assert!(
         app.execute(Command::CreateAccount {
+            credit_cycle: None,
             name: "cash".into(),
             kind: AccountKind::Cash,
             opening: "1000".into()
@@ -748,6 +754,7 @@ fn two_connections_cannot_race_past_the_account_limit() {
                 name: format!("concurrent {index}"),
                 kind: AccountKind::Cash,
                 opening: "0".into(),
+                credit_cycle: None,
             })
             .is_ok()
         }));

@@ -30,6 +30,7 @@ fn currency_persists_and_cannot_relabel_existing_or_deleted_account_history() {
     assert!(!view(&mut a).thai_tax_enabled);
     assert!(a.execute(Command::SetThaiTaxEnabled(true)).is_err());
     a.execute(Command::CreateAccount {
+        credit_cycle: None,
         name: "Cash THB".into(),
         kind: AccountKind::Cash,
         opening: "100.25".into(),
@@ -79,6 +80,7 @@ fn explicit_wrong_units_and_receipts_never_become_foreign_ledger_amounts() {
     let mut a = app(SqliteLedger::in_memory().expect("db"));
     a.execute(Command::SetCurrency(Currency::Eur)).expect("EUR");
     a.execute(Command::CreateAccount {
+        credit_cycle: None,
         name: "Cash".into(),
         kind: AccountKind::Cash,
         opening: "0".into(),
@@ -145,6 +147,7 @@ fn v5_upgrade_preserves_thb_amounts_and_locks_existing_ledgers() {
     let path = dir.path().join("ledger.sqlite3");
     let mut a = app(SqliteLedger::open(&path).expect("open"));
     a.execute(Command::CreateAccount {
+        credit_cycle: None,
         name: "เงินสด".into(),
         kind: AccountKind::Cash,
         opening: "456.78".into(),
@@ -153,6 +156,7 @@ fn v5_upgrade_preserves_thb_amounts_and_locks_existing_ledgers() {
     let expected = view(&mut a);
     drop(a);
     let raw = rusqlite::Connection::open(&path).expect("raw");
+    raw.execute_batch("ALTER TABLE accounts DROP COLUMN payment_day; ALTER TABLE accounts DROP COLUMN closing_day;").expect("remove v8 columns for old schema fixture");
     raw.execute_batch("DROP TABLE user_preferences; DROP TRIGGER lock_currency_accounts; DROP TRIGGER lock_currency_recurring; DROP TRIGGER lock_currency_receivables; DROP TABLE ledger_settings; PRAGMA user_version=5;").expect("v5 fixture");
     let mut a = app(SqliteLedger::open(&path).expect("upgrade"));
     assert_eq!(view(&mut a), expected);
@@ -208,6 +212,7 @@ fn v6_migration_adds_preferences_without_resetting_ledger_settings() {
         .expect("GBP");
     drop(ledger);
     let raw = rusqlite::Connection::open(&path).expect("raw");
+    raw.execute_batch("ALTER TABLE accounts DROP COLUMN payment_day; ALTER TABLE accounts DROP COLUMN closing_day;").expect("remove v8 columns for old schema fixture");
     raw.execute_batch("DROP TABLE user_preferences; PRAGMA user_version=6;")
         .expect("v6 fixture");
     let mut migrated = app(SqliteLedger::open(&path).expect("migrate"));

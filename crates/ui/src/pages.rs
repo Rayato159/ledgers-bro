@@ -33,6 +33,7 @@ pub fn AccountsPage(view: Dashboard) -> Element {
                 }
             }
         }
+        crate::debt_visuals::CreditCardsPanel { view: view.clone() }
         div { class: "inline-note", Icon { name: "file", size: 19 } p { {crate::i18n::text("คริปโตและพอร์ตหุ้นในรุ่นนี้เป็นการจดมูลค่าเงินบาทด้วยมือ ยังไม่มีราคาตลาดสดหรือการซื้อขายสินทรัพย์", &[])} } }
     }
 }
@@ -43,11 +44,22 @@ pub fn AccountDialog() -> Element {
     let mut name = use_signal(String::new);
     let mut kind = use_signal(|| AccountKind::Cash);
     let mut opening = use_signal(|| "0".to_owned());
+    let closing = use_signal(String::new);
+    let payment = use_signal(String::new);
     rsx! {
         dialog { id: "account-dialog", class: "account-dialog", "aria-labelledby": "account-title",
             onmounted: move |_| { let _ = document::eval("document.getElementById('account-dialog').showModal()"); },
             oncancel: move |event| { event.prevent_default(); if !*store.busy.read() { store.account_form.set(false); } },
-            form { onsubmit: move |event| { event.prevent_default(); store.send(Command::CreateAccount { name: name(), kind: kind(), opening: opening() }); },
+            form { onsubmit: move |event| {
+                event.prevent_default();
+                let credit_cycle = if kind() == AccountKind::CreditCard {
+                    match crate::debt_visuals::cycle_from_fields(&closing(), &payment()) {
+                        Ok(cycle) => Some(cycle),
+                        Err(e) => { store.notice.set(Some((true, e.to_string()))); return; }
+                    }
+                } else { None };
+                store.send(Command::CreateAccount { name: name(), kind: kind(), opening: opening(), credit_cycle });
+            },
                 div { class: "section-heading", h2 { id: "account-title", {crate::i18n::text("เพิ่มบัญชีใหม่", &[])} } button { r#type: "button", class: "icon-button", "aria-label": crate::i18n::text("ปิดหน้าต่าง", &[]), disabled: *store.busy.read(), onclick: move |_| store.account_form.set(false), Icon { name: "close", size: 20 } } }
                 p { class: "muted", {crate::i18n::text("ให้เงินแต่ละก้อนมีที่ของมัน", &[])} }
                 label { r#for: "account-name", {crate::i18n::text("ชื่อบัญชี", &[])} } input { id: "account-name", name: "account-name", autofocus: true, required: true, maxlength: 60, placeholder: crate::i18n::text("เช่น เงินสด หรือ ธนาคาร ออมเงิน", &[]), value: "{name}", disabled: *store.busy.read(), oninput: move |event| name.set(event.value()) }
@@ -55,6 +67,10 @@ pub fn AccountDialog() -> Element {
                 div { class: "account-kind-preview", ArtIcon { name: account_art(kind()), size: 44 } span { "{crate::i18n::tr(kind().label())}" } }
                 label { r#for: "opening", if kind() == AccountKind::CreditCard { {crate::i18n::text("ยอดหนี้ที่ค้างอยู่ (ไม่ใช่วงเงินบัตร)", &[])} } else { {crate::i18n::text("ยอดเริ่มต้น (บาท)", &[])} } } input { id: "opening", name: "opening", inputmode: "decimal", required: true, value: "{opening}", disabled: *store.busy.read(), oninput: move |event| opening.set(event.value()) }
                 p { class: "field-hint", {crate::i18n::text("ยอดเริ่มต้นไม่ถูกนับเป็นรายรับเดือนนี้", &[])} }
+                if kind() == AccountKind::CreditCard {
+                    fieldset { class: "credit-cycle-group", disabled: *store.busy.read(), "aria-label": crate::i18n::tr("บัตรเครดิต"), crate::debt_visuals::CycleFields { closing, payment, prefix: "new-card" } }
+                    p { class: "field-hint", {crate::i18n::text("ยอดหนี้เริ่มต้นรวมในยอดรอชำระ แต่ไม่เดารอบบิลย้อนหลัง", &[])} }
+                }
                 if let Some((true, message)) = store.notice.read().clone() { p { class: "form-error", role: "alert", "{message}" } }
                 button { class: "primary full-width", r#type: "submit", disabled: *store.busy.read(), if *store.busy.read() { {crate::i18n::text("กำลังบันทึก…", &[])} } else { {crate::i18n::text("สร้างบัญชี", &[])} } }
             }

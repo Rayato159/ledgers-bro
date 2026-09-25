@@ -189,6 +189,8 @@ fn markers(kind: PromptKind) -> Vec<(&'static str, &'static str)> {
             "name" | "debtor" | "loan" | "plan" => &["ชื่อ"],
             "amount" => &["เงินต้น", "ยอด", "จำนวนเงิน"],
             "opening" => &["ยอดเริ่มต้น", "ยอดหนี้"],
+            "closing_day" => &["วันตัดรอบ", "ตัดรอบ"],
+            "payment_day" => &["วันครบกำหนดชำระ", "วันชำระ"],
             "account" => {
                 if kind == PromptKind::DeleteAccount {
                     &["ชื่อ", "บัญชี"]

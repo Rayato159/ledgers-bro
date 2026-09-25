@@ -25,10 +25,10 @@ python3 scripts/build-android.py --target x86_64-linux-android
 adb install -r target/android/ledgers-bro-test-x86_64.apk
 ```
 
-The helper uses a project-local Gradle home and checked OCR dependencies, preserves the parent shell environment, and verifies that the APK contains only the requested ABI. The SHA-256 sidecar is written beside the APK. Gradle may need internet for its initial dependency downloads. Never delete app data to solve a build problem.
+The helper uses a project-local Gradle home and checked OCR dependencies, preserves the parent shell environment, and verifies that the APK contains only the requested ABI. Android's version name follows the workspace version; its version code is `major * 1000000 + minor * 1000 + patch`. The SHA-256 sidecar is written beside the APK. Gradle may need internet for its initial dependency downloads. Never delete app data to solve a build problem.
 
 ## Verification scope
 
-Earlier Windows builds were opened on an Android emulator. The latest multiple-receipt Kotlin changes and portable Python build helper have not been compiled or run on Android in the current macOS session: no Android SDK/NDK is installed here. Desktop tests and the mobile-width screenshot do not constitute Android device verification.
+For release 0.1.0, both ARM64 and x86_64 APKs were compiled on Windows with the shared Rust code and Kotlin receipt bridge. Their package ID, version, ABI, and APK signatures were checked. Earlier builds were opened on an emulator, but no fresh physical-device or full Android UI verification is claimed for these release artifacts. Desktop tests do not constitute Android device verification.
 
 Before distributing an APK, verify receipt selection/cancellation, voice permissions, lifecycle recovery, export, and persistence on a real device. Signing and Store packaging remain separate work.

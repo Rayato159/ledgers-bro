@@ -103,7 +103,7 @@ pub(crate) fn CashflowChart(view: Dashboard) -> Element {
         .max(1);
     rsx! {
         section { class: "card flow-card", "aria-labelledby": "flow-title",
-            div { class: "section-heading", div { h2 { id: "flow-title", {crate::i18n::text("เงินเข้าเทียบเงินออก", &[])} } p { class: "muted small", {crate::i18n::text("ย้อนหลัง 6 เดือน · แตะเดือนเพื่อดูรายละเอียด", &[])} } }
+            div { class: "section-heading", div { h2 { id: "flow-title", {crate::i18n::text("รายรับเทียบรายจ่ายที่บันทึก", &[])} } p { class: "muted small", {crate::i18n::text("ย้อนหลัง 6 เดือน · แตะเดือนเพื่อดูรายละเอียด", &[])} } }
                 span { class: "flow-health {class}", "{crate::i18n::tr(&health)}" }
             }
             label { class: "flow-mode", input { r#type: "checkbox", checked: include_pending(), onchange: move |event| include_pending.set(event.checked()) } {crate::i18n::text("รวมรายจ่ายประจำที่ยังค้างจ่าย", &[])} }

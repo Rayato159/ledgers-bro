@@ -37,6 +37,11 @@ pub enum CommitOutcome {
 /// Each mutation is atomic and must recheck invariants against current data.
 /// A snapshot is consistent across both collections. No partially saved postings.
 pub trait LedgerRepository {
+    fn set_credit_cycle(
+        &mut self,
+        expected: &Account,
+        cycle: ledger_domain::CreditCardCycle,
+    ) -> Result<(), StorageError>;
     fn preferences(&mut self) -> Result<crate::UserPreferences, StorageError>;
     fn set_preferences(&mut self, preferences: crate::UserPreferences) -> Result<(), StorageError>;
     fn set_thai_tax_enabled(&mut self, enabled: bool) -> Result<(), StorageError>;

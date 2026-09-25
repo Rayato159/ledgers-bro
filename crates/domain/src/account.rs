@@ -51,6 +51,7 @@ pub struct Account {
     name: AccountName,
     kind: AccountKind,
     archived: bool,
+    credit_cycle: Option<crate::CreditCardCycle>,
 }
 impl Account {
     pub fn new(id: AccountId, name: AccountName, kind: AccountKind) -> Self {
@@ -59,6 +60,7 @@ impl Account {
             name,
             kind,
             archived: false,
+            credit_cycle: None,
         }
     }
     pub fn restore(id: AccountId, name: AccountName, kind: AccountKind, archived: bool) -> Self {
@@ -67,6 +69,7 @@ impl Account {
             name,
             kind,
             archived,
+            credit_cycle: None,
         }
     }
     pub const fn id(&self) -> AccountId {
@@ -80,6 +83,16 @@ impl Account {
     }
     pub const fn is_archived(&self) -> bool {
         self.archived
+    }
+    pub const fn credit_cycle(&self) -> Option<crate::CreditCardCycle> {
+        self.credit_cycle
+    }
+    pub fn with_credit_cycle(mut self, cycle: crate::CreditCardCycle) -> Result<Self, DomainError> {
+        if self.kind != AccountKind::CreditCard {
+            return Err(DomainError::InvalidCreditCycle);
+        }
+        self.credit_cycle = Some(cycle);
+        Ok(self)
     }
     pub fn ensure_can_add(&self, existing: &[Self]) -> Result<(), DomainError> {
         if existing.len() >= MAX_ACCOUNTS {

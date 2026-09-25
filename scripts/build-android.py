@@ -100,12 +100,22 @@ def main():
     (gradle / 'init.d').mkdir(parents=True, exist_ok=True)
     shutil.copyfile(ROOT / 'apps/android/native/receipt.init.gradle', gradle / 'init.d/receipt.gradle')
     abi, label = TARGETS[args.target]
+    workspace = (ROOT / 'Cargo.toml').read_text(encoding='utf-8')
+    package = re.search(r'(?ms)^\[workspace\.package\]\s*(.*?)(?=^\[|\Z)', workspace)
+    version = re.search(r'(?m)^version\s*=\s*"(\d+)\.(\d+)\.(\d+)"\s*$', package[1] if package else '')
+    if not version:
+        raise RuntimeError('Workspace version must be a stable major.minor.patch version')
+    major, minor, patch = map(int, version.groups())
+    version_code = major * 1000000 + minor * 1000 + patch
+    if minor > 999 or patch > 999 or not 1 <= version_code <= 2100000000:
+        raise RuntimeError('Workspace version cannot be represented by the Android version code')
     env = os.environ.copy()
     env.update(JAVA_HOME=str(jdk), ANDROID_HOME=str(sdk), ANDROID_SDK_ROOT=str(sdk),
                NDK_HOME=str(ndk), ANDROID_NDK_HOME=str(ndk), ANDROID_NDK=str(ndk), ANDROID_API_LEVEL='24',
                LIBCLANG_PATH=str(llvm / ('bin' if os.name == 'nt' else 'lib')),
                CMAKE_GENERATOR='Ninja', GRADLE_USER_HOME=str(gradle),
-               LEDGER_ANDROID_PROJECT_ROOT=str(ROOT), LEDGER_ANDROID_ABI=abi)
+               LEDGER_ANDROID_PROJECT_ROOT=str(ROOT), LEDGER_ANDROID_ABI=abi,
+               LEDGER_ANDROID_VERSION_NAME=f'{major}.{minor}.{patch}', LEDGER_ANDROID_VERSION_CODE=str(version_code))
     for target in [args.target, args.target.replace('-', '_')]:
         env[f'BINDGEN_EXTRA_CLANG_ARGS_{target}'] = f'--target={args.target}24'
     env['PATH'] = os.pathsep.join([str(cmake), str(jdk / 'bin'), str(sdk / 'platform-tools'), env.get('PATH', '')])

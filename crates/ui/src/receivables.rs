@@ -102,15 +102,19 @@ pub(crate) fn ReceivablesPage(view: Dashboard) -> Element {
                 article { class: "debtor-item", key: "{p.loan.id()}",
                     div { class: "section-heading", h3 { "{p.loan.debtor().as_str()}" } span { class: if p.status == ReceivableStatus::Overdue { "status-pill debt-overdue" } else { "status-pill" }, "{crate::i18n::tr(p.status.label())}" } }
                     p { "{p.loan.description().as_str()}" }
-                    p { {crate::i18n::text("เงินต้น ฿{0} · รับคืน ฿{1} · ค้าง ฿{2}", &[money_label(p.loan.total().money()).to_string(), money_label(p.paid).to_string(), money_label(p.outstanding).to_string()])} }
+                    div { class: "debtor-balance-grid",
+                        div { small { {crate::i18n::text("ยังค้างเรา", &[])} } strong { "{crate::i18n::currency_prefix()}{money_label(p.outstanding)}" } }
+                        div { small { {crate::i18n::text("รับคืนแล้ว", &[])} } strong { "{crate::i18n::currency_prefix()}{money_label(p.paid)}" } }
+                    }
+                    progress { class: "installment-progress", max: "{p.loan.total().money().minor()}", value: "{p.paid.minor()}", "aria-label": crate::i18n::text("ความคืบหน้าการรับคืนเงินต้น", &[]) }
                     if let (Some(paid), Some(remaining)) = (p.paid_installments, p.remaining_installments) { p { {crate::i18n::text("ครบแล้ว {0} งวด · เหลือ {1} งวด", &[format!("{}", paid), format!("{}", remaining)])} } }
                     else { p { {crate::i18n::text("ไม่กำหนดจำนวนงวด · รับชำระแล้ว {0} ครั้ง", &[format!("{}", p.payments.len())])} } }
                     if let Some(day) = p.loan.day() { p { {crate::i18n::text("เก็บทุกวันที่ {0} · เริ่ม {1}", &[format!("{}", day), format!("{}", p.loan.start())])} } } else { p { {crate::i18n::text("ไม่กำหนดวันเก็บ", &[])} } }
-                    if let Some(due) = p.next_due { p { {crate::i18n::text("นัดเก็บถัดไป / งวดค้างแรก: {0}", &[format!("{}", due)])} } }
+                    if let Some(due) = p.next_due { p { class: "next-collection", Icon { name: "calendar", size: 20 } {crate::i18n::text("นัดเก็บถัดไป / งวดค้างแรก: {0}", &[format!("{}", due)])} } }
                     if let Some(amount) = p.next_amount { p { {crate::i18n::text("ยอดที่ยังขาดของงวดถัดไป ฿{0}", &[money_label(amount).to_string()])} } }
                     if p.overdue > Money::ZERO { p { class: "form-error", {crate::i18n::text("เงินต้นเลยกำหนด ฿{0}", &[money_label(p.overdue).to_string()])} } }
                     if p.outstanding > Money::ZERO {
-                        button { class: "primary", disabled: *store.busy.read(), onclick: move |_| { store.receivable_review.set(None); store.repayment_selection.set(Some(p.loan.id())); store.repayment_form.set(true); }, {crate::i18n::text("บันทึกลูกหนี้ชำระหนี้", &[])} }
+                        button { class: "primary", disabled: *store.busy.read(), onclick: { let id = p.loan.id(); move |_| { store.receivable_review.set(None); store.repayment_selection.set(Some(id)); store.repayment_form.set(true); } }, Icon { name: "down", size: 18 } {crate::i18n::text("บันทึกลูกหนี้ชำระหนี้", &[])} }
                     }
                     details { class: "flow-explanation", summary { {crate::i18n::text("ประวัติรับคืนเงินต้น ({0})", &[format!("{}", p.payments.len())])} }
                         for entry in p.payments { if let EntryKind::Repayment { account, amount, .. } = entry.kind() { p { "{entry.date()} · {account_label(&view, *account)} · {crate::i18n::currency_prefix()}{money_label(amount.money())}" } } }
@@ -125,7 +129,7 @@ pub(crate) fn ReceivablesPage(view: Dashboard) -> Element {
 #[component]
 pub(crate) fn RepaymentShortcut() -> Element {
     let mut store = use_context::<UiState>();
-    rsx! { button { class: "text-button", disabled: *store.busy.read(), onclick: move |_| { store.receivable_review.set(None); store.repayment_selection.set(None); store.repayment_form.set(true); }, {crate::i18n::text("รับชำระหนี้จากลูกหนี้", &[])} } }
+    rsx! { button { class: "text-button repayment-shortcut", r#type: "button", disabled: *store.busy.read(), onclick: move |_| { store.receivable_review.set(None); store.repayment_selection.set(None); store.repayment_form.set(true); }, Icon { name: "down", size: 18 } {crate::i18n::text("รับชำระหนี้จากลูกหนี้", &[])} } }
 }
 
 #[component]
@@ -192,15 +196,6 @@ pub(crate) fn ReceivablesChart(view: Dashboard) -> Element {
         Ok(v) => v,
         Err(e) => return rsx! { p { role: "alert", "{e}" } },
     };
-    let current = summary
-        .outstanding
-        .checked_sub(summary.overdue)
-        .unwrap_or(Money::ZERO);
-    let segments = [
-        ("รับคืนเงินต้นแล้ว", summary.paid, "#69ac94"),
-        ("ค้างชำระส่วนที่ยังไม่เลยกำหนด / ไม่กำหนดแผน", current, "#ac8ade"),
-        ("เงินต้นเลยกำหนด", summary.overdue, "#df8399"),
-    ];
     let counts: Vec<_> = [
         ReceivableStatus::Collecting,
         ReceivableStatus::Overdue,
@@ -214,20 +209,25 @@ pub(crate) fn ReceivablesChart(view: Dashboard) -> Element {
     rsx! {
         section { class: "card recurring-card receivables-chart", "aria-label": crate::i18n::text("สถานะลูกหนี้โดยรวม", &[]),
             div { class: "section-heading", h2 { {crate::i18n::text("สถานะลูกหนี้โดยรวม", &[])} } button { class: "text-button", onclick: move |_| store.page.set(Page::Receivables), {crate::i18n::text("จัดการลูกหนี้ →", &[])} } }
-            div { class: "recurring-totals",
-                div { small { {crate::i18n::text("เงินต้นทั้งหมด", &[])} } strong { "{crate::i18n::currency_prefix()}{money_label(summary.total)}" } }
-                div { small { {crate::i18n::text("รับคืนแล้ว", &[])} } strong { "{crate::i18n::currency_prefix()}{money_label(summary.paid)}" } }
-                div { small { {crate::i18n::text("ยังค้างเรา", &[])} } strong { "{crate::i18n::currency_prefix()}{money_label(summary.outstanding)}" } }
+            div { class: "debt-summary-visual",
+                crate::debt_visuals::ProgressRing { done: summary.paid.minor(), total, label: crate::i18n::text("รับคืนแล้ว", &[]) }
+                div { class: "debt-summary-bars",
+                    crate::debt_visuals::AmountBar { label: crate::i18n::text("เงินต้นทั้งหมด", &[]), amount: summary.total, maximum: total, tone: "asset" }
+                    crate::debt_visuals::AmountBar { label: crate::i18n::text("รับคืนเงินต้นแล้ว", &[]), amount: summary.paid, maximum: total, tone: "paid" }
+                    crate::debt_visuals::AmountBar { label: crate::i18n::text("ยังค้างเรา", &[]), amount: summary.outstanding, maximum: total, tone: "plan" }
+                    crate::debt_visuals::AmountBar { label: crate::i18n::text("ในยอดค้าง: เลยกำหนด", &[]), amount: summary.overdue, maximum: total, tone: "due" }
+                }
             }
             if total == 0 { p { class: "muted", {crate::i18n::text("ยังไม่มียอดลูกหนี้ให้ติดตาม", &[])} } }
-            else {
-                div { class: "debt-status-bar", role: "img", "aria-label": crate::i18n::text("กราฟเงินต้น รับคืนแล้ว {0} บาท คงค้าง {1} บาท ในนี้เลยกำหนด {2} บาท", &[money_label(summary.paid).to_string(), money_label(summary.outstanding).to_string(), money_label(summary.overdue).to_string()]),
-                    for (label, amount, color) in segments { div { title: "{crate::i18n::tr(&label)}: {crate::i18n::currency_prefix()}{money_label(amount)}", style: "width:{amount.minor() as f64 / total as f64 * 100.0}%;background:{color}" } }
+            div { class: "debt-status-grid", for (status, n) in counts {
+                div { class: "debt-status-stat", "data-overdue": status == ReceivableStatus::Overdue,
+                    div { strong { "{n}" } span { "{crate::i18n::tr(status.label())}" } }
+                    div { class: "debt-bar-track", "aria-hidden": "true", span { style: "width:{crate::debt_visuals::percentage(n as i64, summary.items.iter().filter(|p| p.status != ReceivableStatus::Cancelled).count() as i64)}%;" } }
                 }
-                div { class: "debt-chart-legend", for (label, amount, color) in segments { div { span { class: "debt-dot", style: "background:{color}" } span { "{crate::i18n::tr(&label)}" } strong { "{crate::i18n::currency_prefix()}{money_label(amount)}" } } } }
+            } }
+            details { class: "flow-explanation", summary { {crate::i18n::text("วิธีนับยอดลูกหนี้", &[])} }
+                p { class: "field-hint", {crate::i18n::text("นับแยกตามเรื่องหนี้ ณ {0} · เลยกำหนดคำนวณเมื่อมีทั้งจำนวนงวดและวันเก็บ · ยอดลูกหนี้รวมในสินทรัพย์สุทธิ แต่ยังไม่ใช่เงินสด · เงินต้นรับคืนไม่รวมเป็นรายรับใหม่", &[format!("{}", view.today)])} }
             }
-            div { class: "debt-counts", for (status, n) in counts { span { {crate::i18n::text("{0} {1} รายการ", &[crate::i18n::tr(status.label()).to_string(), format!("{}", n)])} } } }
-            p { class: "field-hint", {crate::i18n::text("นับแยกตามเรื่องหนี้ ณ {0} · เลยกำหนดคำนวณเมื่อมีทั้งจำนวนงวดและวันเก็บ · ยอดลูกหนี้รวมในสินทรัพย์สุทธิ แต่ยังไม่ใช่เงินสด · เงินต้นรับคืนไม่รวมเป็นรายรับใหม่", &[format!("{}", view.today)])} }
         }
     }
 }

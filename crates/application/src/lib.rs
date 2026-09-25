@@ -2,6 +2,8 @@
 mod account_deletion;
 mod accounting_export;
 mod cashflow;
+mod credit;
+pub use credit::*;
 mod entry_text;
 mod error;
 mod local_model;

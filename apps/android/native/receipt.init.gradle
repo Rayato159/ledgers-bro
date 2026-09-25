@@ -11,6 +11,11 @@ gradle.beforeProject { project ->
         // libraries from other targets, including extra ABIs bundled by AARs.
         project.android.defaultConfig.ndk.abiFilters.clear()
         project.android.defaultConfig.ndk.abiFilters.add(ledgerAbi)
+        // Dioxus's template otherwise hardcodes versionName 1.0 / versionCode 1.
+        project.androidComponents.finalizeDsl { android ->
+            android.defaultConfig.versionName = System.getenv('LEDGER_ANDROID_VERSION_NAME')
+            android.defaultConfig.versionCode = Integer.parseInt(System.getenv('LEDGER_ANDROID_VERSION_CODE'))
+        }
         // Keep custom resources in source control; Dioxus recreates target/dx on clean builds.
         project.android.sourceSets.main.res.srcDir("${ledgerRoot}/apps/android/native/res")
         project.dependencies.add('implementation', project.files("${ledgerRoot}/.tools/downloads/tesseract4android-4.9.0.aar"))

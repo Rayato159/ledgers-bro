@@ -12,7 +12,7 @@ use std::{
 };
 
 const APPLICATION_ID: i64 = 1_279_414_863;
-const SCHEMA_VERSION: i64 = 7;
+const SCHEMA_VERSION: i64 = 8;
 
 pub struct SqliteLedger {
     connection: Connection,
@@ -74,12 +74,17 @@ impl SqliteLedger {
         if version < 6 {
             tx.execute_batch(include_str!("../migrations/006_currency.sql"))
                 .map_err(database_error)?;
-            // Validate populated old schemas before committing a forward migration.
-            read_state(&tx)?;
         }
         if version < 7 {
             tx.execute_batch(include_str!("../migrations/007_preferences.sql"))
                 .map_err(database_error)?;
+        }
+        if version < 8 {
+            tx.execute_batch(include_str!("../migrations/008_credit_cycles.sql"))
+                .map_err(database_error)?;
+        }
+        if version < SCHEMA_VERSION {
+            read_state(&tx)?;
         }
         tx.commit().map_err(database_error)?;
         connection
@@ -93,6 +98,28 @@ impl SqliteLedger {
 }
 
 impl LedgerRepository for SqliteLedger {
+    fn set_credit_cycle(
+        &mut self,
+        expected: &Account,
+        cycle: CreditCardCycle,
+    ) -> Result<(), StorageError> {
+        let tx = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(database_error)?;
+        let updated =
+            ledger_application::configure_credit_cycle(&read_state(&tx)?, expected, cycle)?;
+        tx.execute(
+            "UPDATE accounts SET closing_day=?1,payment_day=?2 WHERE id=?3",
+            params![
+                cycle.closing_day(),
+                cycle.payment_day(),
+                updated.id().to_string()
+            ],
+        )
+        .map_err(database_error)?;
+        tx.commit().map_err(database_error)
+    }
     fn preferences(&mut self) -> Result<UserPreferences, StorageError> {
         self.connection
             .query_row(
@@ -202,13 +229,15 @@ impl LedgerRepository for SqliteLedger {
             .filter(|a| !before.accounts.iter().any(|b| b.id() == a.id()))
         {
             tx.execute(
-                "INSERT INTO accounts(id,name,name_key,kind,archived) VALUES(?1,?2,?3,?4,?5)",
+                "INSERT INTO accounts(id,name,name_key,kind,archived,closing_day,payment_day) VALUES(?1,?2,?3,?4,?5,?6,?7)",
                 params![
                     account.id().to_string(),
                     account.name().as_str(),
                     account.name().key(),
                     account.kind().code(),
-                    account.is_archived()
+                    account.is_archived(),
+                    account.credit_cycle().map(CreditCardCycle::closing_day),
+                    account.credit_cycle().map(CreditCardCycle::payment_day)
                 ],
             )
             .map_err(database_error)?;
@@ -505,13 +534,15 @@ impl LedgerRepository for SqliteLedger {
         state.accounts.push(account.clone());
         validate_append(&state, opening)?;
         tx.execute(
-            "INSERT INTO accounts(id,name,name_key,kind,archived) VALUES(?1,?2,?3,?4,?5)",
+            "INSERT INTO accounts(id,name,name_key,kind,archived,closing_day,payment_day) VALUES(?1,?2,?3,?4,?5,?6,?7)",
             params![
                 account.id().to_string(),
                 account.name().as_str(),
                 account.name().key(),
                 account.kind().code(),
-                account.is_archived()
+                account.is_archived(),
+                account.credit_cycle().map(CreditCardCycle::closing_day),
+                account.credit_cycle().map(CreditCardCycle::payment_day)
             ],
         )
         .map_err(database_error)?;
@@ -612,7 +643,7 @@ fn target_columns(target: PostingTarget) -> (Option<String>, Option<&'static str
 
 fn read_state(connection: &Connection) -> Result<LedgerState, StorageError> {
     let mut accounts_query = connection
-        .prepare("SELECT id,name,name_key,kind,archived FROM accounts ORDER BY name_key,id")
+        .prepare("SELECT id,name,name_key,kind,archived,closing_day,payment_day FROM accounts ORDER BY name_key,id")
         .map_err(database_error)?;
     let mut accounts_rows = accounts_query.query([]).map_err(database_error)?;
     let mut accounts = Vec::new();
@@ -625,12 +656,26 @@ fn read_state(connection: &Connection) -> Result<LedgerState, StorageError> {
             return Err(StorageError::Corrupt);
         }
         let kind: String = row.get(3).map_err(database_error)?;
-        accounts.push(Account::restore(
+        let mut account = Account::restore(
             id.parse().map_err(|_| StorageError::Corrupt)?,
             name,
             AccountKind::from_code(&kind).map_err(|_| StorageError::Corrupt)?,
             row.get(4).map_err(database_error)?,
-        ));
+        );
+        let closing: Option<u32> = row.get(5).map_err(database_error)?;
+        let payment: Option<u32> = row.get(6).map_err(database_error)?;
+        match (closing, payment) {
+            (Some(closing), Some(payment)) => {
+                let cycle =
+                    CreditCardCycle::new(closing, payment).map_err(|_| StorageError::Corrupt)?;
+                account = account
+                    .with_credit_cycle(cycle)
+                    .map_err(|_| StorageError::Corrupt)?;
+            }
+            (None, None) => {}
+            _ => return Err(StorageError::Corrupt),
+        }
+        accounts.push(account);
     }
     if accounts.len() > MAX_ACCOUNTS {
         return Err(StorageError::Corrupt);

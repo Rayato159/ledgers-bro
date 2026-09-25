@@ -225,17 +225,21 @@ fn launch() -> Result<(), Box<dyn std::error::Error>> {
         receipt_ocr_available: true,
         preview_label: "สมุดบัญชีแยกสำหรับทดลอง • Desktop preview",
     };
+    let window = WindowBuilder::new()
+        .with_title("Ledgers Bro")
+        .with_inner_size(if mobile_preview {
+            LogicalSize::new(430.0, 860.0)
+        } else {
+            LogicalSize::new(1280.0, 950.0)
+        })
+        .with_min_inner_size(LogicalSize::new(360.0, 640.0));
+    // Standalone Dioxus debug runs share a temporary window-position cache.
+    // Windows may save a minimized window at (-32000, -32000); an explicit
+    // starting position prevents restoring the next test run outside the screen.
+    #[cfg(all(target_os = "windows", debug_assertions))]
+    let window = window.with_position(dioxus::desktop::LogicalPosition::new(40.0, 40.0));
     let mut config = Config::new()
-        .with_window(
-            WindowBuilder::new()
-                .with_title("Ledgers Bro")
-                .with_inner_size(if mobile_preview {
-                    LogicalSize::new(430.0, 860.0)
-                } else {
-                    LogicalSize::new(1280.0, 950.0)
-                })
-                .with_min_inner_size(LogicalSize::new(360.0, 640.0)),
-        )
+        .with_window(window)
         .with_data_directory(directory.join(match inspect_port {
             Some(port) => format!("webview-inspect-{port}"),
             None => "webview".into(),

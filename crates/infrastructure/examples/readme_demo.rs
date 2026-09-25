@@ -32,9 +32,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         ("Cash", AccountKind::Cash, "3500"),
         ("Everyday bank", AccountKind::Bank, "85000"),
         ("Travel fund", AccountKind::Bank, "24000"),
-        ("Credit card", AccountKind::CreditCard, "1800"),
+        ("Credit card", AccountKind::CreditCard, "0"),
     ] {
         app.execute(Command::CreateAccount {
+            credit_cycle: if kind == ledger_domain::AccountKind::CreditCard {
+                Some(ledger_domain::CreditCardCycle::new(20, 5)?)
+            } else {
+                None
+            },
             name: name.into(),
             kind,
             opening: opening.into(),
@@ -53,6 +58,29 @@ fn main() -> Result<(), Box<dyn Error>> {
         .ok_or("missing demo account")?
         .account
         .id();
+    let card = accounts
+        .iter()
+        .find(|a| a.account.kind() == AccountKind::CreditCard)
+        .ok_or("missing demo card")?
+        .account
+        .id();
+    for (date, amount, note) in [
+        ("2026-08-15", "2400", "Previous statement"),
+        ("2026-09-18", "1250", "Groceries on credit"),
+        ("2026-09-23", "790", "Next statement"),
+    ] {
+        let input = EntryInput {
+            account: Some(card),
+            amount: amount.into(),
+            category: Some(Category::Supplies),
+            date: date.into(),
+            note: note.into(),
+            ..EntryInput::empty("2026-09-24".parse()?)
+        };
+        if let Response::Prepared(p) = app.execute(Command::Preview(input))? {
+            app.execute(Command::Commit(p))?;
+        }
+    }
     for (month, income, spending) in [
         (4, "28000", "24500"),
         (5, "32000", "26000"),
