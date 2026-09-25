@@ -432,7 +432,7 @@ fn v3_upgrade_preserves_accounts_postings_and_recurring_plans() {
     assert_eq!(
         raw.pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0))
             .expect("version"),
-        8
+        9
     );
     assert_eq!(
         raw.query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |r| r

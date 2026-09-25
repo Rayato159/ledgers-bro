@@ -259,3 +259,52 @@ fn version_seven_cards_can_set_terms_once_without_losing_accounts() {
             .is_err()
     );
 }
+
+#[test]
+fn dedicated_settlement_pays_partial_then_full_without_double_counting() {
+    let mut app = App::new(SqliteLedger::in_memory().expect("db"), Today, RandomIds);
+    let bank = account(&mut app, "bank", AccountKind::Bank, "1000");
+    let card = account(&mut app, "card", AccountKind::CreditCard, "200");
+    let other_card = account(&mut app, "second", AccountKind::CreditCard, "100");
+    let mut input = EntryInput {
+        account: Some(bank),
+        category: Some(Category::Food),
+        ..EntryInput::empty(view(&mut app).today)
+    };
+    input = select_credit_payment(&view(&mut app), &input, card).expect("select");
+    assert_eq!(input.kind, TransactionKind::Transfer);
+    assert_eq!(input.amount, "200.00");
+    assert_eq!(input.category, None);
+    input.amount = "30.75".into();
+    validate_credit_payment(&view(&mut app), &input).expect("partial");
+    commit(&mut app, input.clone());
+    let remaining = view(&mut app);
+    assert_eq!(
+        credit_debt_total(&credit_cards(&remaining).expect("cards"))
+            .expect("sum")
+            .to_string(),
+        "269.25"
+    );
+    assert_eq!(remaining.expenses, Money::ZERO);
+    let full = select_credit_payment(&remaining, &input, card).expect("remaining");
+    assert_eq!(full.amount, "169.25");
+    validate_credit_payment(&remaining, &full).expect("full");
+    commit(&mut app, full);
+    let after = view(&mut app);
+    assert_eq!(after.assets.to_string(), "800.00");
+    assert_eq!(after.liabilities.to_string(), "100.00");
+    assert_eq!(after.expenses, Money::ZERO);
+    assert!(select_credit_payment(&after, &input, card).is_err());
+    let mut invalid = select_credit_payment(&after, &input, other_card).expect("select other");
+    invalid.amount = "100.01".into();
+    assert!(validate_credit_payment(&after, &invalid).is_err());
+    invalid.amount = "10".into();
+    invalid.account = Some(card);
+    assert!(validate_credit_payment(&after, &invalid).is_err());
+    assert_eq!(
+        select_credit_payment(&after, &invalid, other_card)
+            .expect("sanitize")
+            .account,
+        None
+    );
+}

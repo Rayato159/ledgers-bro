@@ -35,6 +35,8 @@ pub(crate) enum StoredKind {
         account: String,
         amount: i64,
         category: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tax: Option<StoredIncomeTax>,
     },
     Transfer {
         from: String,
@@ -44,6 +46,36 @@ pub(crate) enum StoredKind {
     Reversal {
         original: String,
     },
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct StoredIncomeTax {
+    section: u8,
+    gross: i64,
+    withholding: i64,
+    vat: i64,
+    other_deductions: i64,
+}
+impl StoredIncomeTax {
+    fn from_domain(tax: IncomeTax) -> Self {
+        Self {
+            section: tax.section().number(),
+            gross: tax.gross().minor(),
+            withholding: tax.withholding().minor(),
+            vat: tax.vat().minor(),
+            other_deductions: tax.other_deductions().minor(),
+        }
+    }
+    fn restore(self) -> Result<IncomeTax, DomainError> {
+        IncomeTax::new(
+            IncomeSection::new(self.section)?,
+            PositiveMoney::new(Money::from_minor(self.gross)?)?,
+            Money::from_minor(self.withholding)?,
+            Money::from_minor(self.vat)?,
+            Money::from_minor(self.other_deductions)?,
+        )
+    }
 }
 
 impl StoredKind {
@@ -92,6 +124,7 @@ impl StoredKind {
                 account: account.to_string(),
                 amount: amount.money().minor(),
                 category: category.code().into(),
+                tax: entry.income_tax().map(StoredIncomeTax::from_domain),
             },
             EntryKind::Transfer { from, to, amount } => Self::Transfer {
                 from: from.to_string(),
@@ -114,6 +147,7 @@ impl StoredKind {
         previous: &BTreeMap<EntryId, JournalEntry>,
     ) -> Result<JournalEntry, StorageError> {
         let amount = |n| PositiveMoney::new(Money::from_minor(n)?);
+        let mut income_tax = None;
         let kind = match self {
             Self::ReceivableOpening {
                 receivable,
@@ -157,11 +191,15 @@ impl StoredKind {
                 account,
                 amount: n,
                 category,
-            } => EntryKind::Income {
-                account: account.parse()?,
-                amount: amount(n)?,
-                category: Category::from_code(&category)?,
-            },
+                tax,
+            } => {
+                income_tax = tax.map(StoredIncomeTax::restore).transpose()?;
+                EntryKind::Income {
+                    account: account.parse()?,
+                    amount: amount(n)?,
+                    category: Category::from_code(&category)?,
+                }
+            }
             Self::Transfer {
                 from,
                 to,
@@ -181,6 +219,10 @@ impl StoredKind {
                 return Ok(entry);
             }
         };
-        Ok(JournalEntry::record(id, date, note, kind)?)
+        let mut entry = JournalEntry::record(id, date, note, kind)?;
+        if let Some(tax) = income_tax {
+            entry = entry.with_income_tax(tax)?;
+        }
+        Ok(entry)
     }
 }

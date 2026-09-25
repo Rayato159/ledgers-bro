@@ -20,3 +20,5 @@ mod currency;
 pub use currency::Currency;
 mod credit;
 pub use credit::*;
+mod income_tax;
+pub use income_tax::*;

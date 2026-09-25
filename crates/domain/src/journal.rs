@@ -146,6 +146,7 @@ pub struct JournalEntry {
     note: Note,
     kind: EntryKind,
     postings: Vec<Posting>,
+    income_tax: Option<crate::IncomeTax>,
 }
 impl JournalEntry {
     pub fn record(
@@ -224,6 +225,7 @@ impl JournalEntry {
             date,
             note,
             kind,
+            income_tax: None,
             postings: vec![
                 Posting {
                     target: first,
@@ -251,6 +253,7 @@ impl JournalEntry {
             id,
             date: original.date,
             note,
+            income_tax: None,
             kind: EntryKind::Reversal {
                 original: original.id,
             },
@@ -292,6 +295,19 @@ impl JournalEntry {
     }
     pub fn kind(&self) -> &EntryKind {
         &self.kind
+    }
+    pub const fn income_tax(&self) -> Option<crate::IncomeTax> {
+        self.income_tax
+    }
+    pub fn with_income_tax(mut self, tax: crate::IncomeTax) -> Result<Self, DomainError> {
+        let EntryKind::Income { amount, .. } = self.kind else {
+            return Err(DomainError::InvalidIncomeTax);
+        };
+        if tax.net_received()? != amount.money() {
+            return Err(DomainError::InvalidIncomeTax);
+        }
+        self.income_tax = Some(tax);
+        Ok(self)
     }
     pub fn postings(&self) -> &[Posting] {
         &self.postings

@@ -751,9 +751,46 @@ footer { display: flex; justify-content: space-between; align-items: center; gap
 .position-net p { color: var(--muted); margin: 10px 0 20px; }
 .position-net .status-pill { white-space: normal; font-size: var(--text-small); }
 .position-bars { display: grid; gap: 22px; }
+.income-tax-fields, .tax-auto-summary { margin: 20px 0; padding: 20px; border-radius: 20px; background: var(--surface); }
+.income-tax-fields > label:first-child { margin-top: 0; }
+.income-tax-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 0 16px; }
+.tax-auto-summary dl > div, .tax-entry-summary dl > div { display: flex; justify-content: space-between; gap: 18px; }
+.tax-auto-summary dd, .tax-entry-summary dd { margin: 0; white-space: nowrap; font-variant-numeric: tabular-nums; }
+@media (max-width: 600px) { .income-tax-grid { grid-template-columns: minmax(0,1fr); } }
+.entry-kind-tabs { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); }
+.credit-payment-picker { padding: 20px; background: var(--surface); border-radius: 20px; }
+.credit-payment-picker > label:first-child { margin-top: 0; }
+.credit-payment-balance { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; padding: 16px 0; }
+.credit-payment-balance strong { white-space: nowrap; }
+.payment-amount-options { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 12px 0; }
+.payment-amount-options .selected { background: var(--action-gradient); color: var(--accent-ink); font-weight: 700; }
+.amount-input[readonly] { background: var(--surface); }
 .credit-section { margin: 28px 0; }
+.credit-debt-chart { margin: 24px 0; }
+.credit-chart-layout { display: grid; grid-template-columns: minmax(220px,280px) minmax(0,1fr); gap: 32px; align-items: center; }
+.credit-donut { position: relative; width: 100%; max-width: 280px; justify-self: center; }
+.credit-donut svg { width: 100%; height: auto; }
+.credit-donut-label { position: absolute; inset: 25% 17%; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; pointer-events: none; }
+.credit-donut-label strong { font-size: clamp(1.2rem,2vw,1.8rem); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.credit-donut-label small { color: var(--muted); }
+.credit-chart-legend { max-height: 340px; overflow-y: auto; }
+.credit-chart-row { display: grid; grid-template-columns: 12px minmax(0,1fr) auto 58px; gap: 12px; align-items: center; padding: 14px 0; border-bottom: 1px solid var(--line); }
+.credit-chart-row > span:nth-child(2) { overflow-wrap: anywhere; }
+.credit-chart-row strong { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.credit-chart-row small { text-align: right; color: var(--muted); }
+.credit-chart-dot { width: 12px; height: 12px; border-radius: 50%; }
+@media (max-width: 700px) {
+  .entry-kind-tabs { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .credit-chart-layout { grid-template-columns: minmax(0,1fr); gap: 8px; }
+  .credit-donut { max-width: 240px; }
+  .credit-chart-row { grid-template-columns: 12px minmax(0,1fr) auto; gap: 8px; }
+  .credit-chart-row strong { grid-column: 2; grid-row: 2; }
+  .credit-chart-row small { grid-column: 3; grid-row: 1 / span 2; }
+}
 .credit-card-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,380px),1fr)); gap: 20px; }
-.credit-obligation { padding: 26px; min-width: 0; border-top: 4px solid var(--accent); }
+.credit-obligation { display: flex; flex-direction: column; padding: 26px; min-width: 0; border-top: 4px solid var(--accent); }
+.credit-bills { display: flex; flex-direction: column; flex: 1; }
+.credit-pay-button { margin-top: auto; min-height: 56px; }
 .credit-card-grid { container-type: inline-size; }
 .credit-card-overview, .credit-bills { min-width: 0; }
 @container (min-width: 760px) {
@@ -768,7 +805,8 @@ footer { display: flex; justify-content: space-between; align-items: center; gap
 .credit-cycle-labels { display: flex; flex-wrap: wrap; gap: 8px 20px; color: var(--muted); margin-bottom: 16px; }
 .credit-cycle-labels span { display: flex; align-items: center; gap: 6px; }
 .credit-bill { display: flex; justify-content: space-between; align-items: center; gap: 16px; border-top: 1px solid var(--line); padding: 16px 0; }
-.credit-bill > div { display: flex; flex-direction: column; }
+.credit-bill > div { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.credit-bill > strong { white-space: nowrap; flex-shrink: 0; font-variant-numeric: tabular-nums; }
 .credit-bill small { color: var(--muted); }
 .credit-bill[data-overdue="true"] { border-left: 3px solid #e78f9e; padding-left: 12px; }
 .credit-clear, .debt-clear { display: flex; gap: 10px; align-items: center; padding: 14px 0; }

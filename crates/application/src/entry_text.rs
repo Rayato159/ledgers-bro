@@ -369,5 +369,12 @@ pub fn missing_entry_fields(input: &EntryInput) -> Vec<&'static str> {
             fields.push("ยืนยันตรวจรายละเอียดกับภาพใบเสร็จ");
         }
     }
+    if let Some(tax) = &input.income_tax
+        && (input.kind != TransactionKind::Income
+            || tax.validate().ok().and_then(|tax| tax.net_received().ok())
+                != input.amount.parse().ok())
+    {
+        fields.push("ประเภทเงินได้และยอดภาษีที่ตรงกับเงินรับจริง");
+    }
     fields
 }

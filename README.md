@@ -6,14 +6,14 @@ An open-source, local-first ledger built with **Rust + Dioxus + SQLite**. Thai /
 
 ## Download & install 📦
 
-Download **[0.1.0](https://github.com/Rayato159/ledgers-bro/releases/tag/v0.1.0)**. No Rust or build tools needed to try the packaged apps.
+Download **[0.1.1](https://github.com/Rayato159/ledgers-bro/releases/tag/v0.1.1)**. No Rust or build tools needed to try the packaged apps.
 
 - **Windows x64:** install the `.msi`, or extract the portable `.zip` and open `ledgers-bro.exe` inside it. Keep its `ocr` and `licenses` folders alongside the executable.
 - **Android phone:** use the **arm64** `.apk`. This is an experimental, debug-signed test app, not a Play Store build.
 - **Android emulator:** use the **x86_64** `.apk` for an x86_64 virtual device.
 - **macOS / Linux / iOS:** no ready-to-install packages announced yet.
 
-The release includes SHA-256 checksums. Windows packages include receipt OCR; download the optional local AI model inside the app. Windows packages are not code-signed. If you installed a local preview numbered 0.1.1–0.1.3, back up your ledger and uninstall that preview before installing the first published release, 0.1.0. The source code below is for building it yourself. 🛠️
+The release includes SHA-256 checksums. Windows packages include receipt OCR; download the optional local AI model inside the app. Windows packages are not code-signed. Upgrade the published 0.1.0 in place; do not uninstall the Android app or clear its storage. See [preserving your data during an update](docs/update-0.1.1-th.md). Local Windows previews numbered above 0.1.1 need separate version handling; back up first. The source code below is for building it yourself. 🛠️
 
 ## The receipts 📸
 
@@ -107,3 +107,9 @@ In **More → Settings**, choose a currency before creating the first account. E
 Credit cards require a statement closing day and payment day. **Debts & bills** shows outstanding statement balances, monthly plans, and payment progress; card repayments are transfers, so expenses are counted once. [Credit billing and financial overview (Thai)](docs/credit-cards-th.md).
 
 [MIT](LICENSE). Fork it, fix it, make your wallet less embarrassing. Third-party [models / OCR](licenses/) and [fonts](crates/ui/assets/fonts/LICENSE.txt) retain their own licenses. Early software: try synthetic data first; the local database is not encrypted.
+
+## อัปเดต 0.1.1
+
+- เลือกชำระบัตรเครดิตเต็มยอดหรือบางส่วนจากหน้ากรอกรายการ พร้อมกราฟวงกลมหนี้แยกบัตร
+- ผูกรายรับกับประเภทเงินได้ ยอดก่อนหัก VAT และหัก ณ ที่จ่าย เพื่อรวมภาษีรายปี
+- [วิธีอัปเดตโดยเก็บข้อมูลเดิม](docs/update-0.1.1-th.md) · [รายละเอียดรายรับภาษี](docs/tax-income-entries-th.md)

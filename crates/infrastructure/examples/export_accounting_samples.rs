@@ -100,6 +100,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             note: note.into(),
             receipt: None,
             recurring: None,
+            income_tax: None,
         }))?
         else {
             return Err(std::io::Error::other("expected preview").into());

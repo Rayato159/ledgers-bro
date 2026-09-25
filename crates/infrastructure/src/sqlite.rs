@@ -12,7 +12,7 @@ use std::{
 };
 
 const APPLICATION_ID: i64 = 1_279_414_863;
-const SCHEMA_VERSION: i64 = 8;
+const SCHEMA_VERSION: i64 = 9;
 
 pub struct SqliteLedger {
     connection: Connection,
@@ -81,6 +81,10 @@ impl SqliteLedger {
         }
         if version < 8 {
             tx.execute_batch(include_str!("../migrations/008_credit_cycles.sql"))
+                .map_err(database_error)?;
+        }
+        if version < 9 {
+            tx.execute_batch(include_str!("../migrations/009_income_tax.sql"))
                 .map_err(database_error)?;
         }
         if version < SCHEMA_VERSION {

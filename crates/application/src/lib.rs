@@ -33,6 +33,8 @@ pub use service::*;
 
 mod tax;
 pub use tax::*;
+mod tax_income;
+pub use tax_income::*;
 
 mod recurring;
 pub use recurring::*;

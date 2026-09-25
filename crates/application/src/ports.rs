@@ -130,6 +130,11 @@ impl<T: IdSource + ?Sized> IdSource for &T {
 pub fn validate_append(state: &LedgerState, entry: &JournalEntry) -> Result<(), StorageError> {
     use ledger_domain::{DomainError, EntryKind};
     entry.validate_accounts(&state.accounts)?;
+    if entry.income_tax().is_some()
+        && (state.currency != ledger_domain::Currency::Thb || !state.thai_tax_enabled)
+    {
+        return Err(ledger_domain::DomainError::InvalidIncomeTax.into());
+    }
     if state
         .entries
         .iter()

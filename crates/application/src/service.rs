@@ -10,6 +10,7 @@ pub enum TransactionKind {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EntryInput {
+    pub income_tax: Option<Box<IncomeTaxInput>>,
     pub kind: TransactionKind,
     pub amount: String,
     pub account: Option<AccountId>,
@@ -39,6 +40,7 @@ impl EntryInput {
 
     pub fn empty(today: EntryDate) -> Self {
         Self {
+            income_tax: None,
             kind: TransactionKind::Expense,
             amount: String::new(),
             account: None,
@@ -499,8 +501,16 @@ impl<R: LedgerRepository, C: Clock, I: IdSource> LedgerApplication<R, C, I> {
                 if input.kind == TransactionKind::Transfer && input.category.is_some() {
                     return Err(AppError::Input("การโอนไม่ใช้หมวดรายรับรายจ่าย".into()));
                 }
-                let entry = JournalEntry::record(self.ids.entry_id()?, date, note, kind)?;
+                let mut entry = JournalEntry::record(self.ids.entry_id()?, date, note, kind)?;
                 let state = self.repository.snapshot()?;
+                if let Some(tax) = &input.income_tax {
+                    if state.currency != Currency::Thb || !state.thai_tax_enabled {
+                        return Err(AppError::Input(
+                            "เปิดฟีเจอร์ภาษีไทยในสมุด THB ก่อนผูกรายการภาษี".into(),
+                        ));
+                    }
+                    entry = entry.with_income_tax(tax.validate()?)?;
+                }
                 entry.validate_accounts(&state.accounts)?;
                 let recurring = if let Some(selection) = input.recurring {
                     let schedule = state

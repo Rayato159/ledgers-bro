@@ -288,6 +288,6 @@ fn prompt_schema_upgrade_preserves_existing_receivable_and_settlement_history() 
     assert_eq!(
         raw.pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0))
             .expect("version"),
-        8
+        9
     );
 }

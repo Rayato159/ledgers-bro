@@ -1,4 +1,4 @@
-use crate::{Dashboard, LedgerState, StorageError};
+use crate::{AppError, Dashboard, EntryInput, LedgerState, StorageError, TransactionKind};
 use ledger_domain::*;
 use std::collections::BTreeMap;
 
@@ -18,6 +18,64 @@ pub struct CreditCardSummary {
     pub outstanding: Money,
     pub overdue: Money,
     pub prepaid: Money,
+}
+
+/// Prepare a card settlement as a transfer, not a second expense. Keep an
+/// explicitly chosen funding account only when it is an active asset account.
+pub fn select_credit_payment(
+    view: &Dashboard,
+    input: &EntryInput,
+    card_id: AccountId,
+) -> Result<EntryInput, AppError> {
+    let card = credit_cards(view)?
+        .into_iter()
+        .find(|card| card.account.id() == card_id && !card.account.is_archived())
+        .ok_or(DomainError::AccountUnavailable)?;
+    PositiveMoney::new(card.outstanding)?;
+    let mut updated = input.clone();
+    updated.kind = TransactionKind::Transfer;
+    updated.destination = Some(card_id);
+    updated.amount = card.outstanding.to_string();
+    updated.category = None;
+    updated.recurring = None;
+    updated.receipt = None;
+    updated.income_tax = None;
+    updated.account = input.account.filter(|id| {
+        view.accounts.iter().any(|a| {
+            a.account.id() == *id
+                && !a.account.is_archived()
+                && a.account.kind() != AccountKind::CreditCard
+        })
+    });
+    Ok(updated)
+}
+
+/// The dedicated settlement form pays existing debt only. Generic transfers
+/// still support deliberate credit prepayments through the normal transfer tab.
+pub fn validate_credit_payment(view: &Dashboard, input: &EntryInput) -> Result<(), AppError> {
+    let card_id = input.destination.ok_or(DomainError::AccountUnavailable)?;
+    let selected = select_credit_payment(view, input, card_id)?;
+    if input.kind != TransactionKind::Transfer
+        || input.account.is_none()
+        || selected.account != input.account
+        || input.category.is_some()
+        || input.recurring.is_some()
+        || input.receipt.is_some()
+    {
+        return Err(AppError::Input("เลือกบัญชีเงินสดหรือสินทรัพย์สำหรับชำระบัตร".into()));
+    }
+    let amount = PositiveMoney::new(input.amount.parse()?)?.money();
+    let outstanding: Money = selected.amount.parse()?;
+    if amount > outstanding {
+        return Err(AppError::Input("ยอดชำระต้องไม่เกินหนี้คงค้างของบัตรที่เลือก".into()));
+    }
+    Ok(())
+}
+
+pub fn credit_debt_total(cards: &[CreditCardSummary]) -> Result<Money, DomainError> {
+    cards
+        .iter()
+        .try_fold(Money::ZERO, |sum, card| sum.checked_add(card.outstanding))
 }
 
 /// Derive obligations from the journal, never from a second debt ledger.

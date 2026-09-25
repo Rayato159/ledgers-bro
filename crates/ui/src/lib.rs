@@ -37,5 +37,7 @@ mod currency;
 
 mod navigation;
 
+mod credit_payment;
 mod debt_visuals;
+mod income_tax;
 mod theme;

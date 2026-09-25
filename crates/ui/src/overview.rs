@@ -40,6 +40,7 @@ pub fn Overview(view: Dashboard) -> Element {
             }
         }
         crate::debt_visuals::FinancialPosition { view: view.clone() }
+        crate::debt_visuals::CreditDebtChart { view: view.clone() }
         crate::cashflow::CashflowChart { view: view.clone() }
         crate::receivables::ReceivablesChart { view: view.clone() }
         div { class: "overview-bottom",

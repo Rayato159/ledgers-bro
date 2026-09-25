@@ -123,7 +123,7 @@ pub fn TransactionRows(view: Dashboard, limit: usize, allow_cancel: bool) -> Ele
                     let destination = match entry.kind() { EntryKind::Transfer { to, .. } => format!(" → {}", account_label(&view, *to)), _ => String::new() };
                     rsx! { article { class: if cancelled { "transaction-row cancelled" } else { "transaction-row" }, key: "{id}",
                         span { class: if income { "row-icon incoming" } else { "row-icon" }, ArtIcon { name: icon_name, size: 37 } }
-                        div { class: "transaction-description", strong { "{title}" } small { "{entry.date()} · {crate::i18n::tr(&label)} · {account_name}{destination}" } if note.contains('\n') { details { class: "saved-entry-details", summary { {crate::i18n::text("ดูรายละเอียด", &[])} } div { class: "entry-note-body", "{note}" } } } if cancelled { span { class: "cancel-tag", {crate::i18n::text("ยกเลิกแล้ว", &[])} } } }
+                        div { class: "transaction-description", strong { "{title}" } small { "{entry.date()} · {crate::i18n::tr(&label)} · {account_name}{destination}" } if note.contains('\n') { details { class: "saved-entry-details", summary { {crate::i18n::text("ดูรายละเอียด", &[])} } div { class: "entry-note-body", "{note}" } } } if let Some(tax) = entry.income_tax() { crate::income_tax::IncomeTaxSummary { tax } } if cancelled { span { class: "cancel-tag", {crate::i18n::text("ยกเลิกแล้ว", &[])} } } }
                         strong { class: if income { "entry-amount positive" } else { "entry-amount" }, "{sign}{crate::i18n::currency_prefix()}{money_label(amount)}" }
                         if allow_cancel && !cancelled {
                             if cancelling() == Some(id) {

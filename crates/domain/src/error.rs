@@ -2,6 +2,8 @@ use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum DomainError {
+    #[error("ตรวจประเภทเงินได้และยอดภาษี: เงินได้ก่อนหัก + VAT − หัก ณ ที่จ่าย − รายการหักอื่น ต้องเท่ากับยอดรับจริง")]
+    InvalidIncomeTax,
     #[error("บัตรเครดิตต้องกำหนดวันตัดรอบและวันครบกำหนดชำระเป็นวันที่ 1–31")]
     InvalidCreditCycle,
     #[error("Unsupported ledger currency. Choose THB, USD, EUR, GBP, AUD, CAD, SGD, or CNY.")]

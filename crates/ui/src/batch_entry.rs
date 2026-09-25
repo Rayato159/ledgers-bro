@@ -77,7 +77,7 @@ pub(crate) fn BatchReview(source: String, drafts: Vec<ModelDraft>, view: Dashboa
                         if !draft.guidance.is_empty() { p { class: "field-hint", "{draft.guidance}" } }
                         label { r#for: "batch-kind-{index}", {crate::i18n::text("ชนิดรายการ", &[])} }
                         select { id: "batch-kind-{index}", value: match input.kind { TransactionKind::Expense => "expense", TransactionKind::Income => "income", TransactionKind::Transfer => "transfer" },
-                            onchange: move |event| edit(store, index, |input| { input.kind = match event.value().as_str() { "income" => TransactionKind::Income, "transfer" => TransactionKind::Transfer, _ => TransactionKind::Expense }; input.category = None; input.destination = None; input.recurring = None; }),
+                            onchange: move |event| edit(store, index, |input| { input.kind = match event.value().as_str() { "income" => TransactionKind::Income, "transfer" => TransactionKind::Transfer, _ => TransactionKind::Expense }; input.category = None; input.destination = None; input.recurring = None; input.income_tax = None; }),
                             option { value: "expense", selected: input.kind == TransactionKind::Expense, {crate::i18n::text("รายจ่าย", &[])} } option { value: "income", selected: input.kind == TransactionKind::Income, {crate::i18n::text("รายรับ", &[])} } option { value: "transfer", disabled: input.receipt.is_some(), selected: input.kind == TransactionKind::Transfer, {crate::i18n::text("โอนเงิน", &[])} }
                         }
                         if input.kind == TransactionKind::Expense {
@@ -102,6 +102,9 @@ pub(crate) fn BatchReview(source: String, drafts: Vec<ModelDraft>, view: Dashboa
                                 option { value: "", selected: input.category.is_none(), {crate::i18n::text("เลือกหมวดหมู่", &[])} }
                                 for category in categories { option { value: category.code(), selected: input.category == Some(*category), "{crate::i18n::tr(category.label())}" } }
                             }
+                        }
+                        if input.kind == TransactionKind::Income && view.thai_tax_enabled && view.currency == Currency::Thb {
+                            crate::income_tax::IncomeTaxFields { input: input.clone(), id: "batch-tax-{index}", onchange: move |updated| edit(store, index, |input| *input = updated) }
                         }
                         label { r#for: "batch-date-{index}", {crate::i18n::text("วันที่", &[])} }
                         input { id: "batch-date-{index}", r#type: "date", min: "1900-01-01", max: "{view.today}", value: input.date.clone(), onchange: move |event| edit(store, index, |input| input.date = event.value()) }

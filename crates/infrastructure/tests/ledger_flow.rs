@@ -60,6 +60,7 @@ fn preview(
         note: "test".into(),
         receipt: None,
         recurring: None,
+        income_tax: None,
     };
     match app.execute(Command::Preview(input)).expect("preview") {
         Response::Prepared(prepared) => prepared,
@@ -834,6 +835,7 @@ fn csv_quotes_thai_notes_newlines_and_neutralizes_spreadsheet_formulas() {
         note: "=HYPERLINK(\"example\")\nข้าว,ชา".into(),
         receipt: None,
         recurring: None,
+        income_tax: None,
     };
     let Response::Prepared(prepared) = app.execute(Command::Preview(input)).expect("preview")
     else {

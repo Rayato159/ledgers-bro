@@ -1,6 +1,9 @@
 use crate::components::money_label;
 use dioxus::prelude::*;
-use ledger_application::{TAX_RULE_VERSION, TAX_SOURCES, TaxWorksheet, calculate_tax};
+use ledger_application::{
+    TAX_RULE_VERSION, TAX_SOURCES, TaxWorksheet, annual_tax_income, calculate_tax,
+    tax_worksheet_with_entries,
+};
 
 #[derive(Clone, Default)]
 pub(crate) struct TaxSession {
@@ -42,8 +45,20 @@ fn TaxAmount(label: String, group: u8, index: usize) -> Element {
 #[component]
 pub(crate) fn TaxPage() -> Element {
     let mut session = use_context::<Signal<TaxSession>>();
+    let store = use_context::<crate::state::UiState>();
     let state = session.read().clone();
-    let result = state.submitted.then(|| calculate_tax(&state.worksheet));
+    let automatic = store
+        .view
+        .read()
+        .as_ref()
+        .map(|view| annual_tax_income(view, state.worksheet.year))
+        .unwrap_or_else(|| Ok(Default::default()));
+    let result = state.submitted.then(|| {
+        automatic
+            .clone()
+            .and_then(|automatic| tax_worksheet_with_entries(&state.worksheet, &automatic))
+            .and_then(|worksheet| calculate_tax(&worksheet))
+    });
     rsx! {
         section { class: "page-heading", div { h1 { {crate::i18n::text("คำนวณภาษีบุคคลธรรมดา", &[])} } p { class: "muted", {crate::i18n::text("คำนวณรายปีจากข้อมูลและสิทธิที่ยืนยัน · ยังไม่ได้ยื่นแบบ", &[])} } } }
         div { class: "tax-calculator",
@@ -54,9 +69,22 @@ pub(crate) fn TaxPage() -> Element {
                 label { r#for: "tax-year", {crate::i18n::text("ปีภาษี (ปีที่ได้รับเงิน)", &[])} }
                 select { id: "tax-year", value: state.worksheet.year.to_string(), onchange: move |event| {
                     if let Ok(year) = event.value().parse() { let mut state = session.write(); state.worksheet.year = year; state.worksheet.eligibility_confirmed = false; state.submitted = false; }
-                }, option { value: "2569", {crate::i18n::text("2569 · ประมาณการปีปัจจุบัน", &[])} } option { value: if crate::i18n::english() { "2025" } else { "2568" }, if crate::i18n::english() { "2025" } else { "2568" } } }
+                }, option { value: "2569", {crate::i18n::text("2569 · ประมาณการปีปัจจุบัน", &[])} } option { value: "2568", if crate::i18n::english() { "2025" } else { "2568" } } }
                 p { class: "field-hint", {crate::i18n::text("ทุกช่องเป็นยอดรวมทั้งปี หน่วยบาท กรอก 0 ถ้าไม่มี ข้อมูลค้างไว้ระหว่างเปลี่ยนหน้า แต่ยังไม่บันทึกแบบภาษีเมื่อปิดแอป", &[])} }
-                h2 { {crate::i18n::text("1. เงินได้ก่อนหักภาษี", &[])} }
+                section { class: "tax-auto-summary",
+                    h2 { {crate::i18n::text("รายได้จากรายการที่เลือกไว้", &[])} }
+                    match &automatic {
+                        Ok(auto) => rsx! {
+                            p { {crate::i18n::text("รวมอัตโนมัติ {0} รายการในปีที่เลือก ไม่รวมรายการยกเลิก", &[auto.count.to_string()])} }
+                            dl { for (index, amount) in auto.incomes.iter().enumerate() {
+                                div { dt { "ม.40({index + 1})" } dd { "THB {money_label(*amount)}" } }
+                            } div { dt { {crate::i18n::text("ภาษีหัก ณ ที่จ่าย", &[])} } dd { "THB {money_label(auto.withholding)}" } } }
+                        },
+                        Err(error) => rsx! { p { role: "alert", "{error}" } },
+                    }
+                    p { class: "field-hint", {crate::i18n::text("ยอดจากรายการจะรวมในผลคำนวณให้แล้ว ช่องรายได้และหัก ณ ที่จ่ายด้านล่างให้กรอกเฉพาะยอดเพิ่มเติมที่ยังไม่ได้บันทึก เพื่อไม่ให้นับซ้ำ", &[])} }
+                }
+                h2 { {crate::i18n::text("1. เงินได้เพิ่มเติมที่ยังไม่อยู่ในรายการ", &[])} }
                 p { {crate::i18n::text("ใช้หนังสือ 50 ทวิและหลักฐานรายได้ ไม่ใช้ยอดสุทธิที่โอนเข้าธนาคารแทน และไม่รวม VAT เป็นรายได้", &[])} }
                 TaxAmount { label: crate::i18n::text("ม.40(1) เงินเดือน ค่าจ้าง โบนัส", &[]), group: 0, index: 0 }
                 TaxAmount { label: crate::i18n::text("ม.40(2) ค่ารับทำงาน ค่าธรรมเนียม ค่านายหน้า", &[]), group: 0, index: 1 }
@@ -81,7 +109,7 @@ pub(crate) fn TaxPage() -> Element {
                 for (index, label) in [(0, "เบี้ยประกันชีวิตตนเองที่เข้าเงื่อนไข"), (1, "เบี้ยประกันสุขภาพตนเองที่เข้าเงื่อนไข"), (2, "ประกันสุขภาพบิดามารดา เฉพาะส่วนสิทธิของตน"), (3, "ดอกเบี้ยบ้าน เฉพาะส่วนสิทธิของตน"), (4, "ประกันสังคม ม.33 ของตนเอง ตามจ่ายจริง"), (5, "บริจาคทั่วไปที่มีสิทธิหัก 1 เท่า")] { TaxAmount { label: label.to_owned(), group: 2, index } }
                 p { class: "field-hint", {crate::i18n::text("ประกันชีวิตต้องเข้าเงื่อนไขสัญญา 10 ปีขึ้นไปและแจ้งใช้สิทธิ ประกันสุขภาพไม่เกิน 25,000 บาท รวมประกันชีวิตไม่เกิน 100,000 บาท บริจาคทั่วไปไม่เกิน 10% หลังลดหย่อน; กรณี e-Donation ให้ตรวจหลักฐานของปีที่ใช้สิทธิ", &[])} }
                 h2 { {crate::i18n::text("3. ภาษีที่ชำระไว้แล้ว", &[])} }
-                TaxAmount { label: crate::i18n::text("ภาษีหัก ณ ที่จ่ายของเงินได้ที่นำมารวมครั้งนี้", &[]), group: 2, index: 6 }
+                TaxAmount { label: crate::i18n::text("หัก ณ ที่จ่ายเพิ่มเติมที่ยังไม่อยู่ในรายการ", &[]), group: 2, index: 6 }
                 TaxAmount { label: crate::i18n::text("ภาษีครึ่งปี/ชำระล่วงหน้าที่นำมาเครดิตได้", &[]), group: 2, index: 7 }
                 details { class: "tax-extra", open: true, summary { {crate::i18n::text("ตรวจขอบเขตก่อนคำนวณ", &[])} }
                     p { {crate::i18n::text("รองรับการคำนวณรายปีของบุคคลธรรมดาผู้อยู่ในไทย ยื่นแยกของตนเอง ไม่ใช่ VAT หรือภาษีธุรกิจทุกประเภท", &[])} }
