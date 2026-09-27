@@ -10,7 +10,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Toolchain
-        run: rustup toolchain install stable --profile minimal --component rustfmt,clippy
+        run: |
+          rustup toolchain install 1.95.0 --profile minimal --component rustfmt,clippy
+          rustup override set 1.95.0
       - name: Format
         run: cargo fmt --all -- --check
       - name: Native model tools
