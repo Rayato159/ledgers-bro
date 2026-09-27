@@ -234,15 +234,15 @@ impl ModelWorker {
         match ledger.request(Command::Resolve(source.clone())).await {
             Ok(response) => Ok(response),
             Err(error @ (AppError::Input(_) | AppError::Rule(_))) => {
-                // The model contract describes alternatives for ONE transaction.
-                // Never let failed multi-entry parsing fall back to saving a prefix.
-                if ledger_application::is_prompt_action(&source)
-                    || source.contains(';')
-                    || source.contains("และ")
-                    || source.contains("แล้ว")
-                    || source.contains('\n')
-                    || source.contains("ตามลำดับ")
-                {
+                // Management commands still require the exact command grammar.
+                // Free transaction prose uses the explicit v2 batch contract.
+                if ledger_application::is_prompt_action(&source) {
+                    return Err(error);
+                }
+                let compound = [";", "และ", "แล้ว", "\n", "ตามลำดับ"]
+                    .iter()
+                    .any(|s| source.contains(s));
+                if compound && self.availability().await? != ModelAvailability::Installed {
                     return Err(error);
                 }
                 let Response::Dashboard(view) = ledger.request(Command::Load).await? else {
@@ -252,6 +252,15 @@ impl ModelWorker {
                 ledger_application::check_model_source(&source)?;
                 let output = self.propose(source.clone(), operation.clone()).await?;
                 check_cancel(&operation)?;
+                let is_batch = serde_json::from_str::<serde_json::Value>(&output)
+                    .ok()
+                    .is_some_and(|p| {
+                        p.get("schema_version").and_then(serde_json::Value::as_str) == Some("2")
+                    });
+                // Never accept a legacy alternative list as a multi-entry response.
+                if !is_batch && compound {
+                    return Err(error);
+                }
                 ledger
                     .request(Command::ResolveModel { source, output })
                     .await

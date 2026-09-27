@@ -1140,21 +1140,57 @@ footer { display: flex; justify-content: space-between; align-items: center; gap
 .entry-mode-tabs button { border-radius:0; padding:12px 16px; background:none; border-bottom:3px solid transparent; }
 .entry-mode-tabs button[aria-pressed="true"] { border-bottom-color:var(--accent); color:var(--ink); }
 .chat-workspace { display:grid; gap:18px; }
-.compact-compose { border:1px solid var(--line); background:var(--paper); border-radius:24px; padding:18px; display:flex; flex-direction:column; gap:12px; }
+.compact-compose { align-items:stretch; min-width:0; border:1px solid var(--line); background:var(--paper); border-radius:24px; padding:18px; display:flex; flex-direction:column; gap:12px; }
 .compact-compose textarea { min-height:200px; background:none; border:0; padding:12px; width:100%; resize:vertical; box-shadow:none; }
-.composer-tools { display:flex; align-items:center; gap:8px; flex-wrap:wrap; border-top:1px solid var(--line); padding-top:12px; }
+.composer-tools { display:flex; align-items:center; gap:8px; flex-wrap:wrap; width:100%; min-width:0; border-top:1px solid var(--line); padding-top:12px; }
 .composer-tools > .receipt-upload-inline, .composer-tools > .receipt-upload-button { min-height:44px; width:44px; padding:10px; border-radius:12px; }
-.composer-tools .voice-input { border:0; margin:0; padding:0; }
-.composer-tools .voice-actions { gap:6px; }
+.composer-tools .voice-input { width:auto; min-width:0; max-width:100%; flex:0 1 auto; border:0; margin:0; padding:0; }
+.composer-tools .voice-actions { gap:6px; margin:0; }
 .composer-tools .voice-button { min-width:44px; height:44px; padding:10px; }
 .composer-tools .voice-status { max-width:260px; font-size:var(--text-small); }
-.compact-model { display:flex; align-items:center; flex-wrap:wrap; gap:6px; margin-inline-start:auto; max-width:100%; }
+.model-settings.compact-model { display:flex; align-items:center; flex-wrap:wrap; gap:6px; min-width:0; max-width:100%; margin:0 0 0 auto; padding:0; border:0; border-radius:0; }
 .compact-model select { width:155px; min-height:44px; padding:6px 10px; margin:0; }
 .compact-model .model-settings-actions { margin:0; gap:4px; }
 .compact-model > p { width:100%; font-size:var(--text-small); }
-.compact-compose .composer-send { width:46px; height:44px; padding:10px; border-radius:12px; margin:0; }
+.compact-compose .composer-send { flex:0 0 46px; width:46px; height:44px; padding:10px; border-radius:12px; margin:0; }
 .prompt-examples-dialog, .prompt-review-dialog { width:min(850px,calc(100vw - 32px)); }
 .prompt-review-dialog .entry-editor { padding:0; }
+.account-dialog.prompt-review-dialog { width:min(1120px,calc(100vw - 32px)); max-width:1120px; }
+.prompt-review-dialog .entry-editor { min-height:0; }
+.review-intro { display:grid; gap:8px; margin-bottom:18px; }
+.review-cards { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; margin:20px 0; align-items:stretch; }
+.review-card { display:flex; flex-direction:column; min-width:0; padding:22px; border:1px solid var(--line); border-radius:20px; background:var(--surface); }
+.review-card.is-reviewed { border-color:var(--accent); }
+.review-card:has(.review-editor) { grid-column:1 / -1; }
+.review-card-heading { display:grid; grid-template-columns:32px minmax(0,1fr); gap:12px; align-items:start; }
+.review-number { display:grid; place-items:center; width:32px; height:32px; border-radius:10px; background:var(--raised); font-weight:700; }
+.review-card-title { min-width:0; }
+.review-card-title h3 { font-size:var(--text-body); line-height:1.6; white-space:pre-wrap; overflow-wrap:anywhere; margin-top:4px; }
+.review-amount { grid-column:2; font-size:var(--text-heading); font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+.review-facts { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; margin:20px 0; }
+.review-facts dt { font-size:var(--text-small); color:var(--muted); margin-bottom:4px; }
+.review-facts dd { margin:0; overflow-wrap:anywhere; }
+.review-card-actions { display:flex; justify-content:space-between; align-items:center; gap:16px; flex-wrap:wrap; padding-top:16px; margin-top:16px; border-top:1px solid var(--line); }
+label.review-check { display:flex; align-items:center; gap:10px; margin:0; min-height:44px; cursor:pointer; }
+.review-check input { flex:none; width:22px; height:22px; min-height:22px; margin:0; accent-color:var(--accent); }
+.review-guidance { margin-top:12px; }
+.review-card > .review-card-actions { margin-top:auto; }
+.review-intro .field-hint, .review-footer .field-hint { margin:0; }
+.review-card .field-hint, .review-intro .field-hint, .review-footer .field-hint, .review-facts dt { font-size:max(14px,var(--text-small)); }
+.review-fields { display:grid; grid-template-columns:minmax(140px,1fr) minmax(0,3fr); align-items:center; gap:16px 24px; margin:20px 0 0; padding:20px 0 0; border:0; border-top:1px solid var(--line); min-width:0; }
+.review-fields > label { margin:0; }
+.review-fields > :is(section,fieldset,div) { grid-column:1 / -1; }
+.review-footer { position:sticky; bottom:-28px; display:flex; justify-content:space-between; align-items:center; gap:20px; padding:20px 0; background:var(--paper); border-top:1px solid var(--line); z-index:1; }
+.review-footer .primary { margin-top:0; flex-shrink:0; }
+.review-footer .field-hint { margin-top:6px; }
+@media(max-width:760px) {
+  .review-cards { grid-template-columns:minmax(0,1fr); }
+  .review-card { padding:18px; }
+  .review-fields { grid-template-columns:minmax(0,1fr); gap:10px; }
+  .review-fields > label { margin-top:12px; }
+  .review-footer { bottom:-22px; flex-direction:column; align-items:stretch; gap:12px; }
+  .review-facts { gap:12px; }
+}
 .prompt-review-dialog .batch-item { margin:18px 0; padding:20px; border-radius:18px; background:var(--surface); border:1px solid var(--line); }
 .prompt-review-dialog .section-heading { margin-bottom:20px; }
 .model-library { margin-top:28px; padding-top:22px; border-top:1px solid var(--line); }
@@ -1164,9 +1200,43 @@ footer { display: flex; justify-content: space-between; align-items: center; gap
   .top-actions .add-entry-button > span { display:none; }
   .compact-compose { padding:12px; border-radius:20px; }
   .composer-tools { gap:4px; }
-  .compact-model { order:5; margin-inline-start:0; flex:1; }
+  .model-settings.compact-model { order:5; margin:0; flex:1 0 100%; }
   .compact-model select { flex:1; min-width:120px; }
   .compact-compose .composer-send { margin-inline-start:auto; }
   .notification-actions { flex-wrap:wrap; }
   .prompt-review-dialog .batch-item { padding:14px; }
+}
+
+/* Download feedback owns a separate row; it must not stretch the icon toolbar. */
+.composer-tools > .receipt-upload-inline, .composer-tools > .receipt-upload-button { flex:0 0 44px; margin:0; }
+.model-settings.compact-model[data-downloading="true"] { flex:1 0 100%; order:5; margin:0; padding-top:12px; border-top:1px solid var(--line); }
+.model-download-panel { width:100%; min-width:0; display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:10px 16px; }
+.model-download-panel > .field-hint { grid-column:1 / -1; overflow-wrap:anywhere; }
+.model-download-panel .model-download-progress { margin:0; min-width:0; }
+.model-download-panel .model-download-progress progress { display:block; width:100%; max-width:100%; height:8px; }
+.model-download-panel > button { margin:0; }
+.composer-tools > .composer-send { margin-inline-start:auto; }
+@media(max-width:600px) {
+  .model-download-panel { grid-template-columns:minmax(0,1fr); gap:10px; }
+  .model-download-panel > button { justify-self:start; }
+}
+
+/* Amounts stay in integer minor units; percentages here control bar geometry only. */
+.daily-spending { margin-top:20px; min-width:0; }
+.daily-spending-heading { display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px; margin-bottom:12px; }
+.daily-spending-total { display:grid; text-align:end; overflow-wrap:anywhere; }
+.daily-spending-chart { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:10px; margin:24px 0 12px; }
+.daily-spending-day { display:flex; flex-direction:column; align-items:stretch; gap:5px; min-width:0; padding:8px 4px; border-radius:12px; background:transparent; border:1px solid transparent; }
+.daily-spending-day[aria-pressed="true"] { background:var(--surface); border-color:var(--accent); }
+.daily-spending-track { display:flex; align-items:flex-end; justify-content:center; height:144px; border-bottom:1px solid var(--line); }
+.daily-spending-bar { display:block; width:min(100%,44px); background:var(--accent); border-radius:7px 7px 0 0; }
+.daily-spending-date { font-variant-numeric:tabular-nums; white-space:nowrap; }
+.daily-spending-day small { min-height:1.45em; font-size:var(--text-small); color:var(--muted); }
+.daily-spending-detail { display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between; gap:8px 20px; padding:16px 0; border-top:1px solid var(--line); }
+.daily-spending-detail span { color:var(--muted); }
+@media(max-width:600px) {
+  .daily-spending-chart { gap:3px; }
+  .daily-spending-day { padding:6px 1px; }
+  .daily-spending-date, .daily-spending-day small { font-size:1rem; }
+  .daily-spending-track { height:112px; }
 }

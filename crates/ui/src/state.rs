@@ -157,13 +157,28 @@ impl UiState {
                     "แยกรายการแล้ว ตรวจข้อความต้นฉบับและเติมช่องที่ขาดด้านล่าง ยังไม่มีรายการถูกบันทึก".into(),
                 );
             }
-            QuickResolution::Draft { input, guidance } => {
-                self.input.set(Some(input));
-                self.guidance.set(guidance);
+            QuickResolution::Draft {
+                mut input,
+                guidance,
+            } => {
+                self.input.set(None);
+                self.batch_prepared.set(None);
+                if input.note.trim().is_empty() {
+                    input.note = self.composer.peek().trim().to_owned();
+                }
+                self.batch.set(Some((
+                    self.composer.peek().clone(),
+                    vec![ModelDraft { input, guidance }],
+                )));
             }
             QuickResolution::Choices { source, drafts } => {
                 self.input.set(None);
-                self.model_choices.set(Some((source, drafts)));
+                if drafts.len() == 1 {
+                    self.batch_prepared.set(None);
+                    self.batch.set(Some((source, drafts)));
+                } else {
+                    self.model_choices.set(Some((source, drafts)));
+                }
             }
             QuickResolution::Summary => self.page.set(Page::Overview),
             QuickResolution::Help => self
@@ -403,6 +418,41 @@ impl UiState {
         if let Some(cancel) = self.scan_cancel.peek().as_ref() {
             cancel.store(true, Ordering::Relaxed);
         }
+    }
+    pub(crate) fn commit_reviewed_batch(mut self) {
+        if *self.busy.peek() {
+            return;
+        }
+        let Some((_, drafts)) = self.batch.peek().clone() else {
+            return;
+        };
+        self.busy.set(true);
+        self.notice.set(None);
+        let gateway = self.gateway.peek().clone();
+        let cached = self.batch_prepared.peek().clone();
+        spawn_session(async move {
+            let result = match cached {
+                Some(prepared) => Ok(Response::PreparedBatch(prepared)),
+                None => {
+                    gateway
+                        .0
+                        .request(Command::PreviewBatch(
+                            drafts.into_iter().map(|draft| draft.input).collect(),
+                        ))
+                        .await
+                }
+            };
+            self.busy.set(false);
+            match result {
+                Ok(Response::PreparedBatch(prepared)) => {
+                    // Keep submission IDs on a failed commit, so retry cannot duplicate entries.
+                    self.batch_prepared.set(Some(prepared.clone()));
+                    self.send_confirmed(Command::CommitBatch(prepared));
+                }
+                Err(error) => self.notice.set(Some((true, error.to_string()))),
+                _ => self.notice.set(Some((true, "ตรวจรายการไม่สำเร็จ".into()))),
+            }
+        });
     }
     pub fn send(self, command: Command) {
         let details = match &command {

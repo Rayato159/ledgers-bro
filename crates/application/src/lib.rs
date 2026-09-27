@@ -11,12 +11,14 @@ pub mod model_contract;
 mod model_resolution;
 pub use local_model::*;
 pub use model_resolution::*;
+mod daily_spending;
 mod ports;
 mod quick_entry;
 mod receipt;
 mod receipt_input;
 mod receipt_lines;
 mod report;
+pub use daily_spending::*;
 mod service;
 
 pub use account_deletion::*;

@@ -4,7 +4,7 @@ A local-first personal finance app built with **Rust, Dioxus, and SQLite**, with
 
 ## Download
 
-**[Get version 0.1.7](https://github.com/Rayato159/ledgers-bro/releases/tag/v0.1.7)** or open **More → Settings → App updates** in an existing installation.
+**[Get version 0.1.8](https://github.com/Rayato159/ledgers-bro/releases/tag/v0.1.8)** or open **More → Settings → App updates** in an existing installation.
 
 | Platform | Package |
 | --- | --- |
@@ -30,13 +30,16 @@ Back up in **Settings → Data** before upgrading. Install over the existing app
 - **Notifications:** the bell shows available updates, bills due, and collections due. Opening a notification marks it read and archives it. Settings control reminder types and optional system banners. The last 256 archived notifications are saved per user.
 - **Optional Thai tax tools:** classify taxable income and record withholding and deductions in a THB ledger. These tools do not submit tax returns.
 
-## What's new in 0.1.7
+## What's new in 0.1.8
 
-- Model downloads no longer disappear or cancel when switching tabs. Progress, completion, and errors remain available after returning.
-- The recurring-plan editor lets you choose the effective month and the plan that applies then, instead of trapping the month picker inside an old stopped plan.
-- All pie charts show immediate tooltips and support mouse, keyboard, and touch interaction. Tiny segments no longer show a neighbouring item's value.
+- Quick-entry review uses a wider dialog with detailed cards, review checkboxes and inline edits. Confirm once to record the entire batch. Local Qwen can propose up to eight transactions, with original text retained when a description is missing.
 
-See the [0.1.7 update guide](docs/update-0.1.7.md).
+- The composer toolbar stays aligned at desktop and phone widths. Receipt, microphone, examples, model and send controls no longer stretch into oversized cards.
+- Model-download progress has its own full-width row, with a visible cancel button.
+- Overview shows daily spending for the last seven calendar days, including today and days without expenses. Select a day to inspect its amount and entries.
+- Daily totals use transaction dates and integer minor units; transfers, cancelled entries, opening balances, income and unpaid plans are excluded.
+
+See the [0.1.8 update guide](docs/update-0.1.8.md).
 
 ## Data and current limits
 

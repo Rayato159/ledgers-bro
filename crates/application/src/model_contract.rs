@@ -52,7 +52,22 @@ pub fn validate_proposal(source: &str, output: &str) -> Result<ValidatedProposal
     if source.chars().count() > 1000 || output.len() > 16_384 {
         return Err(invalid());
     }
-    let shape: serde_json::Value = serde_json::from_str(output).map_err(|_| invalid())?;
+    let mut shape: serde_json::Value = serde_json::from_str(output).map_err(|_| invalid())?;
+    // Version 1 candidates are alternative interpretations of ONE transaction.
+    // Version 2 entries are distinct transactions; never reinterpret old candidates.
+    let version = shape
+        .get("schema_version")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("")
+        .to_owned();
+    if version == "2" {
+        let object = shape.as_object_mut().ok_or_else(invalid)?;
+        if object.contains_key("candidates") {
+            return Err(invalid());
+        }
+        let entries = object.remove("entries").ok_or_else(invalid)?;
+        object.insert("candidates".into(), entries);
+    }
     let candidates = shape
         .get("candidates")
         .and_then(serde_json::Value::as_array)
@@ -63,13 +78,20 @@ pub fn validate_proposal(source: &str, output: &str) -> Result<ValidatedProposal
             return Err(invalid());
         }
     }
-    let proposal: ValidatedProposal = serde_json::from_str(output).map_err(|_| invalid())?;
-    if proposal.schema_version != "1" {
+    let proposal: ValidatedProposal = serde_json::from_value(shape).map_err(|_| invalid())?;
+    if !["1", "2"].contains(&proposal.schema_version.as_str()) {
         return Err(invalid());
     }
     match proposal.status {
         ProposalStatus::Unsupported if !proposal.candidates.is_empty() => return Err(invalid()),
-        ProposalStatus::Proposal if !(1..=3).contains(&proposal.candidates.len()) => {
+        ProposalStatus::Proposal
+            if !(1..=if version == "2" {
+                crate::MAX_BATCH_ENTRIES
+            } else {
+                3
+            })
+                .contains(&proposal.candidates.len()) =>
+        {
             return Err(invalid());
         }
         _ => {}
@@ -133,10 +155,16 @@ pub(crate) fn proposal_for_review(
     let mut value: serde_json::Value = serde_json::from_str(output)
         .map_err(|_| AppError::Input("AI อ่านรายการไม่สำเร็จ กรุณาลองใหม่หรือใช้แบบฟอร์ม".into()))?;
     let mut discarded = false;
-    if let Some(candidates) = value
-        .get_mut("candidates")
-        .and_then(serde_json::Value::as_array_mut)
+    let key = if value
+        .get("schema_version")
+        .and_then(serde_json::Value::as_str)
+        == Some("2")
     {
+        "entries"
+    } else {
+        "candidates"
+    };
+    if let Some(candidates) = value.get_mut(key).and_then(serde_json::Value::as_array_mut) {
         for candidate in candidates {
             for field in [
                 "account_text",

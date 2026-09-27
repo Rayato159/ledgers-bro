@@ -1,19 +1,19 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Ledgers Bro quick-entry proposal v1",
+  "title": "Ledgers Bro quick-entry batch proposal v2",
   "description": "Untrusted local LLM proposal. Never a database command or authorization.",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "schema_version",
     "status",
-    "candidates"
+    "entries"
   ],
   "properties": {
     "schema_version": {
       "type": "string",
       "enum": [
-        "1"
+        "2"
       ]
     },
     "status": {
@@ -23,10 +23,10 @@
         "unsupported"
       ]
     },
-    "candidates": {
+    "entries": {
       "type": "array",
       "minItems": 0,
-      "maxItems": 3,
+      "maxItems": 8,
       "items": {
         "$ref": "#/$defs/candidate"
       }

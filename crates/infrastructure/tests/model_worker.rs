@@ -268,3 +268,58 @@ fn deleting_a_catalog_model_keeps_other_models_and_ledger_files() {
     );
     block_on(worker.delete(LocalModelId::Small)).expect("idempotent delete");
 }
+
+#[test]
+fn model_batch_keeps_descriptions_through_atomic_commit_and_retry() {
+    let directory = tempfile::tempdir().expect("synthetic directory");
+    let ledger = LedgerWorker::start(directory.path().join("ledger.sqlite3")).expect("ledger");
+    block_on(ledger.request(Command::CreateAccount {
+        name: "Test cash".into(),
+        kind: ledger_domain::AccountKind::Cash,
+        opening: "1000".into(),
+        credit_cycle: None,
+    }))
+    .expect("account");
+    let Response::Dashboard(before) = block_on(ledger.request(Command::Load)).expect("view") else {
+        unreachable!()
+    };
+    let source = "ซื้อสมุด 80 หมวด อื่นๆ จาก Test cash และซื้อปากกา 20 หมวด อื่นๆ จาก Test cash";
+    let make = |amount: &str, note: Option<&str>| serde_json::json!({"intent":"expense","amount_text":amount,"currency_text":null,"account_text":"Test cash","destination_account_text":null,"category_text":"อื่นๆ","date_text":null,"description_text":note});
+    let output = serde_json::json!({"schema_version":"2","status":"proposal","entries":[make("80",Some("สมุด")),make("20",None)]}).to_string();
+    let Response::Resolved(QuickResolution::Batch { drafts, .. }) =
+        block_on(ledger.request(Command::ResolveModel {
+            source: source.into(),
+            output,
+        }))
+        .expect("model drafts")
+    else {
+        unreachable!()
+    };
+    assert_eq!(drafts.len(), 2);
+    assert_eq!(drafts[0].input.note, "สมุด");
+    assert_eq!(
+        drafts[1].input.note, source,
+        "missing description preserves original words"
+    );
+    let Response::PreparedBatch(prepared) = block_on(ledger.request(Command::PreviewBatch(
+        drafts.into_iter().map(|d| d.input).collect(),
+    )))
+    .expect("preview all") else {
+        unreachable!()
+    };
+    let Response::Dashboard(preview) = block_on(ledger.request(Command::Load)).expect("view")
+    else {
+        unreachable!()
+    };
+    assert_eq!(preview, before, "interpretation and review never write");
+    block_on(ledger.request(Command::CommitBatch(prepared.clone()))).expect("save all");
+    block_on(ledger.request(Command::CommitBatch(prepared))).expect("retry");
+    let Response::Dashboard(after) = block_on(ledger.request(Command::Load)).expect("view") else {
+        unreachable!()
+    };
+    assert_eq!(after.entries.len(), before.entries.len() + 2);
+    assert_eq!(after.expenses.to_string(), "100.00");
+    assert!(after.entries.iter().any(|e| e.note().as_str() == "สมุด"));
+    assert!(after.entries.iter().any(|e| e.note().as_str() == source));
+    assert_eq!(after.accounts[0].balance.to_string(), "900.00");
+}

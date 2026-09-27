@@ -8,6 +8,7 @@ mod batch_entry;
 mod cashflow;
 mod components;
 mod confirmation;
+mod daily_spending;
 mod data_transfer;
 mod entry;
 mod entry_breakdown;

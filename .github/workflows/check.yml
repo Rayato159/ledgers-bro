@@ -15,8 +15,11 @@ jobs:
         run: cargo fmt --all -- --check
       - name: Native model tools
         run: |
-          . ./scripts/with-native-tools.ps1
-          Initialize-LedgerNativeTools
+          $clangDirectory = Join-Path $env:ProgramFiles 'LLVM/bin'
+          if (-not (Test-Path (Join-Path $clangDirectory 'libclang.dll'))) {
+            throw 'The Windows runner must provide LLVM with libclang.dll.'
+          }
+          $env:LIBCLANG_PATH = $clangDirectory
           "LIBCLANG_PATH=$env:LIBCLANG_PATH" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Lint
         run: cargo clippy --workspace --all-targets --locked -- -D warnings

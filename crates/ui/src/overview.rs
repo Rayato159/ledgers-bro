@@ -101,6 +101,7 @@ pub fn Overview(view: Dashboard) -> Element {
                 div { class: "cashflow", span { {crate::i18n::text("รายรับ − รายจ่ายที่บันทึก", &[])} } strong { "{crate::i18n::currency_prefix()}{cashflow}" } }
             }
         }
+        crate::daily_spending::DailySpendingChart { view: view.clone() }
         if has_crypto { div { class: "bottom-market", crate::crypto::CryptoMarketStatus {} } }
         }
         PagePanel { lazy: true, id: "overview", index: 1, selected: tab(),

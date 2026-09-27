@@ -15,8 +15,8 @@ use std::{
 };
 
 static BACKEND: OnceLock<Result<LlamaBackend, AppError>> = OnceLock::new();
-const CONTEXT: u32 = 2048;
-const OUTPUT_TOKENS: usize = 512;
+const CONTEXT: u32 = 4096;
+const OUTPUT_TOKENS: usize = 2048;
 const BATCH: usize = 128;
 
 pub struct LocalModel {

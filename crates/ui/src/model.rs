@@ -174,7 +174,7 @@ pub(crate) fn ModelSettings(
         .map(|s| model_fit(&spec, &s.device, !downloaded))
         .unwrap_or(ModelFit::Unknown);
     rsx! {
-        div { class: if compact { "model-settings compact-model" } else { "model-settings" },
+        div { class: if compact { "model-settings compact-model" } else { "model-settings" }, "data-downloading": operation.read().is_some(),
             if !compact {
             h2 { {crate::i18n::tr("เลือก AI ในเครื่อง")} }
             p { class: "field-hint", {crate::i18n::tr("ข้อความประมวลผลในเครื่อง โมเดลที่เลือกใช้ร่วมกันทุกผู้ใช้บนอุปกรณ์นี้")} }
@@ -205,9 +205,11 @@ pub(crate) fn ModelSettings(
             p { class: "field-hint", {crate::i18n::tr("รุ่นนี้ประมวลผลด้วย CPU โมเดลใหญ่จะช้าลง ค่าหน่วยความจำเป็นการประเมิน ไม่ใช่การรับประกันความเร็วหรือความแม่นยำ")} }
             }
             if let Some(active) = operation.read().clone() {
-                p { class: "field-hint", {crate::i18n::tr("เปลี่ยนแท็บได้ การดาวน์โหลดจะทำงานต่อจนกว่าจะเสร็จหรือกดยกเลิก")} }
-                ModelDownloadProgress { operation: active, total: spec.bytes }
-                button { r#type: "button", class: "soft-button", onclick: move |_| library.cancel(), {crate::i18n::tr("ยกเลิกดาวน์โหลด")} }
+                div { class: "model-download-panel",
+                    p { class: "field-hint", {crate::i18n::tr("เปลี่ยนแท็บได้ การดาวน์โหลดจะทำงานต่อจนกว่าจะเสร็จหรือกดยกเลิก")} }
+                    ModelDownloadProgress { operation: active, total: spec.bytes }
+                    button { r#type: "button", class: "soft-button", onclick: move |_| library.cancel(), {crate::i18n::tr("ยกเลิกดาวน์โหลด")} }
+                }
             } else {
                 div { class: "model-settings-actions",
                     button { r#type: "button", class: if compact { "icon-button" } else { "primary" }, title: crate::i18n::tr(if downloaded { "ตรวจไฟล์และใช้โมเดลนี้" } else { "ดาวน์โหลดและใช้โมเดลนี้" }), disabled: checking() || data.is_none() || fit.blocked() || *capturing.read() || *store.busy.read(), onclick: move |_| confirmation.set(true),
@@ -308,8 +310,9 @@ pub(crate) fn ModelChoices(source: String, drafts: Vec<ModelDraft>, view: Dashbo
                 if !draft.input.note.is_empty() { p { "{draft.input.note}" } }
                 p { class: "field-hint", "{draft.guidance}" }
                 button { r#type: "button", class: "soft-button", disabled: *store.busy.read(), onclick: move |_| {
-                    store.input.set(Some(draft.input.clone()));
-                    store.guidance.set(draft.guidance.clone());
+                    store.input.set(None);
+                    store.batch.set(Some((store.composer.peek().clone(), vec![draft.clone()])));
+                    store.batch_prepared.set(None);
                     store.model_choices.set(None);
                     store.prepared.set(None);
                 }, {crate::i18n::text("เลือกและตรวจรายละเอียด", &[])} }

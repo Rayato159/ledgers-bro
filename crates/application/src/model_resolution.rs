@@ -4,7 +4,7 @@ use crate::{
 };
 use ledger_domain::{Account, Category, EntryDate, PositiveMoney};
 
-/// Conservative v1 scope guard, not a full natural-language classifier.
+/// Conservative scope guard, not a full natural-language classifier.
 /// Unrecognized wording still requires review; rejected input can use the form.
 pub fn check_model_source(source: &str) -> Result<(), AppError> {
     if source.trim().is_empty() || source.chars().count() > 1000 || source.contains("<|") {
@@ -39,9 +39,6 @@ pub fn check_model_source(source: &str) -> Result<(), AppError> {
         "ยกเลิก",
         "ลบรายการ",
         "แก้รายการ",
-        "สองรายการ",
-        "หลายรายการ",
-        "2 รายการ",
         "did not",
         "didn't",
         "do not",
@@ -52,14 +49,15 @@ pub fn check_model_source(source: &str) -> Result<(), AppError> {
     .any(|word| source.contains(word))
     {
         return Err(AppError::Input(
-            "ข้อความมีคำปฏิเสธ สมมติ หรือหลายรายการ กรุณาระบุรายการที่เกิดขึ้นจริงทีละรายการ หรือใช้แบบฟอร์ม".into(),
+            "ข้อความมีคำปฏิเสธหรือสมมติ กรุณาระบุรายการที่เกิดขึ้นจริง หรือใช้แบบฟอร์ม".into(),
         ));
     }
     Ok(())
 }
 
 /// Grounding is necessary, not proof of semantic correctness. Every model result
-/// is an uncommitted choice, even when only one interpretation is returned.
+/// is an uncommitted draft. Version 1 choices remain alternatives; version 2
+/// entries form a batch that the user must review before any write.
 pub fn resolve_model_proposal(
     source: &str,
     output: &str,
@@ -68,6 +66,20 @@ pub fn resolve_model_proposal(
 ) -> Result<QuickResolution, AppError> {
     check_model_source(source)?;
     let (proposal, discarded) = proposal_for_review(source, output)?;
+    let batch = proposal.schema_version == "2";
+    if (!batch
+        && ["สองรายการ", "หลายรายการ", "2 รายการ"]
+            .iter()
+            .any(|word| source.contains(word)))
+        || (batch
+            && ["หรือ", " or ", "ไม่ใช่"]
+                .iter()
+                .any(|word| source.to_lowercase().contains(word)))
+    {
+        return Err(AppError::Input(
+            "ข้อความมีหลายความหมาย กรุณาระบุรายการและยอดที่ต้องการให้ชัดก่อนตรวจ".into(),
+        ));
+    }
     let unsupported = || {
         AppError::Input(
             "รายการนี้ยังตีความอัตโนมัติไม่ได้ กรุณาแยกเป็นรายการเดียวแล้วใช้แบบฟอร์ม ยังไม่ได้บันทึก".into(),
@@ -102,7 +114,7 @@ pub fn resolve_model_proposal(
             ProposedIntent::Transfer => TransactionKind::Transfer,
             ProposedIntent::Summary => return Err(unsupported()),
         };
-        let mut guidance = vec!["AI เสนอรายการนี้ ตรวจเทียบข้อความเดิมก่อนเลือก ยังไม่ได้บันทึก".to_owned()];
+        let mut guidance = vec!["AI เสนอรายการนี้ ตรวจเทียบข้อความเดิมก่อนยืนยัน ยังไม่ได้บันทึก".to_owned()];
         if discarded {
             guidance.push("AI เสนอชื่อหรือรายละเอียดที่ไม่ตรงข้อความเดิม จึงเว้นไว้ให้เลือกและกรอกเอง".into());
         }
@@ -205,17 +217,28 @@ pub fn resolve_model_proposal(
         } else {
             guidance.push("วันที่ตั้งต้นเป็นวันนี้ ตรวจว่าเป็นวันที่ทำรายการจริง".into());
         }
-        input.note = candidate.description_text.unwrap_or_default();
+        // Preserve the user's wording even when a model omits or paraphrases
+        // the description. A discarded model label must never erase context.
+        input.note = candidate
+            .description_text
+            .unwrap_or_else(|| source.trim().to_owned());
         let draft = ModelDraft {
             input,
             guidance: guidance.join(" · "),
         };
-        if !drafts.contains(&draft) {
+        if batch || !drafts.contains(&draft) {
             drafts.push(draft);
         }
     }
-    Ok(QuickResolution::Choices {
-        source: source.to_owned(),
-        drafts,
-    })
+    if batch {
+        Ok(QuickResolution::Batch {
+            source: source.to_owned(),
+            drafts,
+        })
+    } else {
+        Ok(QuickResolution::Choices {
+            source: source.to_owned(),
+            drafts,
+        })
+    }
 }
