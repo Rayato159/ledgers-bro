@@ -54,7 +54,7 @@ impl UiGateway for EditGateway {
         Box::pin(async { Err(AppError::WorkerStopped) })
     }
 }
-fn fixture() -> LedgerState {
+pub(super) fn fixture() -> LedgerState {
     let bank = BANK.parse().expect("id");
     let make = |id: &str, start: &str| {
         RecurringExpense::new(
@@ -83,6 +83,12 @@ fn fixture() -> LedgerState {
     }
 }
 fn harness() -> Element {
+    editor_harness(OLD, "2026-09")
+}
+fn selected_plan_harness() -> Element {
+    editor_harness(NEXT, "2026-10")
+}
+fn editor_harness(opened_id: &str, effective: &str) -> Element {
     let mut store = crate::state::tests::use_test_state();
     use_context_provider(|| store);
     let initial = use_context::<Dashboard>();
@@ -94,11 +100,11 @@ fn harness() -> Element {
     let old = view
         .recurring
         .iter()
-        .find(|s| s.id().to_string() == OLD)
+        .find(|s| s.id().to_string() == opened_id)
         .expect("old")
         .clone();
     rsx! {
-        if open() { EditRecurringDialog { schedule: old, effective: "2026-09".parse::<Month>().expect("month"), view, onclose: move |_| open.set(false) } }
+        if open() { EditRecurringDialog { schedule: old, effective: effective.parse::<Month>().expect("month"), view, onclose: move |_| open.set(false) } }
         crate::confirmation::ConfirmationAlert {}
     }
 }
@@ -222,4 +228,98 @@ async fn change_month_select_future_plan_cancel_then_confirm_preserves_old_terms
         assert_eq!(monthly.items[0].schedule.due().day(), day, "{period}");
         assert_eq!(monthly.planned.to_string(), "12200.00");
     }
+}
+
+// Select.value may be applied before its options exist in the native WebView.
+// Explicit option selection must agree with the form and the submitted plan.
+#[tokio::test(flavor = "current_thread")]
+async fn opening_nonfirst_plan_keeps_selection_fields_and_saved_target_together() {
+    set_event_converter(Box::new(dioxus::html::SerializedHtmlEventConverter));
+    let mut data = fixture();
+    let other = RecurringExpense::new(
+        "00000000-0000-0000-0000-000000000005".parse().expect("id"),
+        AccountName::new("Different synthetic subscription").expect("name"),
+        PositiveMoney::new("7".parse().expect("money")).expect("amount"),
+        Category::OtherExpense,
+        Some(BANK.parse().expect("bank")),
+        MonthlyDue::new(3, "2026-10".parse().expect("month")).expect("due"),
+    )
+    .expect("plan");
+    data.recurring.insert(1, other.clone());
+    let state = Arc::new(Mutex::new(data.clone()));
+    let mut dom = VirtualDom::new(selected_plan_harness);
+    dom.insert_any_root_context(Box::new(
+        dashboard(data, "2026-09-26".parse().expect("date")).expect("view"),
+    ));
+    dom.insert_any_root_context(Box::new(Gateway(Arc::new(EditGateway(state.clone())))));
+    let changes = dom.rebuild_to_vec();
+    let fields = ids(&changes);
+    let selected_values = |html: String| {
+        let select = html
+            .split_once("id=\"edit-rec-plan\"")
+            .expect("select")
+            .1
+            .split_once("</select>")
+            .expect("end")
+            .0;
+        select
+            .split("<option")
+            .skip(1)
+            .filter_map(|option| {
+                let attributes = option.split_once('>')?.0;
+                if !attributes.contains(" selected") {
+                    return None;
+                }
+                Some(
+                    attributes
+                        .split_once("value=\"")?
+                        .1
+                        .split('"')
+                        .next()?
+                        .to_string(),
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(selected_values(dioxus_ssr::render(&dom)), vec![NEXT]);
+    form_event(&mut dom, listener(&changes, "input"), "input", "2026-09");
+    assert_eq!(selected_values(dioxus_ssr::render(&dom)), vec![""]);
+    form_event(&mut dom, listener(&changes, "input"), "input", "2026-10");
+    assert_eq!(selected_values(dioxus_ssr::render(&dom)), vec![NEXT]);
+    form_event(
+        &mut dom,
+        listener(&changes, "change"),
+        "change",
+        &other.id().to_string(),
+    );
+    assert_eq!(
+        selected_values(dioxus_ssr::render(&dom)),
+        vec![other.id().to_string()]
+    );
+    assert!(dioxus_ssr::render(&dom).contains("value=\"7.00\""));
+    form_event(&mut dom, listener(&changes, "change"), "change", NEXT);
+    assert!(dioxus_ssr::render(&dom).contains("value=\"12200.00\""));
+    form_event(&mut dom, fields["edit-rec-day"], "input", "28");
+    let prompt = form_event(&mut dom, listener(&changes, "submit"), "submit", "");
+    click(&mut dom, listener(&prompt, "click"));
+    tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            dom.wait_for_work().await;
+            dom.render_immediate(&mut dioxus::dioxus_core::NoOpMutations);
+            if !dioxus_ssr::render(&dom).contains("id=\"rec-edit-dialog\"") {
+                break;
+            }
+        }
+    })
+    .await
+    .expect("save refresh");
+    let saved = state.lock().expect("state");
+    assert!(
+        saved.recurring.contains(&other),
+        "unselected plan must be unchanged"
+    );
+    let revised = saved.recurring.last().expect("replacement");
+    assert_eq!(revised.name().as_str(), "Synthetic rent");
+    assert_eq!(revised.due().day(), 28);
+    assert_eq!(revised.amount().money().to_string(), "12200.00");
 }

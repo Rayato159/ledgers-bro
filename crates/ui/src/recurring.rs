@@ -7,6 +7,8 @@ use ledger_domain::*;
 #[path = "recurring_tests.rs"]
 mod tests;
 
+mod timeline;
+
 fn empty_form(month: Month) -> RecurringInput {
     RecurringInput {
         installments: None,
@@ -31,6 +33,7 @@ pub(crate) fn RecurringPage(view: Dashboard) -> Element {
     let default_start = default_recurring_month(view.today, 1).unwrap_or(current);
     let mut show_form = use_signal(|| false);
     let mut filter = use_signal(|| 0_u8);
+    let mut timeline_view = use_signal(|| true);
     let mut form = use_signal(|| empty_form(default_start));
     let mut paying = use_signal(|| None::<(RecurringExpense, Month)>);
     let mut stopping = use_signal(|| None::<RecurringExpense>);
@@ -155,8 +158,17 @@ pub(crate) fn RecurringPage(view: Dashboard) -> Element {
                     button { r#type: "button", "aria-pressed": filter() == value, onclick: move |_| filter.set(value), "{crate::i18n::tr(label)}" }
                 }
             }
+            div { class: "bill-view-options", role: "group", "aria-label": crate::i18n::tr("รูปแบบการแสดงบิล"),
+                for (value, label) in [(true, "เส้นเวลา"), (false, "รายการ")] {
+                    button { r#type: "button", "aria-pressed": timeline_view() == value, onclick: move |_| timeline_view.set(value), {crate::i18n::tr(label)} }
+                }
+            }
             if summary.items.is_empty() { p { class: "muted", {crate::i18n::text("ยังไม่มีรายจ่ายประจำในเดือนนี้ เพิ่มแผนเพื่อดูวันครบกำหนดและยอดรวม", &[])} } }
             else if visible_items.is_empty() { p { class: "muted", {crate::i18n::text("ไม่มีรายการในสถานะนี้", &[])} } }
+            if timeline_view() {
+                timeline::BillTimeline { month: month(), view: view.clone(), items: visible_items.iter().map(|item| (*item).clone()).collect(),
+                    onselect: move |schedule| inspecting.set(Some((schedule, month()))) }
+            } else {
             for item in visible_items {
                 { let schedule = item.schedule.clone(); let for_details = schedule.clone(); let for_edit = schedule.clone(); let for_pay = schedule.clone(); let period = month(); let unpaid = item.paid_entry.is_none(); let edit_icon = if unpaid { "edit" } else { "list" };
                   rsx! {
@@ -188,6 +200,7 @@ pub(crate) fn RecurringPage(view: Dashboard) -> Element {
                   }
                 }
             }
+            }
         }
         }
         PagePanel { lazy: true, id: "recurring", index: 2, selected: tab(),
@@ -201,7 +214,8 @@ pub(crate) fn RecurringPage(view: Dashboard) -> Element {
                     div { h3 { "{schedule.name().as_str()}" }
                         if let Some(count) = schedule.due().installments() {
                             progress { class: "installment-progress", max: "{count}", value: "{p.paid}", "aria-label": crate::i18n::text("ความคืบหน้าการชำระ", &[]) }
-                        } else { div { class: "open-ended-plan", Icon { name: "calendar", size: 18 } {crate::i18n::text("ต่อเนื่องทุกเดือน", &[])} } }
+                        } else { div { class: "open-ended-plan", Icon { name: "calendar", size: 18 } {crate::i18n::text("ต่อเนื่องทุกเดือน · ทุกวันที่ {0} ของเดือน", &[schedule.due().day().to_string()])} } }
+                        if schedule.due().installments().is_some() { p { {crate::i18n::text("ทุกวันที่ {0} ของเดือน", &[schedule.due().day().to_string()])} } }
                         if let Some(remaining) = p.remaining { p { {crate::i18n::text("จ่ายแล้ว {0}/{1} งวด · เหลือ {2} งวด", &[format!("{}", p.paid), format!("{}", schedule.due().installments().unwrap_or(0)), format!("{}", remaining)])} } }
                         else { p { {crate::i18n::text("ไม่กำหนดจำนวนงวด · จ่ายแล้ว {0} งวด", &[format!("{}", p.paid)])} } }
                     }
@@ -566,8 +580,8 @@ fn EditRecurringDialog(
                                     store.notice.set(None);
                                 }
                             },
-                            option { value: "", disabled: true, {crate::i18n::tr("เลือกแผนของงวดนี้")} }
-                            for schedule in &eligible { option { value: schedule.id().to_string(),
+                            option { value: "", disabled: true, selected: !in_plan, {crate::i18n::tr("เลือกแผนของงวดนี้")} }
+                            for schedule in &eligible { option { key: "{schedule.id()}", value: schedule.id().to_string(), selected: in_plan && schedule.id() == selected().id(),
                                 "{schedule.name().as_str()} · {crate::i18n::currency_prefix()}{money_label(schedule.amount().money())} · {schedule.due().start()}"
                             } }
                         }

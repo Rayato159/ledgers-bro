@@ -4,7 +4,7 @@ A local-first personal finance app built with **Rust, Dioxus, and SQLite**, with
 
 ## Download
 
-**[Get version 0.1.8](https://github.com/Rayato159/ledgers-bro/releases/tag/v0.1.8)** or open **More → Settings → App updates** in an existing installation.
+**[Get version 0.1.9](https://github.com/Rayato159/ledgers-bro/releases/tag/v0.1.9)** or open **More → Settings → App updates** in an existing installation.
 
 | Platform | Package |
 | --- | --- |
@@ -30,16 +30,15 @@ Back up in **Settings → Data** before upgrading. Install over the existing app
 - **Notifications:** the bell shows available updates, bills due, and collections due. Opening a notification marks it read and archives it. Settings control reminder types and optional system banners. The last 256 archived notifications are saved per user.
 - **Optional Thai tax tools:** classify taxable income and record withholding and deductions in a THB ledger. These tools do not submit tax returns.
 
-## What's new in 0.1.8
+## What's new in 0.1.9
 
-- Quick-entry review uses a wider dialog with detailed cards, review checkboxes and inline edits. Confirm once to record the entire batch. Local Qwen can propose up to eight transactions, with original text retained when a description is missing.
+- Monthly bills now have a timeline with recorded, unpaid and overdue statuses, a current-day marker, filters and clickable bill details. Switch to the list view when needed.
 
-- The composer toolbar stays aligned at desktop and phone widths. Receipt, microphone, examples, model and send controls no longer stretch into oversized cards.
-- Model-download progress has its own full-width row, with a visible cancel button.
-- Overview shows daily spending for the last seven calendar days, including today and days without expenses. Select a day to inspect its amount and entries.
-- Daily totals use transaction dates and integer minor units; transfers, cancelled entries, opening balances, income and unpaid plans are excluded.
+- The quick-entry model selector sits beside the tools on the left; the send button remains on the right. Narrow screens keep the model on a separate left-aligned row.
+- App updates use consistent card padding, compact action buttons, and a themed progress bar. Download and cancel controls stay clear of the card edges.
+- Recurring plan summaries show the monthly payment day, and the edit dialog keeps the selected plan aligned with its fields.
 
-See the [0.1.8 update guide](docs/update-0.1.8.md).
+See the [0.1.9 update guide](docs/update-0.1.9.md).
 
 ## Data and current limits
 

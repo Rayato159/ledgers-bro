@@ -97,7 +97,7 @@ pub fn UpdateSettings() -> Element {
     let working = *store.busy.read() || (updates.checking)();
     rsx! {
         h2 { class: "preferences-section-title", {tr("อัปเดตแอป")} }
-        section { class: "settings-group",
+        section { class: "settings-group update-settings",
             div { class: "setting-row", div { class: "setting-copy", h3 { "Ledgers Bro" } p { {tr("รุ่นปัจจุบัน")} ": " {updates.checked.read().as_ref().map(|c| c.current.clone()).unwrap_or_else(|| env!("CARGO_PKG_VERSION").into())} } }
                 if supported { button { class: "soft-button", disabled: working, onclick: move |_| updates.check(store), Icon { name: "refresh", size: 18 } {tr(if (updates.checking)() { "กำลังตรวจอัปเดต…" } else { "ตรวจอัปเดต" })} } }
             }
