@@ -423,7 +423,7 @@ footer { display: flex; justify-content: space-between; align-items: center; gap
 .bill-timeline-scroll { max-height: 440px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
 .bill-timeline-axis, .bill-timeline-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 20px; align-items: stretch; width: 100%; }
 .bill-timeline-axis { position: sticky; top: 0; z-index: 2; min-height: 64px; padding: 10px 8px 0; background: var(--paper); color: var(--muted); font-size: var(--text-small); border-bottom: 1px solid var(--line); }
-.bill-timeline-track { position: relative; display: block; min-width: 0; }
+.bill-timeline-track { position: relative; display: block; min-width: 0; margin-inline: 12px; }
 .bill-axis-day { position: absolute; transform: translateX(-50%); top: 0; font-variant-numeric: tabular-nums; }
 .bill-today-label { position: absolute; transform: translateX(-50%); top: 28px; color: var(--ink); font-weight: 700; white-space: nowrap; }
 .bill-timeline-row { background: transparent; text-align: start; padding: 0 8px; border-bottom: 1px solid var(--line); border-radius: 8px; min-height: 96px; }

@@ -159,7 +159,7 @@ pub(crate) fn RecurringPage(view: Dashboard) -> Element {
                 }
             }
             div { class: "bill-view-options", role: "group", "aria-label": crate::i18n::tr("รูปแบบการแสดงบิล"),
-                for (value, label) in [(true, "เส้นเวลา"), (false, "รายการ")] {
+                for (value, label) in [(true, "เส้นเวลา"), (false, "รายการบิล")] {
                     button { r#type: "button", "aria-pressed": timeline_view() == value, onclick: move |_| timeline_view.set(value), {crate::i18n::tr(label)} }
                 }
             }
