@@ -1,4 +1,5 @@
 &[
+    ("{0} รายการ", "{0} entries"),
     ("ย้ายเดือนเริ่มแผน", "Move plan start month"),
     ("วิธีแก้ไขแผน", "Edit mode"),
     ("แก้เงื่อนไขตั้งแต่งวดที่เลือก", "Change terms from selected month"),
