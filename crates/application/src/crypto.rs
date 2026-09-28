@@ -70,20 +70,65 @@ pub fn crypto_valuation(
     prices: Option<CryptoPrices>,
     now: i64,
 ) -> Result<CryptoValuation, DomainError> {
+    value_crypto_accounts(
+        &view.accounts,
+        view.currency,
+        prices,
+        now,
+        view.assets,
+        view.liabilities,
+    )
+}
+
+/// Account-page totals exclude receivables and unpaid plans. Positive card
+/// balances are overpayments, so count as assets rather than negative debt.
+pub fn account_valuation(
+    accounts: &[crate::AccountBalance],
+    currency: Currency,
+    prices: Option<CryptoPrices>,
+    now: i64,
+) -> Result<CryptoValuation, DomainError> {
+    let (assets, liabilities) =
+        accounts
+            .iter()
+            .fold((0_i128, 0_i128), |(assets, liabilities), item| {
+                let balance = i128::from(item.balance.minor());
+                (assets + balance.max(0), liabilities + (-balance).max(0))
+            });
+    let money =
+        |value| Money::from_minor(i64::try_from(value).map_err(|_| DomainError::MoneyOverflow)?);
+    value_crypto_accounts(
+        accounts,
+        currency,
+        prices,
+        now,
+        money(assets)?,
+        money(liabilities)?,
+    )
+}
+
+fn value_crypto_accounts(
+    accounts: &[crate::AccountBalance],
+    currency: Currency,
+    prices: Option<CryptoPrices>,
+    now: i64,
+    assets: Money,
+    liabilities: Money,
+) -> Result<CryptoValuation, DomainError> {
     let mut result = CryptoValuation {
-        assets: view.assets,
-        liabilities: view.liabilities,
-        net_worth: view.net_worth,
+        assets,
+        liabilities,
+        net_worth: Money::ZERO,
         crypto_value: Money::ZERO,
         unpriced_portfolios: 0,
         portfolios: 0,
     };
     let prices = prices.and_then(|p| p.validate_at(now).ok());
-    for item in &view.accounts {
+    for item in accounts {
         let Some(holdings) = item.account.crypto_holdings() else {
             continue;
         };
-        if view.currency != Currency::Thb {
+        if currency != Currency::Thb {
             return Err(DomainError::InvalidCurrency);
         }
         result.portfolios += 1;

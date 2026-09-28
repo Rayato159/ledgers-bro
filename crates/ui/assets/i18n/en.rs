@@ -1,4 +1,9 @@
 &[
+    ("รวมทุกบัญชี", "All accounts"),
+    ("สินทรัพย์ในบัญชี", "Account assets"),
+    ("หนี้ในบัญชี", "Account liabilities"),
+    ("ยอดสุทธิทุกบัญชี", "Net account total"),
+    ("รวมเฉพาะบัญชีที่แสดง ไม่รวมยอดลูกหนี้และแผนรายจ่ายที่ยังไม่บันทึกจ่าย", "Totals cover the accounts shown. Receivables and unpaid recurring plans are excluded."),
     ("{0} รายการ", "{0} entries"),
     ("ย้ายเดือนเริ่มแผน", "Move plan start month"),
     ("วิธีแก้ไขแผน", "Edit mode"),

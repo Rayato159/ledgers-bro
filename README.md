@@ -4,7 +4,7 @@ A local-first personal finance app built with **Rust, Dioxus, and SQLite**, with
 
 ## Download
 
-**[Get version 0.1.10](https://github.com/Rayato159/ledgers-bro/releases/tag/v0.1.10)** or open **More → Settings → App updates** in an existing installation.
+**[Get version 0.1.11](https://github.com/Rayato159/ledgers-bro/releases/tag/v0.1.11)** or open **More → Settings → App updates** in an existing installation.
 
 | Platform | Package |
 | --- | --- |
@@ -30,14 +30,13 @@ Back up in **Settings → Data** before upgrading. Install over the existing app
 - **Notifications:** the bell shows available updates, bills due, and collections due. Opening a notification marks it read and archives it. Settings control reminder types and optional system banners. The last 256 archived notifications are saved per user.
 - **Optional Thai tax tools:** classify taxable income and record withholding and deductions in a THB ledger. These tools do not submit tax returns.
 
-## What's new in 0.1.10
+## What's new in 0.1.11
 
-- The seven-day spending card has consistent inner padding, space around the chart and a clearer selected-day summary.
-- Compact date labels keep all seven columns readable on narrow screens. Tap or hover a day for its full date and amount.
-- Daily totals, excluded transfers/cancellations and transaction details use the same calculations as before.
-- The recurring editor separates changing future terms from moving an unpaid plan to another month, with confirmation, automatic refresh and checks against payment history or overlapping plans.
+- Accounts opens with **All accounts**, showing every account type together.
+- Summary cards show account assets, liabilities and the net total, with crypto valuation and clear notices when prices are unavailable.
+- Category tabs and card billing remain available. The view adapts to narrow screens and both interface languages.
 
-See the [0.1.10 update guide](docs/update-0.1.10.md).
+See the [0.1.11 update guide](docs/update-0.1.11.md).
 
 ## Data and current limits
 

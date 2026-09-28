@@ -10,11 +10,12 @@ pub fn AccountsPage(view: Dashboard) -> Element {
     rsx! {
         section { class: "page-heading", div { h1 { {crate::i18n::text("บัญชีของเรา", &[])} } p { class: "muted", {crate::i18n::text("{0} / 100 บัญชี · มูลค่ารวมแสดงเป็นเงินบาท", &[format!("{}", view.accounts.len())])} } } button { class: "primary", disabled: view.accounts.len() >= 100 || *store.busy.read(), onclick: move |_| store.account_form.set(true), Icon { name: "plus", size: 17 } {crate::i18n::text("เพิ่มบัญชี", &[])} } }
         if view.accounts.is_empty() { div { class: "card", EmptyState { title: crate::i18n::text("เริ่มจากกระเป๋าใบแรก", &[]).to_owned(), body: crate::i18n::text("เพิ่มเงินสดหรือธนาคาร แล้วใส่ยอดที่มีอยู่ตอนนี้ ยอดเริ่มต้นจะไม่นับเป็นรายรับ", &[]).to_owned() } } }
-        PageTabs { id: "accounts", tabs: vec![("wallet", "เงินสดและธนาคาร"), ("file", "บัญชีบัตรเครดิต"), ("up", "พอร์ตลงทุน"), ("calendar", "รอบบิลและการชำระ")], selected: tab }
-        for group in 0..3 {
+        PageTabs { id: "accounts", tabs: vec![("list", "รวมทุกบัญชี"), ("wallet", "เงินสดและธนาคาร"), ("file", "บัญชีบัตรเครดิต"), ("up", "พอร์ตลงทุน"), ("calendar", "รอบบิลและการชำระ")], selected: tab }
+        for group in 0..4 {
         PagePanel { lazy: true, id: "accounts", index: group, selected: tab(),
+        if group == 0 { AllAccountsSummary { accounts: view.accounts.clone(), currency: view.currency } }
         div { class: "account-grid",
-            for item in view.accounts.iter().filter(|a| match group { 0 => matches!(a.account.kind(), AccountKind::Cash | AccountKind::Bank), 1 => a.account.kind() == AccountKind::CreditCard, _ => matches!(a.account.kind(), AccountKind::Crypto | AccountKind::Investment) }) {
+            for item in view.accounts.iter().filter(|a| match group { 0 => true, 1 => matches!(a.account.kind(), AccountKind::Cash | AccountKind::Bank), 2 => a.account.kind() == AccountKind::CreditCard, _ => matches!(a.account.kind(), AccountKind::Crypto | AccountKind::Investment) }) {
                 if item.account.kind() == AccountKind::Crypto {
                     crate::crypto::CryptoAccountCard { key: "{item.account.id()}", account: item.account.clone(), book_balance: item.balance }
                 } else {
@@ -37,13 +38,50 @@ pub fn AccountsPage(view: Dashboard) -> Element {
                 }
             }
         }
-        if !view.accounts.iter().any(|a| match group { 0 => matches!(a.account.kind(), AccountKind::Cash | AccountKind::Bank), 1 => a.account.kind() == AccountKind::CreditCard, _ => matches!(a.account.kind(), AccountKind::Crypto | AccountKind::Investment) }) { p { class: "muted", {crate::i18n::tr("ยังไม่มีบัญชีในหมวดนี้")} } }
-        if group == 2 {
+        if group > 0 && !view.accounts.iter().any(|a| match group { 1 => matches!(a.account.kind(), AccountKind::Cash | AccountKind::Bank), 2 => a.account.kind() == AccountKind::CreditCard, _ => matches!(a.account.kind(), AccountKind::Crypto | AccountKind::Investment) }) { p { class: "muted", {crate::i18n::tr("ยังไม่มีบัญชีในหมวดนี้")} } }
+        if group == 0 || group == 3 {
             if view.accounts.iter().any(|a| a.account.kind() == AccountKind::Crypto) { div { class: "bottom-market", crate::crypto::CryptoMarketStatus {} } }
+        }
+        if group == 3 {
             div { class: "inline-note", Icon { name: "file", size: 19 } p { {crate::i18n::tr("พอร์ตหุ้นยังใช้มูลค่าที่บันทึกด้วยมือ ส่วนคริปโตใช้จำนวนเหรียญและราคาตลาด ไม่มีการส่งคำสั่งซื้อขาย")} } }
         }
         } }
-        PagePanel { lazy: true, id: "accounts", index: 3, selected: tab(), crate::debt_visuals::CreditCardsPanel { view: view.clone() } }
+        PagePanel { lazy: true, id: "accounts", index: 4, selected: tab(), crate::debt_visuals::CreditCardsPanel { view: view.clone() } }
+    }
+}
+
+#[component]
+fn AllAccountsSummary(
+    accounts: Vec<ledger_application::AccountBalance>,
+    currency: Currency,
+) -> Element {
+    let market = use_context::<crate::crypto::CryptoMarket>();
+    let valuation = ledger_application::account_valuation(
+        &accounts,
+        currency,
+        (market.prices)(),
+        (market.now)(),
+    );
+    rsx! {
+        section { class: "all-accounts-summary", "aria-label": crate::i18n::tr("รวมทุกบัญชี"),
+            div { class: "account-totals",
+                for (key, label, amount) in [
+                    ("assets", "สินทรัพย์ในบัญชี", valuation.as_ref().ok().map(|v| v.assets)),
+                    ("liabilities", "หนี้ในบัญชี", valuation.as_ref().ok().map(|v| v.liabilities)),
+                    ("net", "ยอดสุทธิทุกบัญชี", valuation.as_ref().ok().map(|v| v.net_worth)),
+                ] {
+                    div { class: "card account-total", "data-total": key,
+                        span { {crate::i18n::tr(label)} }
+                        strong { if let Some(amount) = amount { "{crate::i18n::currency_prefix()}{money_label(amount)}" } else { "—" } }
+                    }
+                }
+            }
+            p { class: "field-hint", {crate::i18n::tr("รวมเฉพาะบัญชีที่แสดง ไม่รวมยอดลูกหนี้และแผนรายจ่ายที่ยังไม่บันทึกจ่าย")} }
+            if valuation.as_ref().is_ok_and(|v| v.unpriced_portfolios > 0) {
+                p { class: "notice error", role: "status", {crate::i18n::tr("ยอดภาพรวมยังไม่ครบ: ยังไม่รวมพอร์ตที่ไม่มีราคา กรุณาอัปเดตราคาตลาด")} }
+            }
+            if valuation.is_err() { p { class: "notice error", role: "alert", {crate::i18n::tr("มูลค่าเกินขอบเขตที่คำนวณได้")} } }
+        }
     }
 }
 
