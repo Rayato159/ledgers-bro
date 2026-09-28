@@ -1268,9 +1268,13 @@ label.review-check { display:flex; align-items:center; gap:10px; margin:0; min-h
 }
 
 /* Amounts stay in integer minor units; percentages here control bar geometry only. */
-.daily-spending { margin-top:20px; min-width:0; }
-.daily-spending-heading { display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px; margin-bottom:12px; }
-.daily-spending-total { display:grid; text-align:end; overflow-wrap:anywhere; }
+.daily-spending { margin-top:20px; min-width:0; padding:24px; }
+.daily-spending-heading { display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:16px 24px; margin-bottom:16px; }
+.daily-spending-heading > div { min-width:0; }
+.daily-spending-heading .field-hint { margin:6px 0 0; }
+.daily-spending-total { display:grid; gap:4px; text-align:end; overflow-wrap:anywhere; margin-inline-start:auto; }
+.daily-spending-total strong { font-size:var(--text-title); font-variant-numeric:tabular-nums; }
+.daily-spending > .field-hint { margin:0; }
 .daily-spending-chart { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:10px; margin:24px 0 12px; }
 .daily-spending-day { display:flex; flex-direction:column; align-items:stretch; gap:5px; min-width:0; padding:8px 4px; border-radius:12px; background:transparent; border:1px solid transparent; }
 .daily-spending-day[aria-pressed="true"] { background:var(--surface); border-color:var(--accent); }
@@ -1278,11 +1282,18 @@ label.review-check { display:flex; align-items:center; gap:10px; margin:0; min-h
 .daily-spending-bar { display:block; width:min(100%,44px); background:var(--accent); border-radius:7px 7px 0 0; }
 .daily-spending-date { font-variant-numeric:tabular-nums; white-space:nowrap; }
 .daily-spending-day small { min-height:1.45em; font-size:var(--text-small); color:var(--muted); }
-.daily-spending-detail { display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between; gap:8px 20px; padding:16px 0; border-top:1px solid var(--line); }
+.daily-spending-detail { display:flex; flex-wrap:wrap; align-items:baseline; gap:8px 20px; padding:20px 0 16px; border-top:1px solid var(--line); font-variant-numeric:tabular-nums; }
+.daily-spending-detail strong:nth-child(2) { margin-inline-start:auto; }
 .daily-spending-detail span { color:var(--muted); }
 @media(max-width:600px) {
+  .daily-spending { padding:20px 16px; }
   .daily-spending-chart { gap:3px; }
   .daily-spending-day { padding:6px 1px; }
   .daily-spending-date, .daily-spending-day small { font-size:1rem; }
+  .daily-spending-month { display:block; color:var(--muted); font-size:.875rem; line-height:1.2; }
+  .daily-spending-today span { font-size:0; }
+  .daily-spending-today::after { content:""; display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--ink); }
+  .daily-spending-detail { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:6px 12px; }
+  .daily-spending-detail span { grid-column:1 / -1; text-align:end; }
   .daily-spending-track { height:112px; }
 }

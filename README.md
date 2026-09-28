@@ -4,7 +4,7 @@ A local-first personal finance app built with **Rust, Dioxus, and SQLite**, with
 
 ## Download
 
-**[Get version 0.1.9](https://github.com/Rayato159/ledgers-bro/releases/tag/v0.1.9)** or open **More → Settings → App updates** in an existing installation.
+**[Get version 0.1.10](https://github.com/Rayato159/ledgers-bro/releases/tag/v0.1.10)** or open **More → Settings → App updates** in an existing installation.
 
 | Platform | Package |
 | --- | --- |
@@ -22,7 +22,7 @@ Back up in **Settings → Data** before upgrading. Install over the existing app
 
 - **Local users:** create separate users, edit credentials, switch users, and sign out from **Settings → General**. Optional **Remember me** keeps a login for seven days.
 - **Accounts and transactions:** track cash, banks, credit cards, investments, and BTC/SOL holdings. Record income, expenses, transfers, and card repayments. Each ledger uses one currency; language changes do not convert money.
-- **Bills and receivables:** manage recurring plans, installments, overdue bills, money lent, and repayments. Change a plan from a selected month, with confirmation before saving and an automatic refresh afterward. Earlier periods and payment history retain their original terms.
+- **Bills and receivables:** manage recurring plans, installments, overdue bills, money lent, and repayments. Change a plan from a selected month, with confirmation before saving and an automatic refresh afterward. Earlier periods and payment history retain their original terms. The monthly timeline shows recorded, unpaid and overdue bills along their due dates, with a marker for today.
 - **Reports:** browse grouped views and yearly history, inspect expense and debt breakdowns, and hover pie-chart slices for names, amounts, and percentages. Select a slice or label to open details. “Other expenses” use their descriptions where available.
 - **Quick entry:** write a Thai prompt, attach receipts, or fill the form manually. AI output opens as editable review cards before saving. On-device speech input is available on supported Android devices.
 - **Optional local AI:** choose Qwen3 0.6B, 1.7B, 4B, 8B, or 14B in Q4_K_M format. The app estimates memory and disk requirements before downloading. Downloads continue across tabs while the app session stays open. Remove models in **Settings → On-device AI**.
@@ -30,15 +30,13 @@ Back up in **Settings → Data** before upgrading. Install over the existing app
 - **Notifications:** the bell shows available updates, bills due, and collections due. Opening a notification marks it read and archives it. Settings control reminder types and optional system banners. The last 256 archived notifications are saved per user.
 - **Optional Thai tax tools:** classify taxable income and record withholding and deductions in a THB ledger. These tools do not submit tax returns.
 
-## What's new in 0.1.9
+## What's new in 0.1.10
 
-- Monthly bills now have a timeline with recorded, unpaid and overdue statuses, a current-day marker, filters and clickable bill details. Switch to the list view when needed.
+- The seven-day spending card has consistent inner padding, space around the chart and a clearer selected-day summary.
+- Compact date labels keep all seven columns readable on narrow screens. Tap or hover a day for its full date and amount.
+- Daily totals, excluded transfers/cancellations and transaction details use the same calculations as before.
 
-- The quick-entry model selector sits beside the tools on the left; the send button remains on the right. Narrow screens keep the model on a separate left-aligned row.
-- App updates use consistent card padding, compact action buttons, and a themed progress bar. Download and cancel controls stay clear of the card edges.
-- Recurring plan summaries show the monthly payment day, and the edit dialog keeps the selected plan aligned with its fields.
-
-See the [0.1.9 update guide](docs/update-0.1.9.md).
+See the [0.1.10 update guide](docs/update-0.1.10.md).
 
 ## Data and current limits
 

@@ -47,8 +47,11 @@ pub(crate) fn DailySpendingChart(view: Dashboard) -> Element {
                             span { class:"daily-spending-track", "aria-hidden":"true",
                                 span { class:"daily-spending-bar", style:"height:{height:.3}%;" }
                             }
-                            span { class:"daily-spending-date", "{item.date.format(\"%d/%m\")}" }
-                            if index==6 { small { {tr("วันนี้")} } } else { small { " " } }
+                            span { class:"daily-spending-date",
+                                span { "{item.date.format(\"%d\")}" }
+                                span { class:"daily-spending-month", "{item.date.format(\"/%m\")}" }
+                            }
+                            if index==6 { small { class:"daily-spending-today", title:tr("วันนี้"), span { {tr("วันนี้")} } } } else { small { " " } }
                         }
                       }
                     }
