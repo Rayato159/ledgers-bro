@@ -182,16 +182,57 @@ pub struct AppUpdater {
 }
 impl AppUpdater {
     pub fn new(directory: PathBuf, current: String, platform: UpdatePlatform) -> Self {
-        Self {
+        let updater = Self {
             directory,
             current,
             platform,
             state: Arc::new(Mutex::new(UpdateState::default())),
+        };
+        // Only the running version proves that an update completed. Never delete
+        // a newer package while Windows/Android may still be reading it.
+        updater.cleanup_installed_packages();
+        updater
+    }
+
+    fn cleanup_installed_packages(&self) {
+        let Ok(current) = version(&self.current) else {
+            return;
+        };
+        let Ok(metadata) = std::fs::symlink_metadata(&self.directory) else {
+            return;
+        };
+        if !metadata.is_dir() || is_link(&metadata) {
+            return;
+        }
+        let Ok(entries) = std::fs::read_dir(&self.directory) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let Some(installed) = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .and_then(package_version)
+            else {
+                continue;
+            };
+            if installed > current {
+                continue;
+            }
+            let Ok(metadata) = std::fs::symlink_metadata(&path) else {
+                continue;
+            };
+            if metadata.is_file() && !is_link(&metadata) {
+                // Locked packages are retried next launch/check; cleanup failure
+                // must never block login or an otherwise valid update.
+                let _ = std::fs::remove_file(path);
+            }
         }
     }
     pub async fn check(&self) -> Result<UpdateCheck, AppError> {
         let this = self.clone();
         background(move || {
+            this.cleanup_installed_packages();
             let response = client()?
                 .get(API)
                 .header(header::ACCEPT, "application/vnd.github+json")
@@ -232,6 +273,7 @@ impl AppUpdater {
             }
             cancel(&operation)?;
             std::fs::create_dir_all(&this.directory).map_err(|_| error(Storage))?;
+            this.cleanup_installed_packages();
             let path = this.directory.join(&release.filename);
             if verify(&path, &release, &operation).is_ok() {
                 state.ready = Some(release);
@@ -311,6 +353,33 @@ impl AppUpdater {
         .await
     }
 }
+
+/// Match only filenames produced by our updater, in its own flat cache folder.
+fn package_version(name: &str) -> Option<semver::Version> {
+    let rest = name.strip_prefix("LedgersBro-")?;
+    let text = [
+        "-windows-x64.msi",
+        "-android-arm64-test.apk",
+        "-android-x86_64-test.apk",
+    ]
+    .into_iter()
+    .find_map(|suffix| rest.strip_suffix(suffix))?;
+    let parsed = version(text).ok()?;
+    (parsed.to_string() == text).then_some(parsed)
+}
+
+fn is_link(metadata: &std::fs::Metadata) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        metadata.file_attributes() & 0x400 != 0 // FILE_ATTRIBUTE_REPARSE_POINT
+    }
+    #[cfg(not(windows))]
+    {
+        metadata.file_type().is_symlink()
+    }
+}
+
 pub(crate) async fn background<T: Send + 'static>(
     f: impl FnOnce() -> Result<T, AppError> + Send + 'static,
 ) -> Result<T, AppError> {
@@ -412,6 +481,131 @@ mod tests {
             std::fs::read_dir(directory.path()).expect("files").count(),
             1
         );
+    }
+
+    #[test]
+    fn startup_cleans_only_installed_packages_in_the_update_cache() {
+        for platform in [
+            UpdatePlatform::WindowsX64,
+            UpdatePlatform::AndroidArm64,
+            UpdatePlatform::AndroidX64,
+        ] {
+            let directory = tempfile::tempdir().expect("isolated cache");
+            let cache = directory.path().join("updates");
+            std::fs::create_dir(&cache).expect("cache");
+            let old = platform.asset_name("0.1.9");
+            let current = platform.asset_name("0.1.12");
+            let newer = platform.asset_name("0.1.13");
+            let preserved = [
+                newer.as_str(),
+                "ledger.sqlite3",
+                "model.gguf",
+                "personal.apk",
+                "LedgersBro-0.1.12-windows-x64.zip",
+                "LedgersBro-0.1.12-android-arm64-test.apk.backup",
+                "LedgersBro-0.1.12-beta-windows-x64.msi",
+                "LedgersBro-00.1.12-windows-x64.msi",
+            ];
+            for name in [old.as_str(), current.as_str()]
+                .into_iter()
+                .chain(preserved)
+            {
+                std::fs::write(cache.join(name), b"synthetic cache fixture").expect("fixture");
+            }
+            let nested = cache.join("LedgersBro-0.0.1-windows-x64.msi");
+            std::fs::create_dir(&nested).expect("directory must not be removed");
+            std::fs::write(nested.join(&old), b"nested fixture").expect("nested file");
+            std::fs::write(directory.path().join(&old), b"outside cache").expect("outside file");
+            let _ = AppUpdater::new(cache.clone(), "0.1.12".into(), platform);
+            assert!(!cache.join(old.as_str()).exists() && !cache.join(current).exists());
+            for name in preserved {
+                assert!(cache.join(name).is_file(), "preserve {name}");
+            }
+            assert!(nested.join(&old).is_file());
+            assert!(directory.path().join(old).is_file());
+        }
+    }
+
+    #[test]
+    fn pending_install_survives_until_the_new_version_starts() {
+        let directory = tempfile::tempdir().expect("isolated cache");
+        let platform = UpdatePlatform::WindowsX64;
+        let path = directory.path().join(platform.asset_name("0.1.12"));
+        std::fs::write(&path, b"synthetic pending installer").expect("fixture");
+        let old = AppUpdater::new(directory.path().into(), "0.1.11".into(), platform);
+        old.cleanup_installed_packages();
+        assert!(
+            path.is_file(),
+            "opening or cancelling installation is not success"
+        );
+        let _ = AppUpdater::new(directory.path().into(), "0.1.12".into(), platform);
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn cleanup_does_not_create_folders_or_guess_invalid_versions() {
+        let directory = tempfile::tempdir().expect("isolated cache");
+        let missing = directory.path().join("missing");
+        let platform = UpdatePlatform::WindowsX64;
+        let _ = AppUpdater::new(missing.clone(), "0.1.12".into(), platform);
+        assert!(!missing.exists());
+        let path = directory.path().join(platform.asset_name("0.1.11"));
+        std::fs::write(&path, b"synthetic fixture").expect("fixture");
+        let _ = AppUpdater::new(directory.path().into(), "invalid".into(), platform);
+        assert!(path.is_file());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn locked_installer_is_preserved_and_retried_after_release() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let directory = tempfile::tempdir().expect("isolated cache");
+        let path = directory
+            .path()
+            .join(UpdatePlatform::WindowsX64.asset_name("0.1.12"));
+        std::fs::write(&path, b"synthetic locked installer").expect("fixture");
+        let locked = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(&path)
+            .expect("locked file");
+        let updater = AppUpdater::new(
+            directory.path().into(),
+            "0.1.12".into(),
+            UpdatePlatform::WindowsX64,
+        );
+        assert!(path.is_file());
+        drop(locked);
+        updater.cleanup_installed_packages();
+        assert!(!path.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cleanup_never_follows_cache_or_file_links() {
+        use std::os::unix::fs::symlink;
+        let directory = tempfile::tempdir().expect("isolated cache");
+        let cache = directory.path().join("updates");
+        let outside = directory.path().join("outside");
+        std::fs::create_dir(&outside).expect("outside");
+        let name = UpdatePlatform::AndroidArm64.asset_name("0.1.12");
+        std::fs::write(outside.join(&name), b"outside fixture").expect("fixture");
+        symlink(&outside, &cache).expect("directory link");
+        let _ = AppUpdater::new(cache.clone(), "0.1.12".into(), UpdatePlatform::AndroidArm64);
+        assert!(outside.join(&name).is_file());
+        std::fs::remove_file(&cache).expect("remove test link");
+        std::fs::create_dir(&cache).expect("cache");
+        symlink(outside.join(&name), cache.join(&name)).expect("file link");
+        let _ = AppUpdater::new(cache.clone(), "0.1.12".into(), UpdatePlatform::AndroidArm64);
+        assert!(
+            cache
+                .join(&name)
+                .symlink_metadata()
+                .expect("link")
+                .file_type()
+                .is_symlink()
+        );
+        assert!(outside.join(&name).is_file());
     }
 
     #[test]

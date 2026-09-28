@@ -16,6 +16,10 @@ The helper stages resources in `target/windows-resources/` and bundles an MSI in
 
 Open the MSI and follow Windows installation prompts. Windows packages are unsigned. The app includes receipt OCR; optional [AI models](local-model-selection.md) are downloaded separately through the composer or Settings. Keep the product identity and `upgrade_code` in `apps/desktop/Dioxus.toml` stable across upgrades and increment the workspace version.
 
+Publisher metadata is `dancingwithmycode.com`; it is not a verified code-signing identity. The custom WiX template in `apps/desktop/installer/main.wxs` preserves the legacy installation registry keys even when display metadata changes. It omits the redundant uninstall shortcut and removes its old `.lnk` during upgrade. Uninstall through Windows Settings. Do not change those registry keys or the upgrade code when changing publisher text.
+
+On startup and update checks, the app removes recognized update packages whose version is at most the running version from its own `updates` folder. It preserves pending newer packages and ignores unrelated files and links. This cleanup never touches Windows Installer's system cache or user-selected download folders.
+
 Default user data lives in `%LOCALAPPDATA%\Dancing With My Code\Ledgers Bro\data`, separate from the installed program. Back up before upgrading. Use `--data-dir .data/sandbox` and synthetic users for development; never launch a test build against the default real ledger.
 
 The package contains the executable, UI assets, launcher icon, OCR executables/libraries, language files and licenses. It must not contain developer ledgers, exports, login tokens, screenshots from tests or downloaded LLM weights. A portable ZIP requires its `assets`, `ocr` and `licenses` folders beside the executable.

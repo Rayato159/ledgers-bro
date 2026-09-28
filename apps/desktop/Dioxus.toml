@@ -4,7 +4,7 @@ default_platform = "desktop"
 
 [bundle]
 identifier = "com.dancingwithmycode.ledgersbro"
-publisher = "Dancing With My Code"
+publisher = "dancingwithmycode.com"
 category = "Finance"
 short_description = "A little clarity for your everyday money."
 icon = ["../../design/app-icon/launcher.ico"]
@@ -15,5 +15,6 @@ resources = ["../../target/windows-resources/"]
 icon_path = "../../design/app-icon/launcher.ico"
 
 [bundle.windows.wix]
+template = "installer/main.wxs"
 # Keep stable across releases so Windows upgrades the existing installation.
 upgrade_code = "53588047-1f68-4bb5-b30a-7a5c18bcc514"

@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -96,6 +97,10 @@ def main():
     subprocess.run(['dx', 'bundle', '--desktop', '--release', '--package', 'ledgers-bro',
                     '--package-types', 'msi', '--locked', '--out-dir', str(output)],
                    cwd=ROOT / 'apps/desktop', env=environment, check=True)
+    version = re.search(r'(?m)^version = "([0-9.]+)"', (ROOT / 'Cargo.toml').read_text(encoding='utf-8'))[1]
+    package = output / f'LedgersBro_{version}_x64_en-US.msi'
+    subprocess.run([sys.executable, str(ROOT / 'scripts/verify-windows-package.py'),
+                    str(package), '--version', version], check=True)
     print(f'Installer directory: {output}', flush=True)
 
 
