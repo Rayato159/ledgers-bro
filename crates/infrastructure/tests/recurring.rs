@@ -6,6 +6,116 @@ use rusqlite::Connection;
 use tempfile::TempDir;
 
 #[test]
+fn move_unpaid_plan_month_and_day_persists_without_posting_money() {
+    let dir = TempDir::new().expect("dir");
+    let path = dir.path().join("ledger.sqlite3");
+    let (mut app, cash) = setup(SqliteLedger::open(&path).expect("db"));
+    let old = add(&mut app, cash, "Synthetic monthly", "123", "30", "2026-10");
+    let before = view(&mut app);
+    let mut input = recurring_edit_input(&old, old.due().start());
+    input.start = "2026-09".into();
+    input.day = "31".into();
+    input.installments = Some("3".into());
+    app.execute(Command::RescheduleRecurring {
+        expected: old.clone(),
+        input: input.clone(),
+    })
+    .expect("move earlier");
+    let after = view(&mut app);
+    assert_eq!(after.recurring.len(), 1);
+    assert_eq!(after.recurring[0].id(), old.id());
+    assert_eq!(before.accounts, after.accounts);
+    assert_eq!(before.entries, after.entries);
+    assert_eq!(before.settlements, after.settlements);
+    for (month, due) in [
+        ("2026-09", "2026-09-30"),
+        ("2026-10", "2026-10-31"),
+        ("2026-11", "2026-11-30"),
+    ] {
+        let summary = recurring_month(&after, month.parse().expect("month")).expect("month");
+        assert_eq!(summary.items.len(), 1);
+        assert_eq!(summary.items[0].due.to_string(), due);
+    }
+    assert!(!after.recurring[0].occurs_in("2026-12".parse().expect("month")));
+    assert!(
+        app.execute(Command::RescheduleRecurring {
+            expected: old,
+            input
+        })
+        .is_err(),
+        "stale move cannot overwrite"
+    );
+    drop(app);
+    let mut reopened = self::app(SqliteLedger::open(&path).expect("reopen"));
+    assert_eq!(view(&mut reopened), after);
+}
+
+#[test]
+fn moving_plan_rejects_paid_history_overlap_and_invalid_account_atomically() {
+    let (mut app, cash) = setup(SqliteLedger::in_memory().expect("db"));
+    let old = add(&mut app, cash, "Synthetic bill", "100", "1", "2026-09");
+    let mut future = recurring_edit_input(&old, "2026-10".parse().expect("month"));
+    future.day = "2".into();
+    app.execute(Command::EditRecurring {
+        expected: old.clone(),
+        input: future,
+    })
+    .expect("split");
+    let before = view(&mut app);
+    let stopped = before
+        .recurring
+        .iter()
+        .find(|s| s.id() == old.id())
+        .expect("old")
+        .clone();
+    let mut input = recurring_edit_input(&stopped, stopped.due().start());
+    input.start = "2026-10".into();
+    assert!(matches!(
+        app.execute(Command::RescheduleRecurring {
+            expected: stopped.clone(),
+            input: input.clone()
+        }),
+        Err(AppError::Storage(StorageError::RecurringMoveOverlap))
+    ));
+    assert_eq!(view(&mut app), before);
+    input.start = "2026-08".into();
+    input.account = None;
+    assert!(
+        app.execute(Command::RescheduleRecurring {
+            expected: stopped.clone(),
+            input: input.clone()
+        })
+        .is_err()
+    );
+    assert_eq!(view(&mut app), before);
+    input.account = Some(cash);
+    app.execute(Command::RescheduleRecurring {
+        expected: stopped.clone(),
+        input,
+    })
+    .expect("move non-overlapping stopped period");
+    let moved = view(&mut app)
+        .recurring
+        .into_iter()
+        .find(|s| s.id() == stopped.id())
+        .expect("moved");
+    assert_eq!(moved.stopped_from(), Some(month()));
+    let paid = payment(&mut app, &moved, "2026-08".parse().expect("month"), "100");
+    app.execute(Command::PayRecurring(paid)).expect("pay");
+    let paid_state = view(&mut app);
+    let mut input = recurring_edit_input(&moved, moved.due().start());
+    input.start = "2026-07".into();
+    assert!(matches!(
+        app.execute(Command::RescheduleRecurring {
+            expected: moved,
+            input
+        }),
+        Err(AppError::Storage(StorageError::RecurringMovePaid))
+    ));
+    assert_eq!(view(&mut app), paid_state);
+}
+
+#[test]
 fn new_plan_default_rolls_forward_only_after_the_actual_due_date() {
     for (today, day, expected) in [
         ("2026-09-25", 1, "2026-10"),

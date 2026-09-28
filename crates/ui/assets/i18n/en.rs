@@ -1,4 +1,12 @@
 &[
+    ("ย้ายเดือนเริ่มแผน", "Move plan start month"),
+    ("วิธีแก้ไขแผน", "Edit mode"),
+    ("แก้เงื่อนไขตั้งแต่งวดที่เลือก", "Change terms from selected month"),
+    ("ย้ายไปเริ่มเดือน (ค.ศ.)", "New starting month"),
+    ("ย้ายเดือนเริ่มและงวดต่อเนื่องของแผนที่ยังไม่เคยบันทึกจ่าย วันจ่ายและจำนวนงวดคงเดิมเว้นแต่จะแก้เอง", "Move the start and following instalments of a plan with no recorded payments. The due day and instalment count stay the same unless you edit them."),
+    ("ยังไม่ได้เปลี่ยนเงื่อนไข หากต้องการย้ายเดือนของแผน ให้เลือกย้ายเดือนเริ่มแผน", "No terms changed. To move the plan to another month, choose Move plan start month."),
+    ("แผนนี้มีประวัติชำระแล้ว จึงย้ายทั้งแผนไม่ได้ ใช้แก้เงื่อนไขตั้งแต่งวดที่ยังไม่จ่ายแทน", "This plan has payment history and cannot be moved as a whole. Change terms from an unpaid month instead."),
+    ("เดือนใหม่ซ้อนกับแผนชื่อเดียวกันในบัญชีนี้ กรุณาเลือกช่วงที่ไม่ซ้อนกันหรือหยุดแผนที่ซ้ำก่อน", "The new months overlap another plan with the same name in this account. Choose a non-overlapping period or stop the duplicate plan first."),
     ("วันนี้", "Today"),
     ("รายการบิล", "Bill list"),
     ("รูปแบบการแสดงบิล", "Bill view"),

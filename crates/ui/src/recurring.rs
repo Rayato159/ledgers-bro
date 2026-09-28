@@ -519,6 +519,7 @@ fn EditRecurringDialog(
 ) -> Element {
     let mut store = use_context::<UiState>();
     let mut selected = use_signal(|| schedule.clone());
+    let mut moving = use_signal(|| false);
     let mut form = use_signal(|| recurring_edit_input(&schedule, effective));
     let expected = selected();
     let period = form.read().start.parse::<Month>().ok();
@@ -534,7 +535,15 @@ fn EditRecurringDialog(
             .iter()
             .any(|s| s.recurring == expected.id() && s.month >= m)
     });
-    let editable = in_plan && !has_paid;
+    let any_paid = view
+        .settlements
+        .iter()
+        .any(|s| s.recurring == expected.id());
+    let editable = if moving() {
+        !any_paid && period.is_some()
+    } else {
+        in_plan && !has_paid
+    };
     let options = eligible.clone();
     use_effect(move || {
         if let Some(view) = store.view.read().as_ref()
@@ -550,19 +559,37 @@ fn EditRecurringDialog(
             div { class: "section-heading", h2 { id: "rec-edit-title", {crate::i18n::tr("แก้ไขแผน")} }
                 button { class: "icon-button", disabled: (store.busy)(), "aria-label": crate::i18n::tr("ปิดหน้าต่าง"), onclick: move |_| onclose.call(()), Icon { name: "close", size: 20 } }
             }
-            p { class: "field-hint", {crate::i18n::tr("การแก้ไขมีผลตั้งแต่งวดที่เลือก งวดก่อนหน้านั้นและรายการที่จ่ายแล้วเก็บข้อมูลเดิม หากจ่ายล่วงหน้าแล้วให้เลือกงวดหลังรายการที่จ่ายล่าสุด")} }
+            p { class: "field-hint", {crate::i18n::tr(if moving() { "ย้ายเดือนเริ่มและงวดต่อเนื่องของแผนที่ยังไม่เคยบันทึกจ่าย วันจ่ายและจำนวนงวดคงเดิมเว้นแต่จะแก้เอง" } else { "การแก้ไขมีผลตั้งแต่งวดที่เลือก งวดก่อนหน้านั้นและรายการที่จ่ายแล้วเก็บข้อมูลเดิม หากจ่ายล่วงหน้าแล้วให้เลือกงวดหลังรายการที่จ่ายล่าสุด" })} }
             form { onsubmit: move |e| {
                 e.prevent_default();
                 if !editable { return; }
-                if form() == recurring_edit_input(&expected, period.unwrap_or(effective)) { onclose.call(()); }
-                else { store.send(Command::EditRecurring { expected: expected.clone(), input: form() }); }
+                let baseline = if moving() { expected.due().start() } else { period.unwrap_or(effective) };
+                if form() == recurring_edit_input(&expected, baseline) {
+                    store.notice.set(Some((true, crate::i18n::tr("ยังไม่ได้เปลี่ยนเงื่อนไข หากต้องการย้ายเดือนของแผน ให้เลือกย้ายเดือนเริ่มแผน"))));
+                } else if moving() {
+                    store.send(Command::RescheduleRecurring { expected: expected.clone(), input: form() });
+                } else { store.send(Command::EditRecurring { expected: expected.clone(), input: form() }); }
             },
                 div { class: "recurring-edit-scope",
-                    div { label { r#for: "edit-rec-start", {crate::i18n::tr("เริ่มใช้การแก้ไขตั้งแต่งวด (ค.ศ.)")} }
+                    div { label { r#for: "edit-rec-mode", {crate::i18n::tr("วิธีแก้ไขแผน")} }
+                        select { id: "edit-rec-mode", disabled: (store.busy)(), value: if moving() { "move" } else { "terms" },
+                            onchange: move |e| {
+                                let is_move = e.value() == "move";
+                                let plan = selected();
+                                let start = if is_move { plan.due().start() } else { form.peek().start.parse().ok().filter(|m| plan.occurs_in(*m)).unwrap_or(plan.due().start()) };
+                                form.set(recurring_edit_input(&plan, start));
+                                moving.set(is_move);
+                                store.notice.set(None);
+                            },
+                            option { value: "terms", selected: !moving(), {crate::i18n::tr("แก้เงื่อนไขตั้งแต่งวดที่เลือก")} }
+                            option { value: "move", selected: moving(), {crate::i18n::tr("ย้ายเดือนเริ่มแผน")} }
+                        }
+                    }
+                    div { label { r#for: "edit-rec-start", {crate::i18n::tr(if moving() { "ย้ายไปเริ่มเดือน (ค.ศ.)" } else { "เริ่มใช้การแก้ไขตั้งแต่งวด (ค.ศ.)" })} }
                         input { id: "edit-rec-start", r#type: "month", min: "1900-01", max: "9999-12", required: true, disabled: (store.busy)(), value: form.read().start.clone(),
                             oninput: move |e| {
                                 let start = e.value();
-                                if let Ok(month) = start.parse::<Month>() && selected.peek().occurs_in(month) {
+                                if !moving() && let Ok(month) = start.parse::<Month>() && selected.peek().occurs_in(month) {
                                     form.write().installments = recurring_edit_input(&selected.peek(), month).installments;
                                 }
                                 form.write().start = start;
@@ -570,7 +597,8 @@ fn EditRecurringDialog(
                             }
                         }
                     }
-                    div { label { r#for: "edit-rec-plan", {crate::i18n::tr("แผนที่จะเปลี่ยน")} }
+                    if moving() { p { class: "field-hint", "{selected().name().as_str()} · {selected().due().start()} → {form.read().start}" } }
+                    else { div { label { r#for: "edit-rec-plan", {crate::i18n::tr("แผนที่จะเปลี่ยน")} }
                         select { id: "edit-rec-plan", required: true, disabled: (store.busy)(), value: if in_plan { selected().id().to_string() } else { String::new() },
                             onchange: move |e| {
                                 let month = form.peek().start.parse::<Month>();
@@ -587,12 +615,15 @@ fn EditRecurringDialog(
                         }
                     }
                     p { class: "field-hint", {crate::i18n::tr("เลือกเดือนก่อน แล้วเลือกแผนที่จะเปลี่ยน การเลือกแผนอื่นจะโหลดเงื่อนไขของแผนนั้นมาให้แก้")} }
+                    }
                 }
-                if !in_plan {
+                if moving() && any_paid {
+                    p { class: "form-error", role: "status", {crate::i18n::tr("แผนนี้มีประวัติชำระแล้ว จึงย้ายทั้งแผนไม่ได้ ใช้แก้เงื่อนไขตั้งแต่งวดที่ยังไม่จ่ายแทน")} }
+                } else if !moving() && !in_plan {
                     p { class: "form-error", role: "status", {crate::i18n::tr(if eligible.is_empty() { "ไม่มีแผนในเดือนที่เลือก เลือกเดือนอื่นหรือเพิ่มแผนใหม่" } else { "แผนที่เปิดมาไม่ได้ใช้ในเดือนนี้ กรุณาเลือกแผนของงวดนี้ก่อนแก้ไข" })} }
-                } else if has_paid {
+                } else if !moving() && has_paid {
                     p { class: "form-error", role: "status", {crate::i18n::tr("แผนนี้มีประวัติชำระตั้งแต่งวดที่เลือก ให้เลือกเดือนหลังงวดที่ชำระล่าสุด")} }
-                } else if let Some(end) = selected().stopped_from() {
+                } else if !moving() && let Some(end) = selected().stopped_from() {
                     p { class: "field-hint", {crate::i18n::text("การแก้ไขช่วงนี้สิ้นสุดก่อน {0} หากต้องการแก้ตั้งแต่เดือนนั้น ให้เลือกเดือนและแผนที่ใช้อยู่ในช่วงนั้น", &[end.to_string()])} }
                 }
                 RecurringFields { form, view, prefix: "edit", baseline: Some(selected()), blocked: !editable }

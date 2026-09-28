@@ -410,6 +410,25 @@ impl LedgerRepository for SqliteLedger {
         insert_recurring(&tx, &replacement)?;
         tx.commit().map_err(database_error)
     }
+    fn reschedule_recurring(
+        &mut self,
+        expected: &RecurringExpense,
+        changed: &RecurringExpense,
+    ) -> Result<(), StorageError> {
+        let tx = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(database_error)?;
+        let changed =
+            ledger_application::rescheduled_recurring(&read_state(&tx)?, expected, changed)?;
+        tx.execute(
+            "UPDATE recurring_expenses SET name=?1,amount_minor=?2,category=?3,account_id=?4,day=?5,start_month=?6,stopped_from=?7,installments=?8 WHERE id=?9",
+            params![changed.name().as_str(), changed.amount().money().minor(), changed.category().code(),
+                changed.account().map(|id| id.to_string()), changed.due().day(), changed.due().start().to_string(),
+                changed.stopped_from().map(|m| m.to_string()), changed.due().installments(), changed.id().to_string()],
+        ).map_err(database_error)?;
+        tx.commit().map_err(database_error)
+    }
     fn add_recurring(&mut self, schedule: &RecurringExpense) -> Result<(), StorageError> {
         let tx = self
             .connection

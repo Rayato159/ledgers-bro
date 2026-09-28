@@ -35,6 +35,7 @@ Back up in **Settings → Data** before upgrading. Install over the existing app
 - The seven-day spending card has consistent inner padding, space around the chart and a clearer selected-day summary.
 - Compact date labels keep all seven columns readable on narrow screens. Tap or hover a day for its full date and amount.
 - Daily totals, excluded transfers/cancellations and transaction details use the same calculations as before.
+- The recurring editor separates changing future terms from moving an unpaid plan to another month, with confirmation, automatic refresh and checks against payment history or overlapping plans.
 
 See the [0.1.10 update guide](docs/update-0.1.10.md).
 

@@ -95,6 +95,11 @@ pub trait LedgerRepository {
         expected: &ledger_domain::RecurringExpense,
         month: ledger_domain::Month,
     ) -> Result<(), StorageError>;
+    fn reschedule_recurring(
+        &mut self,
+        expected: &ledger_domain::RecurringExpense,
+        changed: &ledger_domain::RecurringExpense,
+    ) -> Result<(), StorageError>;
     fn pay_recurring(
         &mut self,
         prepared: &crate::PreparedRecurringPayment,

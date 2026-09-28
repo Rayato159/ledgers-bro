@@ -456,6 +456,20 @@ impl UiState {
     }
     pub fn send(self, command: Command) {
         let details = match &command {
+            Command::RescheduleRecurring { expected, input } => Some(format!(
+                "{}\n{} → {}\n{} → {}\n{} {} → {}\n{}: {} → {}",
+                crate::i18n::tr("ย้ายเดือนเริ่มแผน"),
+                expected.name().as_str(),
+                input.name,
+                expected.due().start(),
+                input.start,
+                crate::i18n::currency_prefix(),
+                expected.amount().money(),
+                input.amount,
+                crate::i18n::tr("วันที่"),
+                expected.due().day(),
+                input.day,
+            )),
             Command::EditRecurring { expected, input } => Some(format!(
                 "{}\n{} → {}\n{} {} → {}\n{}: {} → {}\n{}: {}",
                 crate::i18n::tr("แก้ไขแผน"),
@@ -525,6 +539,7 @@ impl UiState {
             &command,
             Command::AddRecurring(_)
                 | Command::EditRecurring { .. }
+                | Command::RescheduleRecurring { .. }
                 | Command::SetCryptoHoldings { .. }
                 | Command::SetCreditCycle { .. }
                 | Command::CreateReceivable(_)

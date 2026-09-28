@@ -39,6 +39,17 @@ impl UiGateway for EditGateway {
                     state.recurring.push(replacement);
                     Ok(Response::PromptCommitted)
                 }
+                Command::RescheduleRecurring { expected, input } => {
+                    let changed = input.validate(expected.id())?;
+                    let mut state = state.lock().expect("state");
+                    let changed = rescheduled_recurring(&state, &expected, &changed)?;
+                    *state
+                        .recurring
+                        .iter_mut()
+                        .find(|s| s.id() == expected.id())
+                        .expect("plan") = changed;
+                    Ok(Response::RecurringChanged)
+                }
                 _ => Err(AppError::Input("Unexpected test command".into())),
             }
         })
@@ -123,6 +134,16 @@ fn ids(changes: &Mutations) -> HashMap<String, ElementId> {
         })
         .collect()
 }
+fn listeners(changes: &Mutations, event: &str) -> Vec<ElementId> {
+    changes
+        .edits
+        .iter()
+        .filter_map(|e| match e {
+            Mutation::NewEventListener { name, id } if *name == event => Some(*id),
+            _ => None,
+        })
+        .collect()
+}
 fn listener(changes: &Mutations, event: &str) -> ElementId {
     changes
         .edits
@@ -179,7 +200,12 @@ async fn change_month_select_future_plan_cancel_then_confirm_preserves_old_terms
     form_event(&mut dom, listener(&changes, "input"), "input", "2026-11");
     assert!(dioxus_ssr::render(&dom).contains("แผนที่เปิดมาไม่ได้ใช้ในเดือนนี้"));
     // Never guess the successor using its name; the user selects it explicitly.
-    form_event(&mut dom, listener(&changes, "change"), "change", NEXT);
+    form_event(
+        &mut dom,
+        *listeners(&changes, "change").last().expect("plan listener"),
+        "change",
+        NEXT,
+    );
     form_event(&mut dom, fields["edit-rec-day"], "input", "28");
     let html = dioxus_ssr::render(&dom);
     assert!(html.contains("value=\"28\""));
@@ -288,7 +314,7 @@ async fn opening_nonfirst_plan_keeps_selection_fields_and_saved_target_together(
     assert_eq!(selected_values(dioxus_ssr::render(&dom)), vec![NEXT]);
     form_event(
         &mut dom,
-        listener(&changes, "change"),
+        *listeners(&changes, "change").last().expect("plan listener"),
         "change",
         &other.id().to_string(),
     );
@@ -297,7 +323,12 @@ async fn opening_nonfirst_plan_keeps_selection_fields_and_saved_target_together(
         vec![other.id().to_string()]
     );
     assert!(dioxus_ssr::render(&dom).contains("value=\"7.00\""));
-    form_event(&mut dom, listener(&changes, "change"), "change", NEXT);
+    form_event(
+        &mut dom,
+        *listeners(&changes, "change").last().expect("plan listener"),
+        "change",
+        NEXT,
+    );
     assert!(dioxus_ssr::render(&dom).contains("value=\"12200.00\""));
     form_event(&mut dom, fields["edit-rec-day"], "input", "28");
     let prompt = form_event(&mut dom, listener(&changes, "submit"), "submit", "");
@@ -322,4 +353,59 @@ async fn opening_nonfirst_plan_keeps_selection_fields_and_saved_target_together(
     assert_eq!(revised.name().as_str(), "Synthetic rent");
     assert_eq!(revised.due().day(), 28);
     assert_eq!(revised.amount().money().to_string(), "12200.00");
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn unchanged_scope_stays_open_and_explicit_move_requires_confirmation() {
+    set_event_converter(Box::new(dioxus::html::SerializedHtmlEventConverter));
+    let mut data = fixture();
+    data.recurring.retain(|s| s.id().to_string() == NEXT);
+    let original = data.clone();
+    let state = Arc::new(Mutex::new(data.clone()));
+    let mut dom = VirtualDom::new(selected_plan_harness);
+    dom.insert_any_root_context(Box::new(
+        dashboard(data, "2026-09-26".parse().expect("date")).expect("view"),
+    ));
+    dom.insert_any_root_context(Box::new(Gateway(Arc::new(EditGateway(state.clone())))));
+    let changes = dom.rebuild_to_vec();
+    let submit = listener(&changes, "submit");
+    form_event(&mut dom, listener(&changes, "input"), "input", "2026-11");
+    form_event(&mut dom, submit, "submit", "");
+    assert!(dioxus_ssr::render(&dom).contains("ยังไม่ได้เปลี่ยนเงื่อนไข"));
+    assert!(dioxus_ssr::render(&dom).contains("id=\"rec-edit-dialog\""));
+    assert_eq!(*state.lock().expect("state"), original);
+    form_event(&mut dom, listeners(&changes, "change")[0], "change", "move");
+    form_event(&mut dom, listener(&changes, "input"), "input", "2026-09");
+    let prompt = form_event(&mut dom, submit, "submit", "");
+    assert!(dioxus_ssr::render(&dom).contains("edit-confirmation"));
+    assert_eq!(*state.lock().expect("state"), original);
+    let clicks: Vec<_> = prompt
+        .edits
+        .iter()
+        .filter_map(|e| match e {
+            Mutation::NewEventListener { name, id } if name == "click" => Some(*id),
+            _ => None,
+        })
+        .collect();
+    click(&mut dom, clicks[1]);
+    assert_eq!(*state.lock().expect("state"), original);
+    let prompt = form_event(&mut dom, submit, "submit", "");
+    click(&mut dom, listener(&prompt, "click"));
+    tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            dom.wait_for_work().await;
+            dom.render_immediate(&mut dioxus::dioxus_core::NoOpMutations);
+            if !dioxus_ssr::render(&dom).contains("id=\"rec-edit-dialog\"") {
+                break;
+            }
+        }
+    })
+    .await
+    .expect("move refresh closes editor");
+    let saved = state.lock().expect("state");
+    assert_eq!(saved.recurring.len(), 1);
+    assert_eq!(saved.recurring[0].due().start().to_string(), "2026-09");
+    assert_eq!(saved.recurring[0].id().to_string(), NEXT);
+    assert_eq!(saved.accounts, original.accounts);
+    assert_eq!(saved.entries, original.entries);
 }

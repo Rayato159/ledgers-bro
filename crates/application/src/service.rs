@@ -95,6 +95,10 @@ pub enum Command {
         expected: RecurringExpense,
         input: RecurringInput,
     },
+    RescheduleRecurring {
+        expected: RecurringExpense,
+        input: RecurringInput,
+    },
     SetRecurringInstallments {
         expected: RecurringExpense,
         installments: Option<String>,
@@ -394,6 +398,11 @@ impl<R: LedgerRepository, C: Clock, I: IdSource> LedgerApplication<R, C, I> {
             Command::EditRecurring { expected, input } => {
                 let replacement = input.validate(self.ids.recurring_id()?)?;
                 self.repository.replace_recurring(&expected, &replacement)?;
+                Ok(Response::RecurringChanged)
+            }
+            Command::RescheduleRecurring { expected, input } => {
+                let changed = input.validate(expected.id())?;
+                self.repository.reschedule_recurring(&expected, &changed)?;
                 Ok(Response::RecurringChanged)
             }
             Command::AddRecurring(input) => {

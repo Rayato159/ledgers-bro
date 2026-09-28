@@ -821,6 +821,19 @@ impl LedgerRepository for PlanningRepository {
         self.state.recurring.push(replacement);
         Ok(())
     }
+    fn reschedule_recurring(
+        &mut self,
+        expected: &RecurringExpense,
+        changed: &RecurringExpense,
+    ) -> Result<(), StorageError> {
+        let changed = rescheduled_recurring(&self.state, expected, changed)?;
+        for schedule in &mut self.state.recurring {
+            if schedule.id() == expected.id() {
+                *schedule = changed.clone();
+            }
+        }
+        Ok(())
+    }
     fn add_recurring(&mut self, schedule: &RecurringExpense) -> Result<(), StorageError> {
         validate_new_recurring(&self.state, schedule)?;
         self.state.currency_locked = true;

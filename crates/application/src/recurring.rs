@@ -72,6 +72,52 @@ pub fn recurring_edit_input(schedule: &RecurringExpense, effective: Month) -> Re
             .map(|n| n.saturating_sub(number - 1).to_string()),
     }
 }
+
+/// Move an entirely unpaid plan, retaining its identity and length. Posted or
+/// reversed settlements lock the original calendar so history cannot move.
+pub fn rescheduled_recurring(
+    state: &LedgerState,
+    expected: &RecurringExpense,
+    changed: &RecurringExpense,
+) -> Result<RecurringExpense, StorageError> {
+    if !state.recurring.contains(expected)
+        || changed.id() != expected.id()
+        || changed.stopped_from().is_some()
+        || !expected.occurs_in(expected.due().start())
+    {
+        return Err(StorageError::RecurringChanged);
+    }
+    if state
+        .settlements
+        .iter()
+        .any(|s| s.recurring == expected.id())
+    {
+        return Err(StorageError::RecurringMovePaid);
+    }
+    let (year, month) = changed.due().start().key();
+    let (old_year, old_month) = expected.due().start().key();
+    let offset = (year - old_year) * 12 + month as i32 - old_month as i32;
+    let changed = match expected.stopped_from() {
+        Some(end) => changed.clone().stop_from(end.shifted(offset)?)?,
+        None => changed.clone(),
+    };
+    // There is no inferred successor identity. Refuse overlapping versions of
+    // the same named obligation instead of silently doubling a monthly bill.
+    for other in state.recurring.iter().filter(|s| s.id() != expected.id()) {
+        let start = other.due().start().max(changed.due().start());
+        if other.name() == changed.name()
+            && other.account() == changed.account()
+            && other.occurs_in(start)
+            && changed.occurs_in(start)
+        {
+            return Err(StorageError::RecurringMoveOverlap);
+        }
+    }
+    let mut without = state.clone();
+    without.recurring.retain(|s| s.id() != expected.id());
+    validate_new_recurring(&without, &changed)?;
+    Ok(changed)
+}
 pub fn validate_recurring_totals(schedules: &[RecurringExpense]) -> Result<(), StorageError> {
     for month in schedules.iter().map(|s| s.due().start()) {
         let sum: i128 = schedules
