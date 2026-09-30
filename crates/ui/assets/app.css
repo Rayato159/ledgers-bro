@@ -1307,3 +1307,9 @@ label.review-check { display:flex; align-items:center; gap:10px; margin:0; min-h
   .daily-spending-detail span { grid-column:1 / -1; text-align:end; }
   .daily-spending-track { height:112px; }
 }
+.receivable-item-actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-block: 16px; }
+.receivable-edit-changes { display: grid; gap: 0; margin-block: 20px; }
+.receivable-edit-changes > div { display: grid; grid-template-columns: minmax(140px, .8fr) minmax(0, 1.2fr); gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--line); }
+.receivable-edit-changes dt { font-weight: 600; }
+.receivable-edit-changes dd { margin: 0; overflow-wrap: anywhere; }
+@media (max-width: 560px) { .receivable-edit-changes > div { grid-template-columns: 1fr; gap: 6px; } .receivable-item-actions > button { flex: 1 1 220px; } }

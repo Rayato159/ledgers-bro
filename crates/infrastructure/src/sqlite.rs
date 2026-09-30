@@ -370,6 +370,39 @@ impl LedgerRepository for SqliteLedger {
         tx.commit().map_err(database_error)?;
         Ok(CommitOutcome::Saved(opening.entry.id()))
     }
+    fn edit_receivable(
+        &mut self,
+        edit: &ledger_application::PreparedReceivableEdit,
+    ) -> Result<(), StorageError> {
+        let tx = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(database_error)?;
+        ledger_application::validate_receivable_edit(&read_state(&tx)?, edit)?;
+        let loan = edit.loan();
+        let entry = edit.opening();
+        tx.execute("UPDATE receivables SET debtor=?2,description=?3,total_minor=?4,opened=?5,start_month=?6,day=?7,installments=?8 WHERE id=?1",
+            params![loan.id().to_string(),loan.debtor().as_str(),loan.description().as_str(),loan.total().money().minor(),loan.opened().to_string(),loan.start().to_string(),loan.day(),loan.installments()]).map_err(database_error)?;
+        // Preserve the opening identity, sequence and submission token, as well
+        // as all existing repayment/interest/reversal journals and their postings.
+        tx.execute(
+            "UPDATE journal_entries SET effective_date=?2,note=?3,payload=?4 WHERE id=?1",
+            params![
+                entry.id().to_string(),
+                entry.date().to_string(),
+                entry.note().as_str(),
+                StoredKind::encode(entry)?
+            ],
+        )
+        .map_err(database_error)?;
+        for (ordinal, posting) in entry.postings().iter().enumerate() {
+            let (account, book) = target_columns(posting.target());
+            tx.execute("UPDATE postings SET account_id=?3,system_book=?4,amount_minor=?5 WHERE entry_id=?1 AND ordinal=?2",
+                params![entry.id().to_string(),ordinal as i64,account,book,posting.amount().minor()]).map_err(database_error)?;
+        }
+        read_state(&tx)?;
+        tx.commit().map_err(database_error)
+    }
     fn set_recurring_installments(
         &mut self,
         expected: &RecurringExpense,

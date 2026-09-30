@@ -86,6 +86,7 @@ pub struct UiState {
     pub batch_prepared: Signal<Option<Vec<PreparedEntry>>>,
     pub recurring_prepared: Signal<Option<PreparedRecurringPayment>>,
     pub receivable_review: Signal<Option<ReceivableReview>>,
+    pub receivable_edit: Signal<Option<(ledger_domain::Receivable, ledger_domain::JournalEntry)>>,
     pub repayment_form: Signal<bool>,
     pub repayment_selection: Signal<Option<ledger_domain::ReceivableId>>,
 }
@@ -543,6 +544,7 @@ impl UiState {
                 | Command::SetCryptoHoldings { .. }
                 | Command::SetCreditCycle { .. }
                 | Command::CreateReceivable(_)
+                | Command::EditReceivable(_)
                 | Command::ReceiveRepayment(_)
                 | Command::SetRecurringInstallments { .. }
                 | Command::StopRecurring { .. }
@@ -610,8 +612,10 @@ impl UiState {
                 Ok(Response::PromptCommitted)
                 | Ok(Response::Committed(_))
                 | Ok(Response::CommittedBatch(_))
+                | Ok(Response::ReceivableChanged)
                 | Ok(Response::RecurringChanged) => {
                     self.receivable_review.set(None);
+                    self.receivable_edit.set(None);
                     self.repayment_form.set(false);
                     self.recurring_prepared.set(None);
                     if !recurring_change {
@@ -889,6 +893,7 @@ pub(crate) mod tests {
             batch_prepared: use_signal(|| None),
             recurring_prepared: use_signal(|| None),
             receivable_review: use_signal(|| None),
+            receivable_edit: use_signal(|| None),
             repayment_form: use_signal(|| false),
             repayment_selection: use_signal(|| None),
         }

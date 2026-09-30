@@ -72,6 +72,7 @@ pub fn App() -> Element {
         batch_prepared: use_signal(|| None),
         recurring_prepared: use_signal(|| None),
         receivable_review: use_signal(|| None),
+        receivable_edit: use_signal(|| None),
         repayment_form: use_signal(|| false),
         repayment_selection: use_signal(|| None),
     };

@@ -76,6 +76,12 @@ pub trait LedgerRepository {
         &mut self,
         prepared: &crate::PreparedReceivable,
     ) -> Result<CommitOutcome, StorageError>;
+    fn edit_receivable(
+        &mut self,
+        _edit: &crate::PreparedReceivableEdit,
+    ) -> Result<(), StorageError> {
+        Err(StorageError::Unavailable)
+    }
     fn set_recurring_installments(
         &mut self,
         expected: &ledger_domain::RecurringExpense,

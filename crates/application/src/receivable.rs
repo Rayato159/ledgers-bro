@@ -20,6 +20,134 @@ pub struct PreparedReceivable {
     pub loan: Receivable,
     pub opening: PreparedEntry,
 }
+/// A reviewed correction, tied to the exact opening and payment history shown.
+/// Only the original opening is corrected; repayment journals stay untouched.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PreparedReceivableEdit {
+    expected: Receivable,
+    original: JournalEntry,
+    activity: Vec<JournalEntry>,
+    loan: Receivable,
+    opening: JournalEntry,
+}
+impl PreparedReceivableEdit {
+    pub fn expected(&self) -> &Receivable {
+        &self.expected
+    }
+    pub fn original(&self) -> &JournalEntry {
+        &self.original
+    }
+    pub fn loan(&self) -> &Receivable {
+        &self.loan
+    }
+    pub fn opening(&self) -> &JournalEntry {
+        &self.opening
+    }
+}
+
+fn receivable_activity(state: &LedgerState, id: ReceivableId) -> Vec<JournalEntry> {
+    let ids: BTreeSet<_> = state
+        .entries
+        .iter()
+        .filter_map(|entry| match entry.kind() {
+            EntryKind::Repayment { receivable, .. }
+            | EntryKind::Lending { receivable, .. }
+            | EntryKind::ReceivableOpening { receivable, .. }
+                if *receivable == id =>
+            {
+                Some(entry.id())
+            }
+            _ => None,
+        })
+        .collect();
+    state.entries.iter().filter(|entry| ids.contains(&entry.id())
+        || matches!(entry.kind(), EntryKind::Reversal { original } if ids.contains(original)))
+        .cloned().collect()
+}
+
+pub fn prepare_receivable_edit(
+    state: &LedgerState,
+    expected: Receivable,
+    original: JournalEntry,
+    input: ReceivableInput,
+    today: EntryDate,
+) -> Result<PreparedReceivableEdit, AppError> {
+    let opened: EntryDate = input.opened.parse()?;
+    if opened > today {
+        return Err(AppError::Input("วันที่ตั้งหนี้ต้องไม่เกินวันนี้".into()));
+    }
+    let loan = Receivable::new(
+        expected.id(),
+        AccountName::new(&input.debtor)?,
+        Note::new(&input.description)?,
+        PositiveMoney::new(input.total.parse()?)?,
+        opened,
+        CollectionTerms::new(
+            input.start.parse()?,
+            input
+                .day
+                .as_deref()
+                .map(|v| v.parse().map_err(|_| DomainError::InvalidRecurring))
+                .transpose()?,
+            crate::parse_installments(input.installments.as_deref())?,
+        )?,
+    )?;
+    let kind = match input.source {
+        Some(account) => EntryKind::Lending {
+            receivable: loan.id(),
+            account,
+            amount: loan.total(),
+        },
+        None => EntryKind::ReceivableOpening {
+            receivable: loan.id(),
+            amount: loan.total(),
+        },
+    };
+    let opening = JournalEntry::record(
+        original.id(),
+        opened,
+        Note::new(&format!(
+            "ลูกหนี้ {} · {}",
+            loan.debtor().as_str(),
+            loan.description().as_str()
+        ))?,
+        kind,
+    )?;
+    let prepared = PreparedReceivableEdit {
+        activity: receivable_activity(state, expected.id()),
+        expected,
+        original,
+        loan,
+        opening,
+    };
+    validate_receivable_edit(state, &prepared)?;
+    Ok(prepared)
+}
+
+/// Revalidate under the write lock, including repayments made after review.
+pub fn validate_receivable_edit(
+    state: &LedgerState,
+    edit: &PreparedReceivableEdit,
+) -> Result<(), StorageError> {
+    if !state.receivables.contains(&edit.expected)
+        || !state.entries.contains(&edit.original)
+        || receivable_activity(state, edit.expected.id()) != edit.activity
+        || !matches!(edit.original.kind(), EntryKind::ReceivableOpening { receivable, .. }
+            | EntryKind::Lending { receivable, .. } if *receivable == edit.expected.id())
+        || state.entries.iter().any(|e| matches!(e.kind(), EntryKind::Reversal { original } if *original == edit.original.id()))
+    {
+        return Err(StorageError::ReceivableChanged);
+    }
+    let mut prospective = state.clone();
+    let loan = prospective
+        .receivables
+        .iter_mut()
+        .find(|loan| loan.id() == edit.expected.id())
+        .ok_or(StorageError::ReceivableChanged)?;
+    *loan = edit.loan.clone();
+    prospective.entries.retain(|e| e.id() != edit.original.id());
+    validate_append(&prospective, &edit.opening)
+}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RepaymentInput {
     pub receivable: ReceivableId,
@@ -31,6 +159,7 @@ pub struct RepaymentInput {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReceivableReview {
     New(Box<PreparedReceivable>),
+    Edit(Box<PreparedReceivableEdit>),
     Payment(Vec<PreparedEntry>),
 }
 

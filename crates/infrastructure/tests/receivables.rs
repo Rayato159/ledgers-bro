@@ -54,6 +54,283 @@ fn preview(app: &mut App, input: ReceivableInput) -> PreparedReceivable {
         _ => panic!("review"),
     }
 }
+
+fn edit_preview(app: &mut App, id: ReceivableId, input: ReceivableInput) -> PreparedReceivableEdit {
+    let current = view(app);
+    let expected = current
+        .receivables
+        .iter()
+        .find(|r| r.id() == id)
+        .expect("loan")
+        .clone();
+    let original = current.entries.iter().find(|e| matches!(e.kind(), EntryKind::ReceivableOpening { receivable, .. } | EntryKind::Lending { receivable, .. } if *receivable == id)).expect("opening").clone();
+    match app
+        .execute(Command::PreviewReceivableEdit {
+            expected,
+            original,
+            input,
+        })
+        .expect("preview edit")
+    {
+        Response::ReceivableReview(ReceivableReview::Edit(p)) => *p,
+        _ => panic!("edit review"),
+    }
+}
+
+fn save_edit(app: &mut App, edit: PreparedReceivableEdit) {
+    assert!(matches!(
+        app.execute(Command::EditReceivable(Box::new(edit)))
+            .expect("edit"),
+        Response::ReceivableChanged
+    ));
+}
+
+#[test]
+fn correct_existing_debt_updates_only_the_selected_loan_without_creating_income_or_cash() {
+    let (mut app, _) = setup(SqliteLedger::in_memory().expect("db"));
+    let first = create(&mut app, input("100"));
+    let other = create(&mut app, input("700"));
+    let before = view(&mut app);
+    let mut changed = input("250.25");
+    changed.debtor = "Synthetic corrected debtor".into();
+    changed.description = "Synthetic corrected purpose".into();
+    changed.opened = "2026-08-02".into();
+    changed.start = "2026-09".into();
+    changed.day = Some("30".into());
+    changed.installments = Some("5".into());
+    let edit = edit_preview(&mut app, first.loan.id(), changed);
+    assert_eq!(
+        view(&mut app),
+        before,
+        "preview and abandoning it must not write"
+    );
+    save_edit(&mut app, edit.clone());
+    let after = view(&mut app);
+    assert_eq!(after.accounts, before.accounts);
+    assert_eq!(after.income, before.income);
+    assert_eq!(after.expenses, before.expenses);
+    assert_eq!(after.entries.len(), before.entries.len());
+    assert!(after.receivables.contains(&other.loan));
+    assert!(after.entries.contains(&other.opening.entry));
+    assert!(after.receivables.contains(edit.loan()));
+    assert!(after.entries.contains(edit.opening()));
+    assert_eq!(summary(&mut app).outstanding.to_string(), "950.25");
+    assert!(
+        app.execute(Command::EditReceivable(Box::new(edit)))
+            .is_err(),
+        "stale double submit"
+    );
+    assert_eq!(view(&mut app), after);
+}
+
+#[test]
+fn correcting_a_partial_loan_can_change_source_without_changing_payment_or_interest_history() {
+    let (mut app, cash) = setup(SqliteLedger::in_memory().expect("db"));
+    app.execute(Command::CreateAccount {
+        name: "Synthetic second account".into(),
+        kind: AccountKind::Bank,
+        opening: "2000".into(),
+        credit_cycle: None,
+    })
+    .expect("second account");
+    let second = view(&mut app)
+        .accounts
+        .iter()
+        .find(|a| a.account.id() != cash)
+        .expect("second")
+        .account
+        .id();
+    let mut original = input("900");
+    original.source = Some(cash);
+    let loan = create(&mut app, original).loan;
+    let payments = pay(&mut app, &loan, cash, "300", "10");
+    let mut corrected = input("1200");
+    corrected.source = Some(second);
+    corrected.opened = "2026-06-20".into();
+    corrected.day = Some("28".into());
+    let edit = edit_preview(&mut app, loan.id(), corrected);
+    save_edit(&mut app, edit);
+    let after = view(&mut app);
+    for payment in &payments {
+        assert!(after.entries.contains(&payment.entry));
+    }
+    assert_eq!(after.income.to_string(), "10.00");
+    assert_eq!(
+        after
+            .accounts
+            .iter()
+            .find(|a| a.account.id() == cash)
+            .expect("cash")
+            .balance
+            .to_string(),
+        "10310.00"
+    );
+    assert_eq!(
+        after
+            .accounts
+            .iter()
+            .find(|a| a.account.id() == second)
+            .expect("second")
+            .balance
+            .to_string(),
+        "800.00"
+    );
+    assert_eq!(summary(&mut app).outstanding.to_string(), "900.00");
+    app.execute(Command::Reverse(payments[0].entry.id()))
+        .expect("cancel principal after edit");
+    assert_eq!(summary(&mut app).outstanding.to_string(), "1200.00");
+    assert_eq!(view(&mut app).income.to_string(), "10.00");
+}
+
+#[test]
+fn invalid_corrections_preserve_the_original_ledger() {
+    let (mut app, cash) = setup(SqliteLedger::in_memory().expect("db"));
+    let created = create(&mut app, input("900"));
+    pay(&mut app, &created.loan, cash, "300", "0");
+    let before = view(&mut app);
+    for n in 0..8 {
+        let mut changed = input("900");
+        match n {
+            0 => changed.total = "299.99".into(),
+            1 => changed.opened = "2026-09-25".into(),
+            2 => changed.debtor.clear(),
+            3 => changed.description.clear(),
+            4 => changed.day = Some("32".into()),
+            5 => changed.installments = Some("0".into()),
+            6 => changed.start = "2026-06".into(),
+            _ => changed.source = Some("00000000-0000-0000-0000-000000000999".parse().expect("id")),
+        }
+        assert!(
+            app.execute(Command::PreviewReceivableEdit {
+                expected: created.loan.clone(),
+                original: created.opening.entry.clone(),
+                input: changed
+            })
+            .is_err(),
+            "case {n}"
+        );
+        assert_eq!(view(&mut app), before);
+    }
+}
+
+#[test]
+fn concurrent_repayment_or_cancellation_invalidates_the_reviewed_correction() {
+    let dir = TempDir::new().expect("temp");
+    let path = dir.path().join("test.sqlite");
+    let (mut first, cash) = setup(SqliteLedger::open(&path).expect("db"));
+    let loan = create(&mut first, input("900")).loan;
+    let stale = edit_preview(&mut first, loan.id(), input("1000"));
+    let mut second = app(SqliteLedger::open(&path).expect("db2"));
+    let payment = pay(&mut second, &loan, cash, "100", "0");
+    let before = view(&mut second);
+    assert!(matches!(
+        first.execute(Command::EditReceivable(Box::new(stale))),
+        Err(AppError::Storage(StorageError::ReceivableChanged))
+    ));
+    assert_eq!(view(&mut first), before);
+    let stale = edit_preview(&mut first, loan.id(), input("1000"));
+    second
+        .execute(Command::Reverse(payment[0].entry.id()))
+        .expect("cancel");
+    let before = view(&mut second);
+    assert!(
+        first
+            .execute(Command::EditReceivable(Box::new(stale)))
+            .is_err()
+    );
+    assert_eq!(view(&mut first), before);
+}
+
+#[test]
+fn source_only_edits_invalidate_old_forms_even_when_loan_metadata_is_unchanged() {
+    let (mut app, cash) = setup(SqliteLedger::in_memory().expect("db"));
+    let created = create(&mut app, input("900"));
+    let mut changed = input("900");
+    changed.source = Some(cash);
+    let edit = edit_preview(&mut app, created.loan.id(), changed);
+    save_edit(&mut app, edit);
+    assert!(matches!(
+        app.execute(Command::PreviewReceivableEdit {
+            expected: created.loan,
+            original: created.opening.entry,
+            input: input("1000")
+        }),
+        Err(AppError::Storage(StorageError::ReceivableChanged))
+    ));
+}
+
+#[test]
+fn correction_rolls_back_on_posting_failure_and_roundtrips_through_backup_and_reopen() {
+    let dir = TempDir::new().expect("temp");
+    let path = dir.path().join("test.sqlite");
+    let (mut application, cash) = setup(SqliteLedger::open(&path).expect("db"));
+    let loan = create(&mut application, input("900")).loan;
+    pay(&mut application, &loan, cash, "100", "5");
+    let edit = edit_preview(&mut application, loan.id(), input("700"));
+    let before = view(&mut application);
+    let raw = Connection::open(&path).expect("raw");
+    raw.execute_batch("CREATE TRIGGER fail_correction BEFORE UPDATE ON postings BEGIN SELECT RAISE(ABORT,'synthetic fault'); END;").expect("trigger");
+    assert!(
+        application
+            .execute(Command::EditReceivable(Box::new(edit.clone())))
+            .is_err()
+    );
+    assert_eq!(view(&mut application), before);
+    raw.execute_batch("DROP TRIGGER fail_correction;")
+        .expect("drop");
+    save_edit(&mut application, edit);
+    let expected = view(&mut application);
+    drop(application);
+    let mut repo = SqliteLedger::open(&path).expect("reopen");
+    let bytes = repo.export_backup().expect("export");
+    let mut restored = SqliteLedger::in_memory().expect("restore db");
+    restored.restore_backup(&bytes).expect("restore");
+    assert_eq!(view(&mut app(restored)), expected);
+    assert_eq!(view(&mut app(repo)), expected);
+    assert_eq!(
+        raw.query_row("PRAGMA integrity_check", [], |r| r.get::<_, String>(0))
+            .expect("integrity"),
+        "ok"
+    );
+    assert_eq!(
+        raw.query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |r| r
+            .get::<_, i64>(
+            0
+        ))
+        .expect("fk"),
+        0
+    );
+}
+
+#[test]
+fn fully_paid_debt_can_be_corrected_and_cancelled_loans_cannot_be_reactivated_by_editing() {
+    let (mut app, cash) = setup(SqliteLedger::in_memory().expect("db"));
+    let created = create(&mut app, input("100"));
+    pay(&mut app, &created.loan, cash, "100", "0");
+    let mut changed = input("100");
+    changed.description = "Synthetic name correction".into();
+    let edit = edit_preview(&mut app, created.loan.id(), changed);
+    save_edit(&mut app, edit);
+    assert_eq!(summary(&mut app).items[0].status, ReceivableStatus::Paid);
+    let edit = edit_preview(&mut app, created.loan.id(), input("200"));
+    save_edit(&mut app, edit);
+    assert_eq!(summary(&mut app).outstanding.to_string(), "100.00");
+    let mut input = input("100");
+    input.source = Some(cash);
+    let other = create(&mut app, input.clone());
+    app.execute(Command::Reverse(other.opening.entry.id()))
+        .expect("cancel loan");
+    let before = view(&mut app);
+    assert!(
+        app.execute(Command::PreviewReceivableEdit {
+            expected: other.loan,
+            original: other.opening.entry,
+            input
+        })
+        .is_err()
+    );
+    assert_eq!(view(&mut app), before);
+}
 fn create(app: &mut App, input: ReceivableInput) -> PreparedReceivable {
     let p = preview(app, input);
     app.execute(Command::CreateReceivable(p.clone()))

@@ -87,6 +87,12 @@ pub enum Command {
     CommitPrompt(PromptPlan),
     PreviewReceivable(ReceivableInput),
     CreateReceivable(PreparedReceivable),
+    PreviewReceivableEdit {
+        expected: Receivable,
+        original: JournalEntry,
+        input: ReceivableInput,
+    },
+    EditReceivable(Box<PreparedReceivableEdit>),
     PreviewRepayment(RepaymentInput),
     ReceiveRepayment(Vec<PreparedEntry>),
     Load,
@@ -154,6 +160,7 @@ pub enum Response {
     PreparedPrompt(PromptPlan),
     PromptCommitted,
     ReceivableReview(ReceivableReview),
+    ReceivableChanged,
     Dashboard(Dashboard),
     RecurringChanged,
     PreparedRecurringPayment(PreparedRecurringPayment),
@@ -305,6 +312,29 @@ impl<R: LedgerRepository, C: Clock, I: IdSource> LedgerApplication<R, C, I> {
                 Ok(Response::Committed(
                     self.repository.create_receivable(&prepared)?,
                 ))
+            }
+            Command::PreviewReceivableEdit {
+                expected,
+                original,
+                input,
+            } => {
+                let edit = prepare_receivable_edit(
+                    &self.repository.snapshot()?,
+                    expected,
+                    original,
+                    input,
+                    self.clock.today()?,
+                )?;
+                Ok(Response::ReceivableReview(ReceivableReview::Edit(
+                    Box::new(edit),
+                )))
+            }
+            Command::EditReceivable(edit) => {
+                if edit.loan().opened() > self.clock.today()? {
+                    return Err(AppError::Input("วันที่ตั้งหนี้ต้องไม่เกินวันนี้".into()));
+                }
+                self.repository.edit_receivable(&edit)?;
+                Ok(Response::ReceivableChanged)
             }
             Command::PreviewRepayment(input) => {
                 let mut state = self.repository.snapshot()?;

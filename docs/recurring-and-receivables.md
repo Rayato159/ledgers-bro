@@ -16,6 +16,10 @@ Use the receivables form or a supported prompt. Enter the debtor, debt descripti
 
 Opening existing debt adds a brought-forward receivable asset, without inventing cash or income. A new loan moves money from an account into that asset. Principal repayments move it back; interest creates separate income.
 
+Choose **Edit receivable** on the specific debt card to correct its debtor, description, original principal, opening date, collection terms or funding account. Review the before/after values, remaining principal and any account balance changes, then confirm or cancel. Saving refreshes the page automatically.
+
+Corrections update the original debt and its opening journal together in one transaction. They preserve the debt ID, opening journal ID and all repayment, interest and repayment-cancellation journals. Total principal includes principal already collected and cannot fall below it. The opening date cannot move after a recorded principal repayment, or into the future. A cancelled loan cannot be reactivated by editing. Concurrent edits, collections or cancellations invalidate the review and require a fresh preview. Full backups include the corrected data; the database schema remains unchanged.
+
 Scheduled principal is split equally with residual minor units in the final installment. Partial collections allocate to the oldest installment first. A debt completes when principal is repaid, including plans without a fixed term count. Overdue scheduled principal requires both a term count and collection day; an installment due today is not yet overdue. Cancelling a collection restores its outstanding principal and schedule.
 
 The notification bell covers upcoming/overdue bills and collection dates while the app is open. Read notifications are archived. Settings controls each reminder type and optional system banners; closed-app background reminders are not implemented.

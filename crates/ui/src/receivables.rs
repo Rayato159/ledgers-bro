@@ -16,6 +16,22 @@ fn new_form(today: EntryDate) -> ReceivableInput {
     }
 }
 
+fn edit_form(loan: &Receivable, opening: &JournalEntry) -> ReceivableInput {
+    ReceivableInput {
+        debtor: loan.debtor().as_str().into(),
+        description: loan.description().as_str().into(),
+        total: loan.total().money().to_string(),
+        opened: loan.opened().to_string(),
+        start: loan.start().to_string(),
+        day: loan.day().map(|v| v.to_string()),
+        installments: loan.installments().map(|v| v.to_string()),
+        source: match opening.kind() {
+            EntryKind::Lending { account, .. } => Some(*account),
+            _ => None,
+        },
+    }
+}
+
 #[component]
 pub(crate) fn ReceivablesPage(view: Dashboard) -> Element {
     let tab = use_signal(|| 0usize);
@@ -39,23 +55,42 @@ pub(crate) fn ReceivablesPage(view: Dashboard) -> Element {
         Err(e) => return rsx! { p { role: "alert", "{e}" } },
     };
     let review = store.receivable_review.read().clone();
+    let editing = store.receivable_edit.read().is_some();
     rsx! {
         section { class: "page-heading",
             div { h1 { {crate::i18n::text("ลูกหนี้", &[])} } p { class: "muted", {crate::i18n::text("ใครค้างเราเท่าไหร่ รับคืนแล้วกี่งวด และนัดเก็บเงินวันไหน", &[])} } }
-            button { class: "primary", "aria-haspopup": "dialog", disabled: *store.busy.read(), onclick: move |_| { adding.set(true); store.notice.set(None); store.receivable_review.set(None); }, {crate::i18n::text("เพิ่มลูกหนี้", &[])} }
+            button { class: "primary", "aria-haspopup": "dialog", disabled: *store.busy.read(), onclick: move |_| { form.set(new_form(view.today)); is_new_loan.set(false); store.receivable_edit.set(None); adding.set(true); store.notice.set(None); store.receivable_review.set(None); }, {crate::i18n::text("เพิ่มลูกหนี้", &[])} }
         }
         PageTabs { id: "receivables", tabs: vec![("list", "รายการลูกหนี้"), ("up", "ภาพรวมการรับคืน")], selected: tab }
         PagePanel { lazy: true, id: "receivables", index: 1, selected: tab(), ReceivablesChart { view: view.clone() } }
-        if adding() {
+        if adding() || editing {
             dialog { id: "receivable-create-dialog", class: "account-dialog recurring-dialog receivable-dialog", "aria-labelledby": "receivable-create-title",
                 onmounted: move |_| { let _ = document::eval("document.getElementById('receivable-create-dialog').showModal(); document.getElementById('debtor-name')?.focus()"); },
-                oncancel: move |e| { e.prevent_default(); if !*store.busy.read() { adding.set(false); store.receivable_review.set(None); store.notice.set(None); } },
+                oncancel: move |e| { e.prevent_default(); if !*store.busy.read() { adding.set(false); store.receivable_edit.set(None); store.receivable_review.set(None); store.notice.set(None); } },
                 div { class: "section-heading",
-                    h2 { id: "receivable-create-title", tabindex: "-1", {crate::i18n::text("เพิ่มรายการหนี้ที่คนอื่นติดเรา", &[])} }
-                    button { class: "icon-button", disabled: *store.busy.read(), "aria-label": crate::i18n::tr("ปิดหน้าต่าง"), onclick: move |_| { adding.set(false); store.receivable_review.set(None); store.notice.set(None); }, Icon { name: "close", size: 20 } }
+                    h2 { id: "receivable-create-title", tabindex: "-1", {crate::i18n::tr(if editing { "แก้ไขลูกหนี้" } else { "เพิ่มรายการหนี้ที่คนอื่นติดเรา" })} }
+                    button { class: "icon-button", disabled: *store.busy.read(), "aria-label": crate::i18n::tr("ปิดหน้าต่าง"), onclick: move |_| { adding.set(false); store.receivable_edit.set(None); store.receivable_review.set(None); store.notice.set(None); }, Icon { name: "close", size: 20 } }
                 }
-                if let Some((true, message)) = store.notice.read().clone() { p { class: "form-error", role: "alert", "{crate::i18n::tr(&message)}" } }
-                if let Some(ReceivableReview::New(prepared)) = review {
+                if let Some((true, message)) = store.notice.read().clone() {
+                    p { class: "form-error", role: "alert", "{crate::i18n::tr(&message)}" }
+                    if editing {
+                        button { class: "text-button", r#type: "button", disabled: *store.busy.read(), onclick: move |_| {
+                            let selected = store.receivable_edit.peek().as_ref().map(|(loan, _)| loan.id());
+                            let latest = store.view.peek().clone();
+                            if let (Some(id), Some(latest)) = (selected, latest)
+                                && let Some(loan) = latest.receivables.iter().find(|loan| loan.id() == id)
+                                && let Some(opening) = latest.entries.iter().find(|e| matches!(e.kind(), EntryKind::Lending { receivable, .. } | EntryKind::ReceivableOpening { receivable, .. } if *receivable == id)) {
+                                let input = edit_form(loan, opening);
+                                is_new_loan.set(input.source.is_some()); form.set(input);
+                                store.receivable_edit.set(Some((loan.clone(), opening.clone())));
+                                store.receivable_review.set(None); store.notice.set(None);
+                            }
+                        }, {crate::i18n::tr("โหลดรายการนี้ใหม่")} }
+                    }
+                }
+                if let Some(ReceivableReview::Edit(prepared)) = review.clone() {
+                    ReceivableEditReview { prepared: *prepared, view: view.clone() }
+                } else if let Some(ReceivableReview::New(prepared)) = review {
                     div { class: "receivable-review-body", onmounted: move |_| { let _ = document::eval("document.getElementById('receivable-create-title').focus(); document.getElementById('receivable-create-dialog').scrollTop = 0"); },
                     p { "{prepared.loan.debtor().as_str()} · {prepared.loan.description().as_str()}" }
                     p { {crate::i18n::text("เงินต้น ฿{0} · ตั้งหนี้ {1}", &[money_label(prepared.loan.total().money()).to_string(), format!("{}", prepared.loan.opened())])} }
@@ -69,10 +104,13 @@ pub(crate) fn ReceivablesPage(view: Dashboard) -> Element {
                     }
                     }
                 } else {
+                    if editing { p { class: "field-hint", {crate::i18n::tr("แก้ข้อมูลที่กรอกผิดโดยคงประวัติรับชำระไว้ เงินต้นต้องรวมส่วนที่รับคืนแล้ว และต้องไม่น้อยกว่ายอดรับคืน")} } }
                     form { onsubmit: move |e| {
                         e.prevent_default();
                         if is_new_loan() && form.read().source.is_none() { store.notice.set(Some((true, "กรุณาเลือกบัญชีที่จ่ายเงินให้ยืม".into()))); }
-                        else { store.send(Command::PreviewReceivable(form())); }
+                        else if let Some((expected, original)) = store.receivable_edit.peek().clone() {
+                            store.send(Command::PreviewReceivableEdit { expected, original, input: form() });
+                        } else { store.send(Command::PreviewReceivable(form())); }
                     },
                         fieldset { class: "recurring-fields", disabled: *store.busy.read(),
                             div { label { r#for: "debtor-name", {crate::i18n::text("ชื่อลูกหนี้", &[])} } input { id: "debtor-name", required: true, maxlength: 60, value: form.read().debtor.clone(), onmounted: move |_| { let _ = document::eval("document.getElementById('debtor-name')?.focus()"); }, oninput: move |e| form.write().debtor = e.value() } }
@@ -104,7 +142,7 @@ pub(crate) fn ReceivablesPage(view: Dashboard) -> Element {
                         p { class: "field-hint", {crate::i18n::text("เมื่อกำหนดงวด จะแบ่งเงินต้นเท่ากันและเก็บเศษสตางค์ในงวดสุดท้าย · รับชำระบางส่วนได้ โดยตัดงวดเก่าก่อน · วันที่ 29–31 ที่ไม่มีจะใช้วันสุดท้ายของเดือน", &[])} }
                         div { class: "receivable-dialog-actions",
                             button { class: "primary", r#type: "submit", disabled: *store.busy.read(), {crate::i18n::text("ตรวจข้อมูลลูกหนี้", &[])} }
-                            button { class: "soft-button", r#type: "button", disabled: *store.busy.read(), onclick: move |_| { adding.set(false); store.receivable_review.set(None); store.notice.set(None); }, {crate::i18n::tr("ยกเลิก")} }
+                            button { class: "soft-button", r#type: "button", disabled: *store.busy.read(), onclick: move |_| { adding.set(false); store.receivable_edit.set(None); store.receivable_review.set(None); store.notice.set(None); }, {crate::i18n::tr("ยกเลิก")} }
                         }
                     }
                 }
@@ -128,8 +166,23 @@ pub(crate) fn ReceivablesPage(view: Dashboard) -> Element {
                     if let Some(due) = p.next_due { p { class: "next-collection", Icon { name: "calendar", size: 20 } {crate::i18n::text("นัดเก็บถัดไป / งวดค้างแรก: {0}", &[format!("{}", due)])} } }
                     if let Some(amount) = p.next_amount { p { {crate::i18n::text("ยอดที่ยังขาดของงวดถัดไป ฿{0}", &[money_label(amount).to_string()])} } }
                     if p.overdue > Money::ZERO { p { class: "form-error", {crate::i18n::text("เงินต้นเลยกำหนด ฿{0}", &[money_label(p.overdue).to_string()])} } }
+                    div { class: "receivable-item-actions",
+                    if p.status != ReceivableStatus::Cancelled {
+                        button { class: "soft-button receivable-edit-button", r#type: "button", disabled: *store.busy.read(),
+                            onclick: { let loan = p.loan.clone(); let opening = view.entries.iter().find(|e| matches!(e.kind(), EntryKind::Lending { receivable, .. } | EntryKind::ReceivableOpening { receivable, .. } if *receivable == loan.id())).cloned(); move |_| {
+                                if let Some(opening) = opening.clone() {
+                                    let input = edit_form(&loan, &opening);
+                                    is_new_loan.set(input.source.is_some()); form.set(input);
+                                    adding.set(false); store.notice.set(None); store.receivable_review.set(None);
+                                    store.receivable_edit.set(Some((loan.clone(), opening)));
+                                }
+                            } },
+                            Icon { name: "edit", size: 18 } {crate::i18n::tr("แก้ไขลูกหนี้")}
+                        }
+                    }
                     if p.outstanding > Money::ZERO {
                         button { class: "primary", disabled: *store.busy.read(), onclick: { let id = p.loan.id(); move |_| { store.receivable_review.set(None); store.repayment_selection.set(Some(id)); store.repayment_form.set(true); } }, Icon { name: "down", size: 18 } {crate::i18n::text("บันทึกลูกหนี้ชำระหนี้", &[])} }
+                    }
                     }
                     details { class: "flow-explanation", summary { {crate::i18n::text("ประวัติรับคืนเงินต้น ({0})", &[format!("{}", p.payments.len())])} }
                         for entry in p.payments { if let EntryKind::Repayment { account, amount, .. } = entry.kind() { p { "{entry.date()} · {account_label(&view, *account)} · {crate::i18n::currency_prefix()}{money_label(amount.money())}" } } }
@@ -138,6 +191,110 @@ pub(crate) fn ReceivablesPage(view: Dashboard) -> Element {
                 }
             }
         } }
+    }
+}
+
+#[component]
+fn ReceivableEditReview(prepared: PreparedReceivableEdit, view: Dashboard) -> Element {
+    let mut store = use_context::<UiState>();
+    let before = edit_form(prepared.expected(), prepared.original());
+    let after = edit_form(prepared.loan(), prepared.opening());
+    let paid = receivable_summary(&view)
+        .ok()
+        .and_then(|s| {
+            s.items
+                .into_iter()
+                .find(|p| p.loan.id() == prepared.loan().id())
+        })
+        .map(|p| p.paid)
+        .unwrap_or(Money::ZERO);
+    let outstanding = prepared
+        .loan()
+        .total()
+        .money()
+        .checked_sub(paid)
+        .unwrap_or(Money::ZERO);
+    let source_label = |id: Option<AccountId>| {
+        id.map(|id| account_label(&view, id))
+            .unwrap_or_else(|| crate::i18n::tr("หนี้ที่มีอยู่แล้ว"))
+    };
+    let rows = vec![
+        ("ชื่อลูกหนี้", before.debtor, after.debtor),
+        ("หนี้อะไร", before.description, after.description),
+        ("เงินต้นทั้งหมด", before.total, after.total),
+        ("วันที่ตั้งยอดหนี้", before.opened, after.opened),
+        ("เดือนเริ่มเก็บ (ค.ศ.)", before.start, after.start),
+        (
+            "เก็บทุกวันที่ (1–31)",
+            before
+                .day
+                .unwrap_or_else(|| crate::i18n::tr("ไม่กำหนดวันเก็บ")),
+            after.day.unwrap_or_else(|| crate::i18n::tr("ไม่กำหนดวันเก็บ")),
+        ),
+        (
+            "จำนวนงวดที่ต้องชำระ",
+            before
+                .installments
+                .unwrap_or_else(|| crate::i18n::tr("ไม่กำหนดจำนวนงวด")),
+            after
+                .installments
+                .unwrap_or_else(|| crate::i18n::tr("ไม่กำหนดจำนวนงวด")),
+        ),
+        (
+            "บัญชีที่จ่ายเงินให้ยืม",
+            source_label(before.source),
+            source_label(after.source),
+        ),
+    ];
+    let balances: Vec<_> = view
+        .accounts
+        .iter()
+        .filter_map(|a| {
+            let amount = |entry: &JournalEntry| {
+                entry
+                    .postings()
+                    .iter()
+                    .find(|p| p.target() == PostingTarget::Account(a.account.id()))
+                    .map(|p| p.amount())
+                    .unwrap_or(Money::ZERO)
+            };
+            let delta = amount(prepared.opening())
+                .checked_sub(amount(prepared.original()))
+                .ok()?;
+            if delta == Money::ZERO {
+                return None;
+            }
+            Some((
+                a.account.name().as_str().to_string(),
+                a.balance,
+                a.balance.checked_add(delta).ok()?,
+            ))
+        })
+        .collect();
+    rsx! {
+        div { class: "receivable-edit-review", onmounted: move |_| { let _ = document::eval("document.getElementById('receivable-create-title').focus(); document.getElementById('receivable-create-dialog').scrollTop = 0"); },
+            h3 { {crate::i18n::tr("ตรวจสอบการแก้ไขลูกหนี้")} }
+            dl { class: "receivable-edit-changes",
+                for (label, old, new) in rows {
+                    div { dt { "{crate::i18n::tr(label)}" } dd { if old != new { span { class: "muted", "{old}" } span { " → " } } strong { "{new}" } } }
+                }
+            }
+            div { class: "debtor-balance-grid",
+                div { small { {crate::i18n::tr("รับคืนแล้ว")} } strong { "{crate::i18n::currency_prefix()}{money_label(paid)}" } }
+                div { small { {crate::i18n::tr("ยังค้างเรา")} } strong { "{crate::i18n::currency_prefix()}{money_label(outstanding)}" } }
+            }
+            if balances.is_empty() { p { class: "field-hint", {crate::i18n::tr("ยอดเงินในบัญชีไม่เปลี่ยน")} } }
+            else {
+                h3 { {crate::i18n::tr("ยอดบัญชีหลังแก้ไข")} }
+                for (name, old, new) in balances { p { "{name}: {crate::i18n::currency_prefix()}{money_label(old)} → {money_label(new)}" } }
+            }
+            p { class: "field-hint", {crate::i18n::tr("แก้ยอดตั้งหนี้เดิมและคำนวณยอดค้างใหม่ ประวัติรับเงินต้นและดอกเบี้ยยังอยู่ครบ")} }
+            div { class: "receivable-dialog-actions",
+                button { class: "primary", id: "confirm-receivable-edit", disabled: *store.busy.read(), onclick: move |_| store.send(Command::EditReceivable(Box::new(prepared.clone()))), {crate::i18n::tr("ยืนยันการแก้ไข")} }
+                button { class: "soft-button", disabled: *store.busy.read(), onclick: move |_| { store.receivable_review.set(None); store.notice.set(None); }, {crate::i18n::tr("กลับไปแก้")} }
+                button { class: "text-button", disabled: *store.busy.read(), onclick: move |_| { store.receivable_edit.set(None); store.receivable_review.set(None); store.notice.set(None); }, {crate::i18n::tr("ยกเลิก")} }
+            }
+        }
     }
 }
 
