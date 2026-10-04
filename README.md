@@ -4,7 +4,7 @@ A local-first personal finance app built with **Rust, Dioxus, and SQLite**, with
 
 ## Download
 
-**[Get version 0.1.13](https://github.com/Rayato159/ledgers-bro/releases/tag/v0.1.13)** or open **More → Settings → App updates** in an existing installation.
+**[Get version 0.1.14](https://github.com/Rayato159/ledgers-bro/releases/tag/v0.1.14)** or open **More → Settings → App updates** in an existing installation.
 
 | Platform | Package |
 | --- | --- |
@@ -30,13 +30,13 @@ Back up in **Settings → Data** before upgrading. Install over the existing app
 - **Notifications:** the bell shows available updates, bills due, and collections due. Opening a notification marks it read and archives it. Settings control reminder types and optional system banners. The last 256 archived notifications are saved per user.
 - **Optional Thai tax tools:** classify taxable income and record withholding and deductions in a THB ledger. These tools do not submit tax returns.
 
-## What's new in 0.1.13
+## What's new in 0.1.14
 
-- Edit an existing receivable directly from its card: debtor, description, principal, opening date, collection terms and funding account.
-- Review before/after values, outstanding principal and account balance changes before confirming. Saving refreshes the page automatically.
-- Keep repayment and interest history intact. Invalid amounts, dates and stale reviews are rejected without partially changing the ledger.
+- Transactions show the newest transaction date first, with inclusive date-range filters and the existing type/year controls.
+- Account dialogs can be closed during a pending operation and keep native Back/Escape closure in sync. Saving continues once, with the result shown after refresh.
+- Monthly bill summaries keep labels outside the progress ring. Mobile tabs wrap, and month navigation stays on one row below its label.
 
-See the [0.1.13 update guide](docs/update-0.1.13.md).
+See the [0.1.14 update guide](docs/update-0.1.14.md).
 
 ## Data and current limits
 

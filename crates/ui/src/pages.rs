@@ -3,6 +3,10 @@ use dioxus::prelude::*;
 use ledger_application::{Command, Dashboard};
 use ledger_domain::*;
 
+#[cfg(test)]
+#[path = "pages_tests.rs"]
+mod tests;
+
 #[component]
 pub fn AccountsPage(view: Dashboard) -> Element {
     let tab = use_signal(|| 0usize);
@@ -97,9 +101,14 @@ pub fn AccountDialog() -> Element {
     let payment = use_signal(String::new);
     rsx! {
         dialog { id: "account-dialog", class: "account-dialog", "aria-labelledby": "account-title",
-            onmounted: move |_| { let _ = document::eval("document.getElementById('account-dialog').showModal()"); },
-            oncancel: move |event| { event.prevent_default(); if !*store.busy.read() { store.account_form.set(false); } },
-            form { onsubmit: move |event| {
+            onmounted: move |_| { spawn(async move {
+                let mut close = document::eval("const dialog = document.getElementById('account-dialog'); dialog.addEventListener('close', () => dioxus.send(true), {once: true}); dialog.showModal();");
+                if close.recv::<bool>().await.is_ok() { store.account_form.set(false); }
+            }); },
+            // Native Back/Escape may close the dialog before Rust handles the
+            // event. Keep its native and reactive lifetimes in sync.
+            oncancel: move |_| store.account_form.set(false),
+            form { id: "account-create-form", onsubmit: move |event| {
                 event.prevent_default();
                 if kind() == AccountKind::Crypto {
                     match CryptoHoldings::parse(&bitcoin(), &solana()) {
@@ -116,7 +125,7 @@ pub fn AccountDialog() -> Element {
                 } else { None };
                 store.send(Command::CreateAccount { name: name(), kind: kind(), opening: opening(), credit_cycle });
             },
-                div { class: "section-heading", h2 { id: "account-title", {crate::i18n::text("เพิ่มบัญชีใหม่", &[])} } button { r#type: "button", class: "icon-button", "aria-label": crate::i18n::text("ปิดหน้าต่าง", &[]), disabled: *store.busy.read(), onclick: move |_| store.account_form.set(false), Icon { name: "close", size: 20 } } }
+                div { class: "section-heading", h2 { id: "account-title", {crate::i18n::text("เพิ่มบัญชีใหม่", &[])} } button { id: "account-close", r#type: "button", class: "icon-button", "aria-label": crate::i18n::text("ปิดหน้าต่าง", &[]), onclick: move |_| store.account_form.set(false), Icon { name: "close", size: 20 } } }
                 p { class: "muted", {crate::i18n::text("ให้เงินแต่ละก้อนมีที่ของมัน", &[])} }
                 label { r#for: "account-name", {crate::i18n::text("ชื่อบัญชี", &[])} } input { id: "account-name", name: "account-name", autofocus: true, required: true, maxlength: 60, placeholder: crate::i18n::text("เช่น เงินสด หรือ ธนาคาร ออมเงิน", &[]), value: "{name}", disabled: *store.busy.read(), oninput: move |event| name.set(event.value()) }
                 label { r#for: "account-kind", {crate::i18n::text("ประเภทบัญชี", &[])} } select { id: "account-kind", value: kind().code(), disabled: *store.busy.read(), onchange: move |event| { if let Ok(value) = AccountKind::from_code(&event.value()) { kind.set(value); } }, for item in AccountKind::ALL { option { value: item.code(), "{crate::i18n::tr(item.label())}" } } }
@@ -133,7 +142,11 @@ pub fn AccountDialog() -> Element {
                     p { class: "field-hint", {crate::i18n::text("ยอดหนี้เริ่มต้นรวมในยอดรอชำระ แต่ไม่เดารอบบิลย้อนหลัง", &[])} }
                 }
                 if let Some((true, message)) = store.notice.read().clone() { p { class: "form-error", role: "alert", "{message}" } }
-                button { class: "primary full-width", r#type: "submit", disabled: *store.busy.read(), if *store.busy.read() { {crate::i18n::text("กำลังบันทึก…", &[])} } else { {crate::i18n::text("สร้างบัญชี", &[])} } }
+                if *store.busy.read() { p { class: "field-hint", role: "status", {crate::i18n::tr("กำลังทำงานในเครื่อง ปิดหน้าต่างได้ ระบบจะแจ้งผลเมื่อเสร็จ")} } }
+                div { class: "dialog-actions",
+                    button { class: "primary", r#type: "submit", disabled: *store.busy.read(), if *store.busy.read() { {crate::i18n::text("กำลังบันทึก…", &[])} } else { {crate::i18n::text("สร้างบัญชี", &[])} } }
+                    button { class: "soft-button", r#type: "button", onclick: move |_| store.account_form.set(false), {crate::i18n::tr("ปิดหน้าต่าง")} }
+                }
             }
         }
     }
@@ -143,6 +156,8 @@ pub fn AccountDialog() -> Element {
 pub fn TransactionsPage(view: Dashboard) -> Element {
     let tab = use_signal(|| 0usize);
     let mut year = use_signal(|| view.today.month_key().0);
+    let mut from = use_signal(String::new);
+    let mut through = use_signal(String::new);
     let years: std::collections::BTreeSet<_> = view
         .entries
         .iter()
@@ -151,19 +166,87 @@ pub fn TransactionsPage(view: Dashboard) -> Element {
         .collect();
     let mut page = use_signal(|| 0usize);
     use_effect(move || {
-        let _ = (tab(), year());
+        let _ = (tab(), year(), from(), through());
         page.set(0);
     });
-    let filtered: Vec<_> = view
-        .entries
+    let dates = history_dates(&from(), &through());
+    let filtered = match dates {
+        Ok((from, through)) => history_entries(&view.entries, tab(), year(), from, through),
+        Err(_) => Vec::new(),
+    };
+    let pages = filtered.len().div_ceil(20).max(1);
+    let current_page = page().min(pages - 1);
+    let mut visible = view.clone();
+    visible.entries = filtered
+        .into_iter()
+        .skip(current_page * 20)
+        .take(20)
+        .collect();
+    let mut store = use_context::<UiState>();
+    rsx! {
+        section { class: "page-heading", div { h1 { {crate::i18n::text("รายการทั้งหมด", &[])} } p { class: "muted", {crate::i18n::tr("เรียงตามวันที่ล่าสุด • ยกเลิกรายการได้โดยเก็บประวัติไว้")} } } button { class: "soft-button", disabled: *store.busy.read(), onclick: move |_| { store.notice.set(None); store.export_form.set(true); }, Icon { name: "download", size: 18 } {crate::i18n::text("ส่งออก CSV", &[])} } }
+        PageTabs { id: "transactions", tabs: vec![("list", "ทั้งหมด"), ("up", "รายจ่าย"), ("down", "รายรับ"), ("arrow", "โอนเงิน"), ("user", "เงินให้ยืมและรับคืน")], selected: tab }
+        div { class: "history-filters",
+          div { label { r#for: "history-year", {crate::i18n::tr("ปีที่แสดง")} }
+            select { id: "history-year", value: "{year}", onchange: move |e| { if let Ok(value) = e.value().parse() { year.set(value); from.set(String::new()); through.set(String::new()); } },
+                option { value: "0", {crate::i18n::tr("ทุกปี")} }
+                for value in years.into_iter().rev() { option { value: "{value}", "{crate::i18n::year(value)}" } }
+            }
+          }
+          div { label { r#for: "history-from", {crate::i18n::tr("ตั้งแต่วันที่")} }
+            input { id: "history-from", r#type: "date", min: "1900-01-01", max: "9999-12-31", value: "{from}", onchange: move |e| { from.set(e.value()); year.set(0); } }
+          }
+          div { label { r#for: "history-through", {crate::i18n::tr("ถึงวันที่")} }
+            input { id: "history-through", r#type: "date", min: "1900-01-01", max: "9999-12-31", value: "{through}", onchange: move |e| { through.set(e.value()); year.set(0); } }
+          }
+          button { r#type: "button", class: "soft-button", disabled: from().is_empty() && through().is_empty(), onclick: move |_| { from.set(String::new()); through.set(String::new()); }, {crate::i18n::tr("ล้างช่วงวัน")} }
+        }
+        if let Err(message) = dates { p { class: "form-error", role: "alert", {crate::i18n::tr(message)} } }
+        section { id: "transactions-panel-{tab}", class: "card transaction-card", role: "tabpanel", "aria-labelledby": "transactions-tab-{tab}", TransactionRows { key: "{tab}-{current_page}", view: visible, limit: 20, allow_cancel: true } }
+        if pages > 1 { div { class: "list-pagination",
+            button { class: "soft-button", disabled: current_page == 0, onclick: move |_| page.set(current_page.saturating_sub(1)), {crate::i18n::tr("ก่อนหน้า")} }
+            span { {crate::i18n::text("หน้า {0} / {1}", &[(current_page + 1).to_string(), pages.to_string()])} }
+            button { class: "soft-button", disabled: current_page + 1 >= pages, onclick: move |_| page.set(current_page + 1), {crate::i18n::tr("ถัดไป")} }
+        } }
+    }
+}
+
+fn history_dates(
+    from: &str,
+    through: &str,
+) -> Result<(Option<EntryDate>, Option<EntryDate>), &'static str> {
+    let parse = |value: &str| {
+        if value.is_empty() {
+            Ok(None)
+        } else {
+            value.parse().map(Some).map_err(|_| "กรุณาระบุวันที่ให้ครบถ้วน")
+        }
+    };
+    let (from, through) = (parse(from)?, parse(through)?);
+    if from.zip(through).is_some_and(|(a, b)| a > b) {
+        return Err("วันที่เริ่มต้องไม่เกินวันที่สิ้นสุด");
+    }
+    Ok((from, through))
+}
+
+fn history_entries(
+    entries: &[JournalEntry],
+    tab: usize,
+    year: i32,
+    from: Option<EntryDate>,
+    through: Option<EntryDate>,
+) -> Vec<JournalEntry> {
+    let mut entries: Vec<_> = entries
         .iter()
         .filter(|entry| {
-            (year() == 0 || entry.date().month_key().0 == year())
+            (year == 0 || entry.date().month_key().0 == year)
+                && from.is_none_or(|date| entry.date() >= date)
+                && through.is_none_or(|date| entry.date() <= date)
                 && match entry.kind() {
                     EntryKind::Opening { .. }
                     | EntryKind::ReceivableOpening { .. }
                     | EntryKind::Reversal { .. } => false,
-                    kind => match tab() {
+                    kind => match tab {
                         1 => matches!(kind, EntryKind::Expense { .. }),
                         2 => matches!(kind, EntryKind::Income { .. }),
                         3 => matches!(kind, EntryKind::Transfer { .. }),
@@ -177,31 +260,10 @@ pub fn TransactionsPage(view: Dashboard) -> Element {
         })
         .cloned()
         .collect();
-    let pages = filtered.len().div_ceil(20).max(1);
-    let current_page = page().min(pages - 1);
-    let mut visible = view.clone();
-    visible.entries = filtered
-        .into_iter()
-        .skip(current_page * 20)
-        .take(20)
-        .collect();
-    let mut store = use_context::<UiState>();
-    rsx! {
-        section { class: "page-heading", div { h1 { {crate::i18n::text("รายการทั้งหมด", &[])} } p { class: "muted", {crate::i18n::text("เรียงตามเวลาที่บันทึก • ยกเลิกรายการได้โดยเก็บประวัติไว้", &[])} } } button { class: "soft-button", disabled: *store.busy.read(), onclick: move |_| { store.notice.set(None); store.export_form.set(true); }, Icon { name: "download", size: 18 } {crate::i18n::text("ส่งออก CSV", &[])} } }
-        PageTabs { id: "transactions", tabs: vec![("list", "ทั้งหมด"), ("up", "รายจ่าย"), ("down", "รายรับ"), ("arrow", "โอนเงิน"), ("user", "เงินให้ยืมและรับคืน")], selected: tab }
-        div { class: "history-year-filter", label { r#for: "history-year", {crate::i18n::tr("ปีที่แสดง")} }
-            select { id: "history-year", value: "{year}", onchange: move |e| { if let Ok(value) = e.value().parse() { year.set(value); } },
-                option { value: "0", {crate::i18n::tr("ทุกปี")} }
-                for value in years.into_iter().rev() { option { value: "{value}", "{crate::i18n::year(value)}" } }
-            }
-        }
-        section { id: "transactions-panel-{tab}", class: "card transaction-card", role: "tabpanel", "aria-labelledby": "transactions-tab-{tab}", TransactionRows { key: "{tab}-{current_page}", view: visible, limit: 20, allow_cancel: true } }
-        if pages > 1 { div { class: "list-pagination",
-            button { class: "soft-button", disabled: current_page == 0, onclick: move |_| page.set(current_page.saturating_sub(1)), {crate::i18n::tr("ก่อนหน้า")} }
-            span { {crate::i18n::text("หน้า {0} / {1}", &[(current_page + 1).to_string(), pages.to_string()])} }
-            button { class: "soft-button", disabled: current_page + 1 >= pages, onclick: move |_| page.set(current_page + 1), {crate::i18n::tr("ถัดไป")} }
-        } }
-    }
+    // Dashboard supplies newest insertion first. Stable sorting retains that
+    // order for same-day entries without changing persisted journal sequence.
+    entries.sort_by_key(|entry| std::cmp::Reverse(entry.date()));
+    entries
 }
 
 #[component]

@@ -1,4 +1,11 @@
 &[
+    ("เรียงตามวันที่ล่าสุด • ยกเลิกรายการได้โดยเก็บประวัติไว้", "Newest transaction date first • Cancel entries while keeping their history"),
+    ("ตั้งแต่วันที่", "From date"),
+    ("ถึงวันที่", "Through date"),
+    ("ล้างช่วงวัน", "Clear dates"),
+    ("กรุณาระบุวันที่ให้ครบถ้วน", "Enter a complete, valid date."),
+    ("วันที่เริ่มต้องไม่เกินวันที่สิ้นสุด", "The start date must be on or before the end date."),
+    ("กำลังทำงานในเครื่อง ปิดหน้าต่างได้ ระบบจะแจ้งผลเมื่อเสร็จ", "Working on this device. You can close this window; the result will appear when finished."),
     ("โหลดรายการนี้ใหม่", "Reload this receivable"),
     ("ข้อมูลลูกหนี้เปลี่ยนไปแล้ว กรุณาโหลดใหม่และตรวจอีกครั้ง", "This receivable or its payments have changed. Reload it and review again."),
     ("ยอดชำระเกินเงินต้นค้าง หรือการยกเลิกจะทำให้ยอดหนี้ไม่ถูกต้อง กรุณาตรวจรายการชำระก่อน", "Principal cannot be less than the amount already repaid. Check the payments before correcting or cancelling."),

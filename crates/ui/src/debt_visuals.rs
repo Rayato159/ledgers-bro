@@ -23,9 +23,11 @@ pub(crate) fn ProgressRing(done: i64, total: i64, label: String) -> Element {
     } else {
         "—".into()
     };
-    rsx! { div { class: "debt-ring", role: "img", "aria-label": "{label}: {display}",
-        style: "--progress:{percent}%;",
-        div { strong { "{display}" } span { "{label}" } }
+    rsx! { div { class: "debt-progress", role: "img", "aria-label": "{label}: {display}",
+        div { class: "debt-ring", style: "--progress:{percent}%;", "aria-hidden": "true",
+            div { strong { "{display}" } }
+        }
+        span { class: "debt-progress-label", "aria-hidden": "true", "{label}" }
     } }
 }
 

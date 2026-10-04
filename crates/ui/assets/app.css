@@ -701,6 +701,16 @@ footer { display: flex; justify-content: space-between; align-items: center; gap
 .history-year-filter { display: flex; gap: 14px; align-items: center; margin-bottom: 20px; }
 .history-year-filter label { margin: 0; }
 .history-year-filter select { width: auto; min-width: 130px; }
+.history-filters { display: grid; grid-template-columns: 140px repeat(2,minmax(160px,240px)) auto; align-items: end; gap: 16px; margin-bottom: 24px; }
+.history-filters > div { min-width: 0; }
+.history-filters label { margin: 0 0 8px; }
+.history-filters input, .history-filters select { min-width: 0; width: 100%; }
+.history-filters > button { justify-self: start; }
+@media (max-width: 700px) {
+  .history-filters { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
+  .history-filters > div:first-child { grid-column: 1 / -1; }
+  .history-filters > button { grid-column: 1 / -1; }
+}
 .list-pagination { display: flex; justify-content: center; align-items: center; gap: 18px; margin: 24px 0; }
 .tax-calculator.tax-categories { display: block; max-width: 1060px; margin-inline: auto; }
 .tax-categories form[hidden] { display: none; }
@@ -835,6 +845,8 @@ footer { display: flex; justify-content: space-between; align-items: center; gap
 /* Debt reports: money remains in the application layer; these are visual scales only. */
 .debt-eyebrow { display: block; color: var(--muted); font-size: var(--text-small); }
 .debt-summary-visual { display: flex; align-items: center; gap: 36px; padding: 22px 0; }
+.debt-progress { flex: 0 0 184px; min-width: 0; display: grid; justify-items: center; gap: 12px; text-align: center; }
+.debt-progress-label { color: var(--muted); font-size: var(--text-small); line-height: 1.5; overflow-wrap: anywhere; max-width: 100%; }
 .debt-ring { --progress: 0%; flex: 0 0 184px; width: 184px; height: 184px; padding: 16px; border-radius: 50%; background: conic-gradient(var(--accent) var(--progress),var(--surface) 0); }
 .debt-ring > div { display: flex; height: 100%; border-radius: 50%; background: var(--paper); flex-direction: column; align-items: center; justify-content: center; }
 .debt-ring strong { font-size: 2.7rem; line-height: 1; font-variant-numeric: tabular-nums; }
@@ -1003,8 +1015,17 @@ footer { display: flex; justify-content: space-between; align-items: center; gap
 }
 @media (max-width: 600px) {
   .debt-summary-visual { justify-content: center; }
+  .page-tabs { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 4px 12px; overflow: visible; }
+  .page-tabs button { min-width: 0; white-space: normal; overflow-wrap: anywhere; text-align: start; justify-content: flex-start; }
+  .page-tabs button svg { flex-shrink: 0; }
+  .recurring-month { display: grid; grid-template-columns: 44px minmax(0,1fr) 44px; gap: 8px; }
+  .recurring-month label { grid-column: 1 / -1; grid-row: 1; }
+  .recurring-month input { width: 100%; min-width: 0; padding-inline: 10px; }
+  .recurring-month button { padding-inline: 0; min-width: 44px; }
+  .debt-amount-bar strong { display: flex; flex-wrap: wrap; gap: 4px 12px; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
   .debt-summary-bars { flex-basis: 100%; }
-  .debt-ring { flex-basis: 160px; width: 160px; height: 160px; padding: 13px; }
+  .debt-progress { flex-basis: 100%; }
+  .debt-ring { width: 160px; height: 160px; padding: 13px; }
   .monthly-obligations .obligation-row { grid-template-columns: minmax(0,1fr); padding: 16px 14px; gap: 14px; }
   .obligation-preview { grid-template-columns: 56px minmax(0,1fr); gap: 12px; }
   .obligation-row .recurring-item-actions { justify-items: start; gap: 8px; }
