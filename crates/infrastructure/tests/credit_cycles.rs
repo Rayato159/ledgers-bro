@@ -69,6 +69,185 @@ fn pay(app: &mut App, from: AccountId, to: AccountId, amount: &str) -> EntryId {
     )
 }
 
+fn card_plan(app: &mut App, card: AccountId) -> RecurringExpense {
+    app.execute(Command::AddRecurring(RecurringInput {
+        name: "Synthetic installment".into(),
+        amount: "200".into(),
+        day: "25".into(),
+        start: "2026-09".into(),
+        account: Some(card),
+        category: Some(Category::Supplies),
+        installments: Some("2".into()),
+    }))
+    .expect("plan");
+    view(app).recurring[0].clone()
+}
+
+fn prepare_installment(
+    app: &mut App,
+    plan: &RecurringExpense,
+    input: EntryInput,
+) -> PreparedRecurringPayment {
+    let Response::PreparedRecurringPayment(p) = app
+        .execute(Command::PreviewRecurringPayment {
+            expected: plan.clone(),
+            month: "2026-09".parse().expect("month"),
+            input,
+        })
+        .expect("preview installment")
+    else {
+        panic!("prepared")
+    };
+    p
+}
+
+#[test]
+fn card_installment_reduces_bank_and_debt_atomically_and_survives_reopen_restore_and_cancel() {
+    let dir = tempfile::tempdir().expect("dir");
+    let path = dir.path().join("ledger.sqlite3");
+    let mut app = App::new(SqliteLedger::open(&path).expect("db"), Today, RandomIds);
+    let bank = account(&mut app, "Synthetic bank", AccountKind::Bank, "1000");
+    let card = account(&mut app, "Synthetic card", AccountKind::CreditCard, "600");
+    let plan = card_plan(&mut app, card);
+    let before = view(&mut app);
+    let accounts: Vec<_> = before.accounts.iter().map(|a| a.account.clone()).collect();
+    let mut input = recurring_payment_for_accounts(&plan, before.today, &accounts);
+    assert_eq!(input.kind, TransactionKind::Transfer);
+    assert_eq!(input.destination, Some(card));
+    assert!(
+        input.account.is_none(),
+        "funding account must be explicitly selected"
+    );
+    input.account = Some(bank);
+    let prepared = prepare_installment(&mut app, &plan, input.clone());
+    let id = prepared.payment.entry.id();
+    app.execute(Command::PayRecurring(prepared.clone()))
+        .expect("pay");
+    app.execute(Command::PayRecurring(prepared))
+        .expect("idempotent retry");
+    let after = view(&mut app);
+    assert_eq!(after.entries.len(), before.entries.len() + 1);
+    assert_eq!(
+        after
+            .accounts
+            .iter()
+            .find(|a| a.account.id() == bank)
+            .expect("bank")
+            .balance
+            .to_string(),
+        "800.00"
+    );
+    assert_eq!(after.liabilities.to_string(), "400.00");
+    assert_eq!(after.expenses, before.expenses, "no duplicate expense");
+    assert_eq!(after.net_worth, before.net_worth);
+    let summary = recurring_month(&after, "2026-09".parse().expect("month")).expect("summary");
+    assert_eq!(summary.paid.to_string(), "200.00");
+    assert_eq!(summary.pending, Money::ZERO);
+    assert_eq!(recurring_progress(&after)[0].paid, 1);
+    assert!(
+        app.execute(Command::PreviewRecurringPayment {
+            expected: plan.clone(),
+            month: "2026-09".parse().expect("month"),
+            input: input.clone(),
+        })
+        .is_err(),
+        "second submission cannot settle twice"
+    );
+    drop(app);
+    let mut repo = SqliteLedger::open(&path).expect("reopen");
+    let backup = repo.export_backup().expect("backup");
+    let mut restored = SqliteLedger::in_memory().expect("restore db");
+    restored
+        .restore_backup(&backup)
+        .expect("restore transfer settlement");
+    assert_eq!(
+        repo.snapshot().expect("snapshot"),
+        restored.snapshot().expect("restored")
+    );
+    let mut app = App::new(repo, Today, RandomIds);
+    assert_eq!(view(&mut app), after);
+    app.execute(Command::Reverse(id)).expect("cancel payment");
+    let canceled = view(&mut app);
+    assert_eq!(canceled.accounts, before.accounts);
+    assert_eq!(
+        recurring_month(&canceled, "2026-09".parse().expect("month"))
+            .expect("summary")
+            .pending
+            .to_string(),
+        "200.00"
+    );
+    let retry = prepare_installment(&mut app, &plan, input);
+    app.execute(Command::PayRecurring(retry))
+        .expect("pay reopened installment");
+    assert_eq!(view(&mut app).accounts, after.accounts);
+}
+
+#[test]
+fn card_installment_rejects_invalid_routes_and_rechecks_debt_at_commit() {
+    let mut app = App::new(SqliteLedger::in_memory().expect("db"), Today, RandomIds);
+    let bank = account(&mut app, "Synthetic bank", AccountKind::Bank, "1000");
+    let other = account(&mut app, "Synthetic bank two", AccountKind::Bank, "0");
+    let card = account(&mut app, "Synthetic card", AccountKind::CreditCard, "200");
+    let plan = card_plan(&mut app, card);
+    let before = view(&mut app);
+    let input = EntryInput {
+        kind: TransactionKind::Transfer,
+        account: Some(bank),
+        destination: Some(card),
+        amount: "200".into(),
+        ..EntryInput::empty(before.today)
+    };
+    for bad in [
+        EntryInput {
+            account: Some(card),
+            destination: Some(bank),
+            ..input.clone()
+        },
+        EntryInput {
+            destination: Some(other),
+            ..input.clone()
+        },
+        EntryInput {
+            account: Some(card),
+            ..input.clone()
+        },
+        EntryInput {
+            amount: "201".into(),
+            ..input.clone()
+        },
+    ] {
+        assert!(
+            app.execute(Command::PreviewRecurringPayment {
+                expected: plan.clone(),
+                month: "2026-09".parse().expect("month"),
+                input: bad
+            })
+            .is_err()
+        );
+        assert_eq!(view(&mut app), before);
+    }
+    let prepared = prepare_installment(&mut app, &plan, input);
+    let existing = pay(&mut app, bank, card, "200");
+    let paid_elsewhere = view(&mut app);
+    assert!(matches!(
+        app.execute(Command::PayRecurring(prepared)),
+        Err(AppError::Storage(StorageError::CreditPaymentExceedsDebt))
+    ));
+    assert_eq!(
+        view(&mut app),
+        paid_elsewhere,
+        "stale payment rolls back without partial money or settlement writes"
+    );
+    app.execute(Command::LinkRecurring {
+        expected: plan,
+        month: "2026-09".parse().expect("month"),
+        entry: existing,
+    })
+    .expect("link existing payment even with debt now zero");
+    assert_eq!(view(&mut app).accounts, paid_elsewhere.accounts);
+    assert_eq!(recurring_progress(&view(&mut app))[0].paid, 1);
+}
+
 #[test]
 fn purchases_partial_payments_overpayments_and_reversals_reconcile_exactly() {
     let mut app = App::new(SqliteLedger::in_memory().expect("db"), Today, RandomIds);

@@ -369,14 +369,20 @@ fn PaymentDialog(
     onclose: EventHandler,
 ) -> Element {
     let mut store = use_context::<UiState>();
-    let mut input = use_signal(|| recurring_payment_input(&schedule, view.today));
+    let accounts: Vec<_> = view.accounts.iter().map(|a| a.account.clone()).collect();
+    let mut input = use_signal(|| recurring_payment_for_accounts(&schedule, view.today, &accounts));
+    let repayment = input.read().kind == TransactionKind::Transfer;
+    let default_account = schedule.account();
+    let default_category = schedule.category();
+    let mode_accounts = accounts.clone();
     let mut existing = use_signal(String::new);
     let prepared = store.recurring_prepared.read().clone();
     let candidates: Vec<_> = view
         .entries
         .iter()
         .filter(|e| {
-            matches!(e.kind(), EntryKind::Expense { .. })
+            is_recurring_payment(e, &accounts)
+                && (matches!(e.kind(), EntryKind::Transfer { .. }) == repayment)
                 && !view.reversed.contains(&e.id())
                 && !view.settlements.iter().any(|s| s.entry == e.id())
         })
@@ -391,19 +397,40 @@ fn PaymentDialog(
             if let Some(prepared) = prepared {
                 p { {crate::i18n::text("ตรวจยอดจ่ายจริง ฿{0}", &[money_label(entry_label(&prepared.payment.entry).map(|(_, amount, _)| amount).unwrap_or(Money::ZERO)).to_string()])} }
                 p { {crate::i18n::text("วันที่ {0} · {1}", &[format!("{}", prepared.payment.entry.date()), input.read().account.map(|id| account_label(&view, id)).unwrap_or_default().to_string()])} }
-                p { {crate::i18n::text("จะลงรายจ่ายหนึ่งรายการ และเปลี่ยนงวดนี้เป็นจ่ายแล้ว ยอดแผนจะไม่ถูกบวกซ้ำใน Flow rate", &[])} }
-                button { class: "primary", disabled: *store.busy.read(), onclick: move |_| store.send(Command::PayRecurring(prepared.clone())), {crate::i18n::text("ยืนยันจ่ายและบันทึกรายจ่าย", &[])} }
+                if let EntryKind::Transfer { from, to, amount } = prepared.payment.entry.kind() {
+                    div { class: "recurring-payment-route", strong { "{account_label(&view, *from)} → {account_label(&view, *to)}" } }
+                    p { {crate::i18n::text("เงินบัญชีต้นทางลด {0} · หนี้บัตรลด {0}", &[format!("{}{}", crate::i18n::currency_prefix(), money_label(amount.money()))])} }
+                    p { class: "field-hint", {crate::i18n::text("ลดเงินในบัญชีที่จ่ายและลดหนี้บัตร ไม่เพิ่มรายจ่ายซ้ำ", &[])} }
+                } else {
+                    p { {crate::i18n::text("จะลงรายจ่ายหนึ่งรายการ และเปลี่ยนงวดนี้เป็นจ่ายแล้ว ยอดแผนจะไม่ถูกบวกซ้ำใน Flow rate", &[])} }
+                }
+                button { class: "primary", disabled: *store.busy.read(), onclick: move |_| store.send(Command::PayRecurring(prepared.clone())), {crate::i18n::text("ยืนยันบันทึกการจ่าย", &[])} }
                 button { class: "text-button", disabled: *store.busy.read(), onclick: move |_| store.recurring_prepared.set(None), {crate::i18n::text("กลับไปแก้", &[])} }
             } else {
-                label { r#for: "rec-existing", {crate::i18n::text("เคยบันทึกรายจ่ายนี้แล้วหรือยัง", &[])} }
+                label { r#for: "rec-pay-kind", {crate::i18n::text("วิธีบันทึกงวดนี้", &[])} }
+                select { id: "rec-pay-kind", disabled: *store.busy.read(), value: if repayment { "repayment" } else { "expense" }, onchange: move |e| {
+                    let card_payment = e.value() == "repayment";
+                    existing.set(String::new());
+                    let mut updated = input();
+                    updated.kind = if card_payment { TransactionKind::Transfer } else { TransactionKind::Expense };
+                    updated.category = if card_payment { None } else { Some(default_category) };
+                    updated.destination = if card_payment { default_account.filter(|id| mode_accounts.iter().any(|a| a.id() == *id && a.kind() == AccountKind::CreditCard)) } else { None };
+                    updated.account = if card_payment { updated.account.filter(|id| mode_accounts.iter().any(|a| a.id() == *id && a.kind() != AccountKind::CreditCard)) } else { default_account };
+                    input.set(updated);
+                },
+                    option { value: "repayment", selected: repayment, {crate::i18n::text("ชำระหนี้บัตรที่มีอยู่แล้ว", &[])} }
+                    option { value: "expense", selected: !repayment, {crate::i18n::text("รายจ่ายใหม่ / รูดบัตรเพิ่ม", &[])} }
+                }
+                p { class: "field-hint", {crate::i18n::tr(if repayment { "ลดเงินในบัญชีที่จ่ายและลดหนี้บัตร ไม่เพิ่มรายจ่ายซ้ำ" } else { "ถ้าเลือกบัญชีบัตรเครดิต รายการนี้จะเพิ่มหนี้บัตร" })} }
+                label { r#for: "rec-existing", {crate::i18n::text("เคยบันทึกรายการจ่ายนี้แล้วหรือยัง", &[])} }
                 select { id: "rec-existing", disabled: *store.busy.read(), value: "{existing}", onchange: move |e| existing.set(e.value()),
-                    option { value: "", selected: existing().is_empty(), {crate::i18n::text("ยัง — บันทึกรายจ่ายใหม่", &[])} }
+                    option { value: "", selected: existing().is_empty(), {crate::i18n::text("ยัง — บันทึกการจ่ายใหม่", &[])} }
                     for entry in candidates { if let Some((_, amount, account)) = entry_label(entry) {
-                        option { value: "{entry.id()}", selected: existing() == entry.id().to_string(), "{entry.date()} · {entry.note().as_str()} · {account_label(&view, account)} · {crate::i18n::currency_prefix()}{money_label(amount)}" }
+                        option { value: "{entry.id()}", selected: existing() == entry.id().to_string(), "{entry.date()} · {entry.note().as_str()} · {account_label(&view, account)}", if let EntryKind::Transfer { to, .. } = entry.kind() { " → {account_label(&view, *to)}" } " · {crate::i18n::currency_prefix()}{money_label(amount)}" }
                     } }
                 }
                 if !existing().is_empty() {
-                    p { class: "batch-question", {crate::i18n::text("จะผูกงวดนี้กับรายจ่ายที่เลือก โดยไม่สร้างรายจ่ายเพิ่ม ตรวจยอด วันที่ และบัญชีให้ตรงก่อนยืนยัน", &[])} }
+                    p { class: "batch-question", {crate::i18n::text("ผูกงวดกับรายการที่เลือกโดยไม่เคลื่อนเงินซ้ำ ตรวจยอด วันที่ และบัญชีก่อนยืนยัน", &[])} }
                     button { class: "primary", disabled: *store.busy.read(), onclick: move |_| { if let Ok(entry) = existing().parse() { store.send(Command::LinkRecurring { expected: schedule.clone(), month, entry }); } }, {crate::i18n::text("ยืนยันใช้รายการเดิม", &[])} }
                 } else {
                     form { onsubmit: move |e| { e.prevent_default(); store.send(Command::PreviewRecurringPayment { expected: schedule.clone(), month, input: input() }); },
@@ -413,7 +440,17 @@ fn PaymentDialog(
                             div { label { r#for: "rec-pay-account", {crate::i18n::text("บัญชีที่จ่าย", &[])} }
                                 select { id: "rec-pay-account", required: true, value: input.read().account.map(|id| id.to_string()).unwrap_or_default(), onchange: move |e| input.write().account = e.value().parse().ok(),
                                     option { value: "", selected: input.read().account.is_none(), {crate::i18n::text("เลือกบัญชี", &[])} }
-                                    for a in &view.accounts { if a.account.accepts_cash_entries() { option { value: "{a.account.id()}", selected: input.read().account == Some(a.account.id()), "{a.account.name().as_str()}" } } }
+                                    for a in &view.accounts { if a.account.accepts_cash_entries() && (!repayment || a.account.kind() != AccountKind::CreditCard) { option { value: "{a.account.id()}", selected: input.read().account == Some(a.account.id()), "{a.account.name().as_str()}" } } }
+                                }
+                            }
+                            if repayment {
+                                div { label { r#for: "rec-pay-card", {crate::i18n::text("เลือกบัตรที่ต้องการชำระ", &[])} }
+                                    select { id: "rec-pay-card", required: true, value: input.read().destination.map(|id| id.to_string()).unwrap_or_default(), onchange: move |e| input.write().destination = e.value().parse().ok(),
+                                        option { value: "", selected: input.read().destination.is_none(), {crate::i18n::text("เลือกบัตรเครดิต", &[])} }
+                                        for a in &view.accounts { if a.account.accepts_cash_entries() && a.account.kind() == AccountKind::CreditCard {
+                                            option { value: "{a.account.id()}", selected: input.read().destination == Some(a.account.id()), "{a.account.name().as_str()}" }
+                                        } }
+                                    }
                                 }
                             }
                         }

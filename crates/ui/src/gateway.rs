@@ -148,12 +148,8 @@ pub struct HostInfo {
 
 pub struct ArtAssets {
     pub hero: String,
-    pub phone: String,
+    pub logo: String,
     pub accounts: String,
-    pub history: String,
-    pub calendar: String,
-    pub tax: String,
-    pub off_duty: String,
 }
 
 impl ArtAssets {
@@ -161,27 +157,15 @@ impl ArtAssets {
     pub fn bundled() -> Self {
         use base64::{Engine, engine::general_purpose::STANDARD};
         let encode = |bytes: &[u8]| format!("data:image/png;base64,{}", STANDARD.encode(bytes));
-        let hero = encode(include_bytes!("../assets/uncle-crab/hero.png"));
+        let hero = encode(include_bytes!("../assets/tanuki/hero.png"));
         Self {
             accounts: hero.clone(),
             hero,
-            phone: encode(include_bytes!("../assets/uncle-crab/phone.png")),
-            history: encode(include_bytes!("../assets/uncle-crab/history.png")),
-            calendar: encode(include_bytes!("../assets/uncle-crab/calendar.png")),
-            tax: encode(include_bytes!("../assets/uncle-crab/tax.png")),
-            off_duty: encode(include_bytes!("../assets/uncle-crab/off-duty.png")),
+            logo: encode(include_bytes!("../assets/tanuki/logo.png")),
         }
     }
 
-    pub fn for_page(&self, page: crate::state::Page) -> &str {
-        use crate::state::Page;
-        match page {
-            Page::Overview | Page::Accounts => &self.hero,
-            Page::Chat | Page::Receivables => &self.phone,
-            Page::Manual | Page::Transactions => &self.history,
-            Page::Recurring => &self.calendar,
-            Page::Tax => &self.tax,
-            Page::Settings => &self.off_duty,
-        }
+    pub fn for_page(&self, _page: crate::state::Page) -> &str {
+        &self.hero
     }
 }

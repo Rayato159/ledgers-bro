@@ -1,4 +1,13 @@
 &[
+    ("วิธีบันทึกงวดนี้", "How to record this installment"),
+    ("ชำระหนี้บัตรที่มีอยู่แล้ว", "Repay existing credit card debt"),
+    ("รายจ่ายใหม่ / รูดบัตรเพิ่ม", "New expense / new card purchase"),
+    ("ถ้าเลือกบัญชีบัตรเครดิต รายการนี้จะเพิ่มหนี้บัตร", "Choosing a credit card here creates a new charge and increases its debt."),
+    ("เคยบันทึกรายการจ่ายนี้แล้วหรือยัง", "Have you already recorded this payment?"),
+    ("ยัง — บันทึกการจ่ายใหม่", "No — record a new payment"),
+    ("ผูกงวดกับรายการที่เลือกโดยไม่เคลื่อนเงินซ้ำ ตรวจยอด วันที่ และบัญชีก่อนยืนยัน", "Link this installment to the selected entry without moving money again. Review its amount, date and accounts before confirming."),
+    ("ยืนยันบันทึกการจ่าย", "Confirm payment"),
+    ("เงินบัญชีต้นทางลด {0} · หนี้บัตรลด {0}", "Funding account decreases by {0} · Card debt decreases by {0}"),
     ("เรียงตามวันที่ล่าสุด • ยกเลิกรายการได้โดยเก็บประวัติไว้", "Newest transaction date first • Cancel entries while keeping their history"),
     ("ตั้งแต่วันที่", "From date"),
     ("ถึงวันที่", "Through date"),

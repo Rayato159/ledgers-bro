@@ -3,6 +3,8 @@ use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum StorageError {
+    #[error("ยอดชำระต้องไม่เกินหนี้คงค้างของบัตรที่เลือก")]
+    CreditPaymentExceedsDebt,
     #[error("ไฟล์สำรองไม่ถูกต้อง หรือสร้างจากแอปรุ่นที่ยังไม่รองรับ")]
     InvalidBackup,
     #[error("กู้คืนได้เฉพาะผู้ใช้ที่ยังไม่มีข้อมูล กรุณาสร้างผู้ใช้ใหม่เพื่อย้ายข้อมูลเข้า")]

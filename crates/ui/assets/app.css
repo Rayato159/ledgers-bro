@@ -589,7 +589,7 @@ footer { display: flex; justify-content: space-between; align-items: center; gap
 @media (max-width: 390px) { .brand-mark { display: none; } .top-actions { gap: 5px; } }
 .settings-icon { display: grid; place-items: center; width: 46px; height: 46px; border-radius: 15px; flex-shrink: 0; background: var(--hero-gradient); color: #7a579c; }
 .first-account { max-width: 690px; margin: 20px auto; padding: 40px 28px; display: flex; flex-direction: column; align-items: center; gap: 18px; text-align: center; }
-.first-account-art { width: 220px; height: 135px; object-fit: contain; }
+.first-account-art { width: 160px; height: 210px; object-fit: contain; }
 .first-account .status-pill { font-size: var(--text-small); }
 .first-account p { color: var(--muted); }
 @media (max-width: 760px) { .settings-grid { grid-template-columns: 1fr; } .settings-card { padding: 20px; } .first-account { padding: 26px 20px; } .first-account h1 { font-size: 1.65rem; } }
@@ -1078,7 +1078,7 @@ footer { display: flex; justify-content: space-between; align-items: center; gap
 }
 .login-shell { min-height: 100dvh; display: grid; place-items: center; padding: 28px 16px; }
 .login-card { width: min(100%, 480px); padding: 28px; text-align: center; }
-.login-mascot { width: 220px; height: 135px; object-fit: contain; }
+.login-mascot { width: 140px; height: 190px; object-fit: contain; }
 .login-card h1 { margin: 6px 0; }
 .login-language { margin: 14px auto; width: 140px; }
 .login-form { text-align: left; display: grid; gap: 9px; padding: 18px 0; }

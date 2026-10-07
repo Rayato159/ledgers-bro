@@ -258,7 +258,9 @@ pub fn recurring_month(view: &Dashboard, month: Month) -> Result<RecurringMonth,
             continue;
         }
         let paid_amount = match paid.map(JournalEntry::kind) {
-            Some(EntryKind::Expense { amount, .. }) => amount.money(),
+            Some(EntryKind::Expense { amount, .. } | EntryKind::Transfer { amount, .. }) => {
+                amount.money()
+            }
             _ => Money::ZERO,
         };
         result.planned = result.planned.checked_add(schedule.amount().money())?;
@@ -302,6 +304,44 @@ pub fn recurring_payment_input(schedule: &RecurringExpense, today: EntryDate) ->
     }
 }
 
+/// A card-backed plan defaults to repaying existing debt. Charging a new
+/// purchase remains an explicit, separate choice in the payment dialog.
+pub fn recurring_payment_for_accounts(
+    schedule: &RecurringExpense,
+    today: EntryDate,
+    accounts: &[Account],
+) -> EntryInput {
+    let mut input = recurring_payment_input(schedule, today);
+    if accounts
+        .iter()
+        .any(|a| Some(a.id()) == schedule.account() && a.kind() == AccountKind::CreditCard)
+    {
+        input.kind = crate::TransactionKind::Transfer;
+        input.destination = schedule.account();
+        input.account = None;
+        input.category = None;
+    }
+    input
+}
+
+/// Structural check also used when reopening or restoring historical data.
+/// Archived accounts remain valid in previously recorded settlements.
+pub fn is_recurring_payment(entry: &JournalEntry, accounts: &[Account]) -> bool {
+    match entry.kind() {
+        EntryKind::Expense { .. } => true,
+        EntryKind::Transfer { from, to, .. } => {
+            from != to
+                && accounts
+                    .iter()
+                    .any(|a| a.id() == *from && a.kind() != AccountKind::CreditCard)
+                && accounts
+                    .iter()
+                    .any(|a| a.id() == *to && a.kind() == AccountKind::CreditCard)
+        }
+        _ => false,
+    }
+}
+
 /// Shared policy, rechecked against the locked repository snapshot.
 pub fn validate_recurring_settlement(
     state: &LedgerState,
@@ -312,8 +352,24 @@ pub fn validate_recurring_settlement(
     if !state.recurring.contains(expected) || !expected.occurs_in(month) {
         return Err(StorageError::RecurringChanged);
     }
-    if !matches!(entry.kind(), EntryKind::Expense { .. }) {
+    if !is_recurring_payment(entry, &state.accounts) {
         return Err(DomainError::InvalidCategory.into());
+    }
+    if let EntryKind::Transfer { to, amount, .. } = entry.kind()
+        && !state.entries.iter().any(|e| e.id() == entry.id())
+    {
+        // Recheck debt under the repository write lock. Linking an existing
+        // payment cannot move money again, so later repayments must not block it.
+        let balance = state
+            .entries
+            .iter()
+            .filter(|e| e.id() != entry.id() && e.date() <= entry.date())
+            .flat_map(JournalEntry::postings)
+            .filter(|p| p.target() == PostingTarget::Account(*to))
+            .try_fold(Money::ZERO, |sum, p| sum.checked_add(p.amount()))?;
+        if amount.money() > balance.negated() {
+            return Err(StorageError::CreditPaymentExceedsDebt);
+        }
     }
     let reversed = |id| {
         state

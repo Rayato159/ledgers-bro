@@ -1004,10 +1004,9 @@ fn read_recurring(
         let settlement = parse().map_err(|_| StorageError::Corrupt)?;
         if !schedules.iter().any(|s| {
             s.id() == settlement.recurring && s.due().number_in(settlement.month).is_some()
-        }) || !entries
-            .iter()
-            .any(|e| e.id() == settlement.entry && matches!(e.kind(), EntryKind::Expense { .. }))
-        {
+        }) || !entries.iter().any(|e| {
+            e.id() == settlement.entry && ledger_application::is_recurring_payment(e, accounts)
+        }) {
             return Err(StorageError::Corrupt);
         }
         settlements.push(settlement);

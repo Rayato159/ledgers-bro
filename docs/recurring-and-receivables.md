@@ -2,6 +2,8 @@
 
 ## Monthly bills
 
+Card-backed plans open their payment dialog in **Repay existing credit card debt** mode. Choose the bank or cash account that paid and check the receiving card. Confirming creates one transfer and settles the installment together; no additional expense is charged. Switch explicitly to **New expense / new card purchase** to record a fresh charge instead. Existing repayments can be linked without duplicate money movement.
+
 A plan defines its amount, payment account, category, monthly day and optional term count. Days 29–31 clamp to the end of shorter months. Plans do not change balances until a payment is recorded or an existing expense is linked. A settlement links one expense to one plan/month without counting it twice.
 
 To change future terms, open **Edit plan**, select the effective month, then choose the plan that applies in that month. A stopped historical plan cannot be extended accidentally by editing it: select the applicable replacement plan when moving to a later period. Change the day, amount or other fields, then review **Confirm / Cancel**. A successful save refreshes the view automatically.

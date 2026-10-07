@@ -4,7 +4,9 @@ Set a statement closing day and payment due day from 1–31. Purchases on the cl
 
 Card purchases increase debt without reducing cash. A bank-to-card transfer reduces both the bank balance and card debt; it is not another expense. Payments allocate to the oldest charges first. Overpayment becomes a positive card balance. Cancellation uses a reversal rather than erasing the journal.
 
-A recurring bill recorded against a card counts as a recorded plan payment but still contributes to the card liability until that card is repaid. Payment breakdowns distinguish the underlying charges from the repayment itself.
+Recurring payments offer two explicit modes. **Repay existing credit card debt** selects a funding account and a destination card, reduces both balances, and marks the installment paid without another expense. Card-backed plans default to this mode; the funding account must be chosen. **New expense / new card purchase** records a new charge and increases debt when the selected account is a card. That charge still needs a later card repayment. Payment breakdowns distinguish the underlying charges from the repayment itself.
+
+Existing card transfers can be linked to an installment without moving money again. Cancelling a repayment restores both balances and reopens the installment. New installment repayments cannot exceed the recorded debt, which is rechecked when saving.
 
 ## Overview amounts
 

@@ -96,7 +96,7 @@ pub fn App() -> Element {
         div { class: "app-shell",
             header { class: "topbar",
                 button { class: "brand", disabled:*store.busy.read(), onclick: move |_| store.page.set(Page::Overview),
-                    span { class: "brand-mark character-brand", img {src:host.art.for_page(page).to_owned(),alt:""} }
+                    span { class: "brand-mark character-brand", img {src:host.art.logo.clone(),alt:""} }
                     span { strong { "ledgers" } span { class: "brand-bro", "bro." } }
                 }
                 crate::navigation::Navigation { show_tax }

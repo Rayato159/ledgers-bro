@@ -642,7 +642,7 @@ fn command_for_draft(
         },
         PromptKind::PayRecurring => {
             let plan = plan_for(state, draft.get("plan"))?;
-            let mut input = recurring_payment_input(&plan, today);
+            let mut input = recurring_payment_for_accounts(&plan, today, &state.accounts);
             input.amount = s("amount");
             input.account = Some(account()?);
             input.date = s("date");

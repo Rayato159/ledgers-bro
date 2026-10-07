@@ -1,12 +1,12 @@
 # Current design assets
 
-The active mascot is Lookhin's original **uncle crab**. The earlier tanuki and modern-fantasy concepts are retired. Their unused studies and master images have been removed from the working tree; Git history preserves earlier revisions.
+The active mascot is a **tanuki salaryman**, generated from Lookhin's character direction and original art style references. The crab and earlier concepts are retired; Git history preserves them.
 
 | Location | Purpose |
 | --- | --- |
-| [uncle-crab](uncle-crab/README.md) | Character identity, generation prompts and six original generated pose masters |
-| [app-icon](app-icon/README.md) | Windows launcher exports derived from the crab hero pose |
-| `../crates/ui/assets/uncle-crab/` | Sized runtime illustrations |
+| [tanuki](tanuki/README.md) | Character identity, generation prompts and selected mascot/logo masters |
+| [app-icon](app-icon/README.md) | Windows launcher exports derived from the compact tanuki logo |
+| `../crates/ui/assets/tanuki/` | Sized runtime mascot and logo |
 | `../crates/ui/assets/app.css` | Current layout, typography, responsive rules and theme tokens |
 | `../crates/ui/src/artwork.rs` | Runtime artwork mapping and category icon components |
 
