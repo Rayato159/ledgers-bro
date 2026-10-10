@@ -4,7 +4,7 @@
 
 Use generated fixtures and clearly named test users in a dedicated `--data-dir`. Android tests use a dedicated AVD with synthetic data. Never copy a user's real ledger, receipt, backup or installed model into tests. Never reset or uninstall a user's app to make a test pass.
 
-Keep captures, logs, fixture databases, exports, downloaded test weights and signing credentials in ignored private directories. Public source fixtures must be recognizably synthetic. Before staging or publishing, inspect tracked and staged files as well as package contents: ignore rules alone do not protect already tracked files.
+Keep captures, logs, fixture databases, exports, downloaded test weights and signing credentials in ignored private directories. Public source fixtures must be recognizably synthetic. README screenshots may be published only after verifying that they use a dedicated fictional demo profile and contain no personal data. Before staging or publishing, inspect tracked and staged files as well as package contents: ignore rules alone do not protect already tracked files.
 
 ## Core checks
 

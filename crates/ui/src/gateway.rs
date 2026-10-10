@@ -157,11 +157,11 @@ impl ArtAssets {
     pub fn bundled() -> Self {
         use base64::{Engine, engine::general_purpose::STANDARD};
         let encode = |bytes: &[u8]| format!("data:image/png;base64,{}", STANDARD.encode(bytes));
-        let hero = encode(include_bytes!("../assets/tanuki/hero.png"));
+        let hero = encode(include_bytes!("../assets/studio/hero.png"));
         Self {
             accounts: hero.clone(),
             hero,
-            logo: encode(include_bytes!("../assets/tanuki/logo.png")),
+            logo: encode(include_bytes!("../assets/studio/logo.png")),
         }
     }
 

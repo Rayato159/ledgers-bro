@@ -55,7 +55,7 @@ fn history_sorts_dates_before_paging_and_preserves_same_day_order() {
         another_fourth.clone(),
         entry(4, "2025-12-31", false),
     ];
-    let result = history_entries(&input, 0, 0, None, None);
+    let result = history_entries(&input, 0, 0, None, None, None);
     assert_eq!(&result[..3], &[fourth, another_fourth, newest_inserted]);
     assert_eq!(
         input[0].date().to_string(),
@@ -65,7 +65,7 @@ fn history_sorts_dates_before_paging_and_preserves_same_day_order() {
     let many: Vec<_> = (1..=31)
         .map(|i| entry(i, &format!("2026-10-{i:02}"), false))
         .collect();
-    let sorted = history_entries(&many, 0, 0, None, None);
+    let sorted = history_entries(&many, 0, 0, None, None, None);
     assert_eq!(sorted[0].date().to_string(), "2026-10-31");
     assert_eq!(sorted[20].date().to_string(), "2026-10-11");
 }
@@ -79,21 +79,149 @@ fn history_filters_inclusive_day_range_year_and_type() {
         entry(4, "2026-01-02", false),
     ];
     let (from, through) = history_dates("2025-12-31", "2026-01-01").expect("cross-year range");
-    assert_eq!(history_entries(&entries, 0, 0, from, through).len(), 3);
     assert_eq!(
-        history_entries(&entries, 1, 2026, from, through),
+        history_entries(&entries, 0, 0, from, through, None).len(),
+        3
+    );
+    assert_eq!(
+        history_entries(&entries, 1, 2026, from, through, None),
         vec![entries[1].clone()]
     );
     let (from, through) = history_dates("2026-01-01", "2026-01-01").expect("single day");
     assert_eq!(
-        history_entries(&entries, 2, 0, from, through),
+        history_entries(&entries, 2, 0, from, through, None),
         vec![entries[2].clone()]
     );
-    assert_eq!(history_entries(&entries, 0, 0, None, through).len(), 3);
-    assert_eq!(history_entries(&entries, 0, 0, from, None).len(), 3);
+    assert_eq!(
+        history_entries(&entries, 0, 0, None, through, None).len(),
+        3
+    );
+    assert_eq!(history_entries(&entries, 0, 0, from, None, None).len(), 3);
     assert!(history_dates("2026-10-04", "2026-10-03").is_err());
     assert!(history_dates("2026-02-30", "").is_err());
     assert_eq!(history_dates("", ""), Ok((None, None)));
+}
+
+#[test]
+fn account_history_matches_both_transfer_ends_and_lending_postings() {
+    let bank = "00000000-0000-0000-0000-000000000101"
+        .parse::<AccountId>()
+        .expect("synthetic id");
+    let card = "00000000-0000-0000-0000-000000000102"
+        .parse::<AccountId>()
+        .expect("synthetic id");
+    let other = "00000000-0000-0000-0000-000000000103"
+        .parse::<AccountId>()
+        .expect("synthetic id");
+    let receivable = "00000000-0000-0000-0000-000000000105"
+        .parse::<ReceivableId>()
+        .expect("synthetic id");
+    let amount = PositiveMoney::new("25.00".parse().expect("money")).expect("positive");
+    let kinds = [
+        EntryKind::Transfer {
+            from: bank,
+            to: card,
+            amount,
+        },
+        EntryKind::Lending {
+            receivable,
+            account: bank,
+            amount,
+        },
+        EntryKind::Repayment {
+            receivable,
+            account: bank,
+            amount,
+        },
+        EntryKind::Expense {
+            account: other,
+            amount,
+            category: Category::Food,
+        },
+        EntryKind::Opening {
+            account: bank,
+            balance: "100.00".parse().expect("money"),
+        },
+    ];
+    let entries: Vec<_> = kinds
+        .into_iter()
+        .enumerate()
+        .map(|(index, kind)| {
+            JournalEntry::record(
+                format!("00000000-0000-0000-0000-{:012}", index + 200)
+                    .parse::<EntryId>()
+                    .expect("synthetic id"),
+                "2026-10-10".parse().expect("date"),
+                Note::new("Synthetic account filter").expect("note"),
+                kind,
+            )
+            .expect("entry")
+        })
+        .collect();
+    assert_eq!(
+        history_entries(&entries, 0, 0, None, None, Some(bank)),
+        entries[..3]
+    );
+    assert_eq!(
+        history_entries(&entries, 0, 0, None, None, Some(card)),
+        entries[..1]
+    );
+    assert_eq!(
+        history_entries(&entries, 3, 0, None, None, Some(bank)),
+        entries[..1]
+    );
+    assert_eq!(
+        history_entries(&entries, 4, 0, None, None, Some(bank)),
+        entries[1..3]
+    );
+    assert_eq!(
+        history_entries(&entries, 1, 0, None, None, Some(other)),
+        entries[3..4]
+    );
+    assert!(
+        history_entries(
+            &entries,
+            0,
+            0,
+            None,
+            None,
+            Some(
+                "00000000-0000-0000-0000-000000000104"
+                    .parse::<AccountId>()
+                    .expect("synthetic id")
+            )
+        )
+        .is_empty()
+    );
+    assert_eq!(
+        history_entries(&entries, 0, 0, None, None, None),
+        entries[..4]
+    );
+}
+
+#[test]
+fn account_filter_composes_with_dates_year_type_and_precedes_pagination() {
+    let selected = "00000000-0000-0000-0000-000000000001"
+        .parse()
+        .expect("account");
+    let mut entries: Vec<_> = (1..=31)
+        .map(|i| entry(i, &format!("2026-10-{i:02}"), false))
+        .collect();
+    entries.push(entry(32, "2026-10-15", true));
+    entries.push(entry(33, "2025-10-15", false));
+    let (from, through) = history_dates("2026-10-11", "2026-10-31").expect("range");
+    let filtered = history_entries(&entries, 1, 2026, from, through, Some(selected));
+    assert_eq!(filtered.len(), 21);
+    assert_eq!(filtered[0].date().to_string(), "2026-10-31");
+    assert_eq!(filtered[20].date().to_string(), "2026-10-11");
+    assert_eq!(
+        history_entries(&entries, 2, 2026, from, through, Some(selected)),
+        entries[31..32]
+    );
+    assert_eq!(
+        history_entries(&entries, 1, 2025, None, None, Some(selected)),
+        entries[32..33]
+    );
 }
 
 struct AccountGateway(Arc<AtomicUsize>);

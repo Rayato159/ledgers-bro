@@ -4,8 +4,8 @@ from pathlib import Path
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
-MASTERS = ROOT / 'design/tanuki/masters'
-OUTPUT = ROOT / 'crates/ui/assets/tanuki'
+MASTERS = ROOT / 'design/studio/masters'
+OUTPUT = ROOT / 'crates/ui/assets/studio'
 OUTPUT.mkdir(parents=True, exist_ok=True)
 for name in ('hero', 'logo'):
     source = Image.open(MASTERS / f'{name}.png')
@@ -34,4 +34,4 @@ android = ROOT / 'apps/android/native/res'
 for density, size in [('mdpi', 48), ('hdpi', 72), ('xhdpi', 96), ('xxhdpi', 144), ('xxxhdpi', 192)]:
     master.resize((size, size), Image.Resampling.LANCZOS).save(android / f'mipmap-{density}/ledger_launcher.png', optimize=True)
 padded_portrait(432, .60).save(android / 'drawable-nodpi/ledger_launcher_foreground.png', optimize=True)
-print('Exported RGBA tanuki mascot, logo and Windows/Android launcher sizes.')
+print('Exported RGBA studio mascot, logo and Windows/Android launcher sizes.')

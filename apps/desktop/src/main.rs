@@ -407,6 +407,16 @@ fn launch() -> Result<(), Box<dyn std::error::Error>> {
             LogicalSize::new(1280.0, 950.0)
         })
         .with_min_inner_size(LogicalSize::new(360.0, 640.0));
+    #[cfg(target_os = "windows")]
+    let window = {
+        use dioxus::desktop::tao::{
+            platform::windows::{IconExtWindows, WindowBuilderExtWindows},
+            window::Icon,
+        };
+        window
+            .with_window_icon(Icon::from_resource(1, Some((16, 16).into())).ok())
+            .with_taskbar_icon(Icon::from_resource(1, Some((48, 48).into())).ok())
+    };
     // Standalone Dioxus debug runs share a temporary window-position cache.
     // Windows may save a minimized window at (-32000, -32000); an explicit
     // starting position prevents restoring the next test run outside the screen.

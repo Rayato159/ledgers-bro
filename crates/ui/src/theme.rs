@@ -9,7 +9,8 @@ use ledger_application::{Command, Response, UserPreferences};
 #[derive(Clone, Copy)]
 pub struct Theme(pub Signal<UserPreferences>);
 
-const PALETTES: [(&str, u32); 5] = [
+const PALETTES: [(&str, u32); 6] = [
+    ("Studio", 0x4f7379),
     ("Lavender", 0xbda0ff),
     ("Ocean", 0x63b5ed),
     ("Mint", 0x60c5a2),
@@ -178,6 +179,24 @@ struct Colors {
     hero_end: u32,
 }
 fn colors(p: UserPreferences) -> Colors {
+    if p.primary_color == 0x4f7379 {
+        let mode = |light, dark| if p.dark { dark } else { light };
+        return Colors {
+            canvas: mode(0xf4f0e9, 0x141d21),
+            paper: mode(0xfffcf5, 0x1e292d),
+            surface: mode(0xece6db, 0x2a383d),
+            raised: mode(0xe1d8c7, 0x35474c),
+            field: mode(0xfffdf8, 0x172125),
+            ink: mode(0x29353a, 0xf4f0e6),
+            muted: mode(0x455256, 0xd0d8d5),
+            line: mode(0xb3bbb7, 0x536369),
+            accent: p.primary_color,
+            secondary: 0x805341,
+            action_ink: readable_ink(p.primary_color),
+            hero: mode(0xe7dad1, 0x293e44),
+            hero_end: mode(0xead8ca, 0x3b3b3d),
+        };
+    }
     let h = hue(p.primary_color);
     let c = |s, l| hsl(h, s, l);
     let secondary_hue = (h + 35.0).rem_euclid(360.0);

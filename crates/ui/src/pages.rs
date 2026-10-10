@@ -158,6 +158,7 @@ pub fn TransactionsPage(view: Dashboard) -> Element {
     let mut year = use_signal(|| view.today.month_key().0);
     let mut from = use_signal(String::new);
     let mut through = use_signal(String::new);
+    let mut account = use_signal(|| None::<AccountId>);
     let years: std::collections::BTreeSet<_> = view
         .entries
         .iter()
@@ -166,16 +167,27 @@ pub fn TransactionsPage(view: Dashboard) -> Element {
         .collect();
     let mut page = use_signal(|| 0usize);
     use_effect(move || {
-        let _ = (tab(), year(), from(), through());
+        let _ = (tab(), year(), from(), through(), account());
         page.set(0);
     });
     let dates = history_dates(&from(), &through());
     let filtered = match dates {
-        Ok((from, through)) => history_entries(&view.entries, tab(), year(), from, through),
+        Ok((from, through)) => {
+            history_entries(&view.entries, tab(), year(), from, through, account())
+        }
         Err(_) => Vec::new(),
     };
     let pages = filtered.len().div_ceil(20).max(1);
+    let count = filtered.len();
     let current_page = page().min(pages - 1);
+    let filter_key = format!(
+        "{}-{current_page}-{:?}-{}-{}-{}",
+        tab(),
+        account(),
+        year(),
+        from(),
+        through()
+    );
     let mut visible = view.clone();
     visible.entries = filtered
         .into_iter()
@@ -187,6 +199,14 @@ pub fn TransactionsPage(view: Dashboard) -> Element {
         section { class: "page-heading", div { h1 { {crate::i18n::text("รายการทั้งหมด", &[])} } p { class: "muted", {crate::i18n::tr("เรียงตามวันที่ล่าสุด • ยกเลิกรายการได้โดยเก็บประวัติไว้")} } } button { class: "soft-button", disabled: *store.busy.read(), onclick: move |_| { store.notice.set(None); store.export_form.set(true); }, Icon { name: "download", size: 18 } {crate::i18n::text("ส่งออก CSV", &[])} } }
         PageTabs { id: "transactions", tabs: vec![("list", "ทั้งหมด"), ("up", "รายจ่าย"), ("down", "รายรับ"), ("arrow", "โอนเงิน"), ("user", "เงินให้ยืมและรับคืน")], selected: tab }
         div { class: "history-filters",
+          div { class: "history-account", label { r#for: "history-account", {crate::i18n::tr("บัญชี")} }
+            select { id: "history-account", value: account().map(|id| id.to_string()).unwrap_or_default(), onchange: move |e| account.set(e.value().parse().ok()),
+                option { value: "", selected: account().is_none(), {crate::i18n::tr("รวมทุกบัญชี")} }
+                for item in &view.accounts {
+                    option { value: "{item.account.id()}", selected: account() == Some(item.account.id()), "{item.account.name().as_str()}" }
+                }
+            }
+          }
           div { label { r#for: "history-year", {crate::i18n::tr("ปีที่แสดง")} }
             select { id: "history-year", value: "{year}", onchange: move |e| { if let Ok(value) = e.value().parse() { year.set(value); from.set(String::new()); through.set(String::new()); } },
                 option { value: "0", {crate::i18n::tr("ทุกปี")} }
@@ -202,7 +222,17 @@ pub fn TransactionsPage(view: Dashboard) -> Element {
           button { r#type: "button", class: "soft-button", disabled: from().is_empty() && through().is_empty(), onclick: move |_| { from.set(String::new()); through.set(String::new()); }, {crate::i18n::tr("ล้างช่วงวัน")} }
         }
         if let Err(message) = dates { p { class: "form-error", role: "alert", {crate::i18n::tr(message)} } }
-        section { id: "transactions-panel-{tab}", class: "card transaction-card", role: "tabpanel", "aria-labelledby": "transactions-tab-{tab}", TransactionRows { key: "{tab}-{current_page}", view: visible, limit: 20, allow_cancel: true } }
+        div { class: "history-result", role: "status",
+            span { {crate::i18n::text("พบ {0} รายการ", &[count.to_string()])} }
+            if account().is_some() { span { class: "muted", {crate::i18n::tr("รวมรายการโอนเข้าและออกจากบัญชีที่เลือก")} } }
+        }
+        section { id: "transactions-panel-{tab}", class: "card transaction-card", role: "tabpanel", "aria-labelledby": "transactions-tab-{tab}",
+            if count == 0 && dates.is_ok() {
+                p { {crate::i18n::tr("ไม่พบรายการตามตัวกรองที่เลือก ลองเปลี่ยนบัญชี ประเภท หรือช่วงวันที่")} }
+            } else {
+                TransactionRows { key: "{filter_key}", view: visible, limit: 20, allow_cancel: true }
+            }
+        }
         if pages > 1 { div { class: "list-pagination",
             button { class: "soft-button", disabled: current_page == 0, onclick: move |_| page.set(current_page.saturating_sub(1)), {crate::i18n::tr("ก่อนหน้า")} }
             span { {crate::i18n::text("หน้า {0} / {1}", &[(current_page + 1).to_string(), pages.to_string()])} }
@@ -235,6 +265,7 @@ fn history_entries(
     year: i32,
     from: Option<EntryDate>,
     through: Option<EntryDate>,
+    account: Option<AccountId>,
 ) -> Vec<JournalEntry> {
     let mut entries: Vec<_> = entries
         .iter()
@@ -242,6 +273,12 @@ fn history_entries(
             (year == 0 || entry.date().month_key().0 == year)
                 && from.is_none_or(|date| entry.date() >= date)
                 && through.is_none_or(|date| entry.date() <= date)
+                && account.is_none_or(|id| {
+                    entry
+                        .postings()
+                        .iter()
+                        .any(|p| p.target() == PostingTarget::Account(id))
+                })
                 && match entry.kind() {
                     EntryKind::Opening { .. }
                     | EntryKind::ReceivableOpening { .. }

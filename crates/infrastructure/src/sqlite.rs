@@ -78,6 +78,14 @@ impl SqliteLedger {
         if version < 7 {
             tx.execute_batch(include_str!("../migrations/007_preferences.sql"))
                 .map_err(database_error)?;
+            // Only initialize newly introduced preferences. Existing profiles
+            // keep their saved appearance when the application's defaults change.
+            let defaults = UserPreferences::default();
+            tx.execute(
+                "UPDATE user_preferences SET english=?1,dark=?2,primary_color=?3,gradient=?4 WHERE id=1",
+                params![defaults.english, defaults.dark, defaults.primary_color, defaults.gradient],
+            )
+            .map_err(database_error)?;
         }
         if version < 8 {
             tx.execute_batch(include_str!("../migrations/008_credit_cycles.sql"))

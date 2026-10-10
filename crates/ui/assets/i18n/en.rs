@@ -1083,4 +1083,7 @@
     ("ชื่อผู้ใช้ต้องมี 1–40 ตัวอักษร และไม่มีอักขระควบคุม", "Use 1–40 characters without control characters for your username."),
     ("ไฟล์สำรองไม่ถูกต้อง หรือสร้างจากแอปรุ่นที่ยังไม่รองรับ", "Invalid backup or unsupported backup version."),
     ("กู้คืนได้เฉพาะผู้ใช้ที่ยังไม่มีข้อมูล กรุณาสร้างผู้ใช้ใหม่เพื่อย้ายข้อมูลเข้า", "Restore requires an empty ledger. Create a new user to restore this backup."),
+    ("พบ {0} รายการ", "{0} transactions found"),
+    ("รวมรายการโอนเข้าและออกจากบัญชีที่เลือก", "Includes transfers into and out of the selected account"),
+    ("ไม่พบรายการตามตัวกรองที่เลือก ลองเปลี่ยนบัญชี ประเภท หรือช่วงวันที่", "No transactions match these filters. Try another account, type or date range."),
 ]

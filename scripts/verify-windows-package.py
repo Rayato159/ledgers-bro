@@ -58,6 +58,7 @@ def verify(path, version):
         shortcuts = {row[0]: row for row in rows('Shortcut')}
         require(set(shortcuts) == {'ApplicationStartMenuShortcut', 'ApplicationDesktopShortcut'}, 'Unexpected installer shortcut')
         require(all(row[4] == '[!Path]' for row in shortcuts.values()), 'Invalid application shortcut target')
+        require(all(row[8] == 'ProductIcon' for row in shortcuts.values()), 'Application shortcut is missing its launcher icon')
         require(any(row[0] == 'RemoveLegacyUninstallShortcut' and row[3] == 'INSTALLDIR' and row[4] == '1' for row in rows('RemoveFile')), 'Missing legacy shortcut cleanup')
         searches = rows('RegLocator')
         require(any(row[0] == 'PrevInstallDirWithName' and row[2] == r'Software\Dancing With My Code\LedgersBro' and row[3] == 'InstallDir' for row in searches), 'Changed legacy install-path lookup')

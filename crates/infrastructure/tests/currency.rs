@@ -168,6 +168,9 @@ fn display_preferences_survive_restart_without_changing_currency_or_balances() {
     let dir = TempDir::new().expect("temp");
     let path = dir.path().join("ledger.sqlite3");
     let mut ledger = app(SqliteLedger::open(&path).expect("open"));
+    assert!(
+        matches!(ledger.execute(Command::LoadPreferences).expect("fresh preferences"), Response::Preferences(p) if p == UserPreferences::default())
+    );
     ledger
         .execute(Command::SetCurrency(Currency::Eur))
         .expect("EUR");

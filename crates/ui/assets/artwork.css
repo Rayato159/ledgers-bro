@@ -1,18 +1,18 @@
-/* User-designed uncle crab mascot and theme-aware category illustrations. */
-.art-icon { --art-primary: #c8aff3; --art-secondary: #a5dccc; --art-paper: #fffaff; --art-outline: #65517a; flex: none; overflow: visible; }
-.art-icon-food, .art-icon-snacks, .art-icon-medical { --art-primary: #f4bad4; --art-secondary: #dca2c9; }
-.art-icon-bank, .art-icon-supplies { --art-primary: #a8d9f5; }
-.art-icon-salary, .art-icon-freelance, .art-icon-crypto { --art-primary: #ffd0ae; }
+/* Indie anime artwork: muted flat colors and clean ink contours. */
+.art-icon { --art-primary: #9bb6b5; --art-secondary: #d69b82; --art-paper: #f5ebd9; --art-outline: #414c50; flex: none; overflow: visible; }
+.art-icon-food, .art-icon-snacks, .art-icon-medical { --art-primary: #deb1a1; --art-secondary: #c18e7d; }
+.art-icon-bank, .art-icon-supplies { --art-primary: #9bb6b5; }
+.art-icon-salary, .art-icon-freelance, .art-icon-crypto { --art-primary: #d8bd89; }
 .legend-art { display: inline-grid; place-items: center; border-left: 3px solid; width: 32px; }
 .category-field { border: 0; margin: 20px 0; padding: 0; min-width: 0; }
 .category-field legend { font-size: var(--text-body); margin-bottom: 10px; }
 .category-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
 .category-tile { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; min-height: 92px; border-radius: 20px; background: var(--paper); border: 1px solid transparent; padding: 10px 3px; font-size: var(--text-small); }
 .category-tile .art-icon { background: var(--surface); border-radius: 16px; padding: 4px; width: 52px; height: 52px; box-shadow: 0 4px 8px #7955af10; }
-.category-tile:nth-child(3n+2) .art-icon { background: #fbe2ee; }
-.category-tile:nth-child(3n) .art-icon { background: #e1f3ec; }
+.category-tile:nth-child(3n+2) .art-icon { background: var(--raised); }
+.category-tile:nth-child(3n) .art-icon { background: var(--surface); }
 .category-tile:hover { background: var(--raised); border-color: var(--muted); }
-.category-tile.selected { background: #eee2ff; border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.category-tile.selected { background: var(--raised); border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 .category-tile span { overflow-wrap: anywhere; }
 .category-art-preview { display: flex; gap: 10px; align-items: center; }
 .account-kind-preview { display: flex; align-items: center; gap: 12px; padding: 6px 12px; margin-top: 8px; background: var(--surface); border-radius: 13px; }

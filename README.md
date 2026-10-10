@@ -1,10 +1,10 @@
 # Ledgers Bro
 
-A local-first personal finance app built with **Rust, Dioxus, and SQLite**, with Thai and English interfaces, light and dark themes, and a tanuki salaryman mascot based on Lookhin's character direction and original art style.
+A local-first personal finance app built with **Rust, Dioxus, and SQLite**, with Thai and English interfaces, light and dark themes, and an original anime illustrator mascot wearing glasses.
 
 ## Download
 
-**[Get version 0.1.15](https://github.com/Rayato159/ledgers-bro/releases/tag/v0.1.15)** or open **More → Settings → App updates** in an existing installation.
+**[Get version 0.1.16](https://github.com/Rayato159/ledgers-bro/releases/tag/v0.1.16)** or open **More → Settings → App updates** in an existing installation.
 
 | Platform | Package |
 | --- | --- |
@@ -30,13 +30,21 @@ Back up in **Settings → Data** before upgrading. Install over the existing app
 - **Notifications:** the bell shows available updates, bills due, and collections due. Opening a notification marks it read and archives it. Settings control reminder types and optional system banners. The last 256 archived notifications are saved per user.
 - **Optional Thai tax tools:** classify taxable income and record withholding and deductions in a THB ledger. These tools do not submit tax returns.
 
-## What's new in 0.1.15
+## What's new in 0.1.16
 
-- Recurring payments distinguish existing card debt from a new expense. Choose the funding account and destination card, review their effects, and settle the installment without charging the card again.
-- Existing card transfers can be linked to an installment without moving money twice. Cancelling a repayment reopens its installment.
-- A new tanuki mascot and compact logo replace the crab in app artwork and Windows/Android launcher icons.
+- Filter transactions by account, type, year and an inclusive date range. Transfers appear for both the source and destination account. Results remain newest first and reset to the first page when filters change.
+- New Studio artwork: an anime creative wearing glasses, warm paper, muted teal and coral. Choose **Studio** in Appearance; saved theme preferences are preserved.
+- Proper Windows executable/window icons and Android adaptive/legacy launcher icons.
 
-See the [0.1.15 update guide](docs/update-0.1.15.md).
+See the [0.1.16 update guide](docs/update-0.1.16.md).
+
+## Screenshots
+
+Captured from the packaged app using a separate demo profile. All names, balances and transactions below are fictional.
+
+![Desktop overview with Studio artwork](docs/screenshots/desktop-overview.png)
+![Transactions filtered by account](docs/screenshots/desktop-account-filter.png)
+<img src="docs/screenshots/android-accounts.png" alt="Android accounts in the Studio theme" width="360">
 
 ## Data and current limits
 
@@ -101,6 +109,6 @@ cargo test --workspace --locked
 - [Model selection and hardware estimates](docs/local-model-selection.md)
 - [Credit cards and financial reports](docs/credit-cards.md)
 - [Taxable income entries](docs/tax-income-entries.md)
-- [Mascot artwork and credits](design/tanuki/README.md)
+- [Mascot artwork and credits](design/studio/README.md)
 
 Source code: [MIT](LICENSE). Third-party [model and OCR notices](licenses/) and [font licenses](crates/ui/assets/fonts/LICENSE.txt) apply to their respective assets.

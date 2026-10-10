@@ -11,8 +11,8 @@ impl Default for UserPreferences {
         Self {
             english: false,
             dark: false,
-            primary_color: 0xbda0ff,
-            gradient: true,
+            primary_color: 0x4f7379,
+            gradient: false,
         }
     }
 }

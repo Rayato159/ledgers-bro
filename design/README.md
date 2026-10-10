@@ -1,12 +1,12 @@
 # Current design assets
 
-The active mascot is a **tanuki salaryman**, generated from Lookhin's character direction and original art style references. The crab and earlier concepts are retired; Git history preserves them.
+The active mascot is a **anime male creative wearing glasses**, generated from Lookhin's new direction and supplied style references. Earlier concepts are retired; Git history preserves them.
 
 | Location | Purpose |
 | --- | --- |
-| [tanuki](tanuki/README.md) | Character identity, generation prompts and selected mascot/logo masters |
-| [app-icon](app-icon/README.md) | Windows launcher exports derived from the compact tanuki logo |
-| `../crates/ui/assets/tanuki/` | Sized runtime mascot and logo |
+| [studio](studio/README.md) | Character identity, generation prompts and selected mascot/logo masters |
+| [app-icon](app-icon/README.md) | Windows launcher exports derived from the compact face mark |
+| `../crates/ui/assets/studio/` | Sized runtime mascot and logo |
 | `../crates/ui/assets/app.css` | Current layout, typography, responsive rules and theme tokens |
 | `../crates/ui/src/artwork.rs` | Runtime artwork mapping and category icon components |
 
@@ -18,4 +18,4 @@ Use readable text, consistent row/card spacing and clear money alignment in both
 
 Keep the mascot in existing branding and illustration areas. Do not restore removed promotional banners or place decorative characters beside action buttons. The quick-entry composer keeps voice, examples and model controls compact; model removal belongs in Settings.
 
-Do not place screenshots containing personal or test financial data in this public design directory. Reusable artwork masters are separate from private QA captures.
+Do not place screenshots containing personal financial data in this public design directory. Explicitly fictional demo captures belong in `docs/screenshots/`. Reusable artwork masters are separate from private QA captures.
