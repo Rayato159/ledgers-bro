@@ -4,7 +4,7 @@ A local-first personal finance app built with **Rust, Dioxus, and SQLite**, with
 
 ## Download
 
-**[Get version 0.1.16](https://github.com/Rayato159/ledgers-bro/releases/tag/v0.1.16)** or open **More → Settings → App updates** in an existing installation.
+**[Get version 0.1.17](https://github.com/Rayato159/ledgers-bro/releases/tag/v0.1.17)** or open **More → Settings → App updates** in an existing installation.
 
 | Platform | Package |
 | --- | --- |
@@ -30,13 +30,15 @@ Back up in **Settings → Data** before upgrading. Install over the existing app
 - **Notifications:** the bell shows available updates, bills due, and collections due. Opening a notification marks it read and archives it. Settings control reminder types and optional system banners. The last 256 archived notifications are saved per user.
 - **Optional Thai tax tools:** classify taxable income and record withholding and deductions in a THB ledger. These tools do not submit tax returns.
 
-## What's new in 0.1.16
+## What's new in 0.1.17
 
-- Filter transactions by account, type, year and an inclusive date range. Transfers appear for both the source and destination account. Results remain newest first and reset to the first page when filters change.
-- New Studio artwork: an anime creative wearing glasses, warm paper, muted teal and coral. Choose **Studio** in Appearance; saved theme preferences are preserved.
-- Proper Windows executable/window icons and Android adaptive/legacy launcher icons.
+- Choose explicitly between paying a recurring bill by credit card and repaying card debt. A new card charge does not require a separate bank account.
+- Enter up to eight transactions manually, edit or remove individual cards, then save the reviewed batch together.
+- New **Transport** expense category, available throughout entry, recurring bills, reports and exports.
+- Split a recorded expense into receivables using equal shares or custom amounts, without debiting the original account again.
+- Filter receivables by debtor name and an inclusive debt-opening date range.
 
-See the [0.1.16 update guide](docs/update-0.1.16.md).
+See the [0.1.17 update guide](docs/update-0.1.17.md).
 
 ## Screenshots
 

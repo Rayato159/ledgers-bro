@@ -98,7 +98,7 @@ fn dump(connection: &Connection) -> Result<Backup, StorageError> {
     Ok(Backup {
         format: "ledgers-bro-backup".into(),
         version: 1,
-        schema: 10,
+        schema: 11,
         tables,
     })
 }
@@ -146,14 +146,17 @@ fn decode(bytes: &[u8]) -> Result<Backup, StorageError> {
     if bytes.is_empty() || bytes.len() > MAX_BACKUP_BYTES {
         return Err(StorageError::InvalidBackup);
     }
-    let backup: Backup = serde_json::from_slice(bytes).map_err(invalid)?;
+    let mut backup: Backup = serde_json::from_slice(bytes).map_err(invalid)?;
     if backup.format != "ledgers-bro-backup"
         || backup.version != 1
-        || backup.schema != 10
+        || !matches!(backup.schema, 10 | 11)
         || backup.tables.len() != TABLES.len()
     {
         return Err(StorageError::InvalidBackup);
     }
+    // Schema 11 adds category/journal payload variants, not tables or columns.
+    // Normalize the supported predecessor before exact round-trip comparison.
+    backup.schema = 11;
     Ok(backup)
 }
 fn empty(connection: &Connection) -> Result<(), StorageError> {

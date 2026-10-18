@@ -2,7 +2,7 @@
 
 ## Monthly bills
 
-Card-backed plans open their payment dialog in **Repay existing credit card debt** mode. Choose the bank or cash account that paid and check the receiving card. Confirming creates one transfer and settles the installment together; no additional expense is charged. Switch explicitly to **New expense / new card purchase** to record a fresh charge instead. Existing repayments can be linked without duplicate money movement.
+For a plan associated with a credit card, first choose how the installment was paid. **Pay this bill using a card or account** keeps the plan's card selected, records the expense and increases card debt; it does not require a separate bank account. **Repay a credit card balance** asks for the bank or cash account that paid and the receiving card. This creates one transfer and settles the installment together without adding another expense. The dialog never infers payment intent from the account type. Existing expenses or repayments can be linked without duplicate money movement.
 
 A plan defines its amount, payment account, category, monthly day and optional term count. Days 29–31 clamp to the end of shorter months. Plans do not change balances until a payment is recorded or an existing expense is linked. A settlement links one expense to one plan/month without counting it twice.
 
@@ -25,3 +25,7 @@ Corrections update the original debt and its opening journal together in one tra
 Scheduled principal is split equally with residual minor units in the final installment. Partial collections allocate to the oldest installment first. A debt completes when principal is repaid, including plans without a fixed term count. Overdue scheduled principal requires both a term count and collection day; an installment due today is not yet overdue. Cancelling a collection restores its outstanding principal and schedule.
 
 The notification bell covers upcoming/overdue bills and collection dates while the app is open. Read notifications are archived. Settings controls each reminder type and optional system banners; closed-app background reminders are not implemented.
+
+## Shared expenses
+
+From a transaction detail, split a recorded expense into a receivable using an equal share or a custom amount. The original account payment stays unchanged; the shared portion reduces personal expenses and increases receivables. The Receivables list can be filtered by debtor name and an inclusive debt-opening date range. See the [current update guide](update-0.1.17.md) for rounding, cancellation and editing rules.

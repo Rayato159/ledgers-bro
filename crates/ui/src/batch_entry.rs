@@ -2,7 +2,7 @@ use crate::{components::*, state::UiState};
 use dioxus::prelude::*;
 use ledger_application::*;
 use ledger_domain::*;
-use std::collections::BTreeMap;
+use std::{cell::RefCell, collections::BTreeMap, rc::Rc};
 
 // A check approves the exact saved input; editing invalidates that approval.
 type ReviewedCards = Signal<BTreeMap<usize, EntryInput>>;
@@ -20,9 +20,40 @@ fn edit_input(mut editing: Signal<Option<EntryInput>>, apply: impl FnOnce(&mut E
 }
 
 #[component]
-pub(crate) fn BatchReview(source: String, drafts: Vec<ModelDraft>, view: Dashboard) -> Element {
+pub(crate) fn BatchReview(
+    source: String,
+    drafts: Vec<ModelDraft>,
+    view: Dashboard,
+    #[props(default = false)] manual: bool,
+) -> Element {
     let mut store = use_context::<UiState>();
-    let reviewed: ReviewedCards = use_signal(BTreeMap::new);
+    let mut reviewed: ReviewedCards = use_signal(BTreeMap::new);
+    // Stable UI identities preserve another card's in-progress edits when a row
+    // before it is removed. Indices are only used to address the current batch.
+    let identities = use_hook(|| Rc::new(RefCell::new((0_u64, Vec::<u64>::new()))));
+    let keys = {
+        let mut identities = identities.borrow_mut();
+        while identities.1.len() < drafts.len() {
+            let key = identities.0;
+            identities.0 += 1;
+            identities.1.push(key);
+        }
+        identities.1.clone()
+    };
+    let onremove = move |index: usize| {
+        if *store.busy.peek() {
+            return;
+        }
+        if let Some((_, rows)) = store.batch.write().as_mut()
+            && index < rows.len()
+        {
+            rows.remove(index);
+            identities.borrow_mut().1.remove(index);
+        }
+        reviewed.write().clear();
+        store.batch_prepared.set(None);
+    };
+    let today = view.today;
     let checked = drafts
         .iter()
         .enumerate()
@@ -30,15 +61,28 @@ pub(crate) fn BatchReview(source: String, drafts: Vec<ModelDraft>, view: Dashboa
         .count();
     let ready = !drafts.is_empty() && checked == drafts.len();
     let confirm_id = "batch-confirm";
+    let add_id = "batch-add";
     rsx! {
         div { class: "review-intro",
             h3 { {crate::i18n::text("ตรวจ {0} รายการก่อนบันทึก", &[drafts.len().to_string()])} }
             p { class: "field-hint", {crate::i18n::tr("ตรวจรายละเอียดแล้วติ๊กแต่ละรายการ หรือแก้ไขในบัตร จากนั้นยืนยันบันทึกทั้งชุด")} }
         }
-        details { class: "batch-source", summary { {crate::i18n::tr("ดูข้อความต้นฉบับ")} } pre { class: "model-source", "{source}" } }
+        if !source.is_empty() { details { class: "batch-source", summary { {crate::i18n::tr("ดูข้อความต้นฉบับ")} } pre { class: "model-source", "{source}" } } }
         div { class: "review-cards", for (index, draft) in drafts.iter().enumerate() {
-            ReviewCard { key: "{index}", index, draft: draft.clone(), view: view.clone(), reviewed }
+            ReviewCard { key: "{keys[index]}", index, draft: draft.clone(), view: view.clone(), reviewed, removable: manual, onremove: onremove.clone() }
         } }
+        if manual {
+            div { class: "manual-batch-add",
+                button { id: add_id, class: "soft-button", disabled: *store.busy.read() || drafts.len() >= MAX_BATCH_ENTRIES, onclick: move |_| {
+                    if *store.busy.peek() { return; }
+                    if let Some((_, rows)) = store.batch.write().as_mut() && rows.len() < MAX_BATCH_ENTRIES {
+                        rows.push(ModelDraft { input: EntryInput::empty(today), guidance: String::new() });
+                    }
+                    store.batch_prepared.set(None);
+                }, Icon { name: "plus", size: 18 } {crate::i18n::tr("เพิ่มอีกหนึ่งรายการ")} }
+                span { class: "field-hint", {crate::i18n::tr("กรอกได้ครั้งละไม่เกิน 8 รายการ แล้วบันทึกพร้อมกัน")} }
+            }
+        }
         div { class: "review-footer",
             div {
                 strong { role: "status", {crate::i18n::text("ตรวจแล้ว {0} / {1} รายการ", &[checked.to_string(), drafts.len().to_string()])} }
@@ -63,6 +107,8 @@ fn ReviewCard(
     draft: ModelDraft,
     view: Dashboard,
     mut reviewed: ReviewedCards,
+    removable: bool,
+    onremove: EventHandler<usize>,
 ) -> Element {
     let mut store = use_context::<UiState>();
     let initial = draft.input.clone();
@@ -179,6 +225,7 @@ fn ReviewCard(
                     }, Icon { name: "edit", size: 18 } {crate::i18n::tr("แก้ไข")} }
                 }
             }
+            if removable { button { id: "batch-remove-{index}", class: "text-button", disabled: *store.busy.read(), onclick: move |_| onremove.call(index), {crate::i18n::tr("นำรายการนี้ออกจากชุด")} } }
         }
     }
 }

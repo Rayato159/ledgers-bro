@@ -34,13 +34,14 @@ pub fn daily_spending(view: &Dashboard) -> Result<DailySpending, DomainError> {
         if view.reversed.contains(&entry.id()) {
             continue;
         }
-        let EntryKind::Expense { amount, .. } = entry.kind() else {
+        let EntryKind::Expense { .. } = entry.kind() else {
             continue;
         };
         if let Some(day) = days.iter_mut().find(|day| day.date == entry.date().date()) {
-            day.amount = day.amount.checked_add(amount.money())?;
+            let amount = crate::expense_personal_amount(view, entry)?;
+            day.amount = day.amount.checked_add(amount)?;
             day.count += 1;
-            total = total.checked_add(amount.money())?;
+            total = total.checked_add(amount)?;
         }
     }
     Ok(DailySpending { days, total })

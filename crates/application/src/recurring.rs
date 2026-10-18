@@ -304,8 +304,8 @@ pub fn recurring_payment_input(schedule: &RecurringExpense, today: EntryDate) ->
     }
 }
 
-/// A card-backed plan defaults to repaying existing debt. Charging a new
-/// purchase remains an explicit, separate choice in the payment dialog.
+/// Prepare the structured "repay installment" command. The interactive dialog
+/// separately asks whether the user made a new purchase or repaid card debt.
 pub fn recurring_payment_for_accounts(
     schedule: &RecurringExpense,
     today: EntryDate,

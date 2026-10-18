@@ -44,7 +44,7 @@ impl AccountDeletion {
                 .any(|p| p.target() == PostingTarget::Account(account_id))
         };
         let removed: Vec<_> = state.entries.iter().filter(touches_account).collect();
-        if removed.iter().any(|e| {
+        if state.entries.iter().any(|e| matches!(e.kind(), EntryKind::ExpenseClaim { account, .. } if *account == account_id)) || removed.iter().any(|e| {
             matches!(
                 e.kind(),
                 EntryKind::Lending { .. } | EntryKind::Repayment { .. }

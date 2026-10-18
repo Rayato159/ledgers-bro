@@ -205,7 +205,7 @@ fn upgrading_schema_eight_preserves_accounts_transactions_cycles_and_preferences
     assert_eq!(
         db.pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))
             .expect("version"),
-        10
+        11
     );
     assert_eq!(
         db.query_row("PRAGMA integrity_check", [], |row| row.get::<_, String>(0))

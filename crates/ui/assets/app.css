@@ -186,7 +186,10 @@ footer { display: flex; justify-content: space-between; align-items: center; gap
 .manual-entry-shortcut > div { flex: 1; min-width: 0; }
 .manual-entry-shortcut strong, .manual-entry-shortcut span { display: block; }
 .manual-entry-shortcut span { font-size: var(--text-small); color: var(--muted); }
-.manual-entry-editor { max-width: 720px; margin: 0 auto; min-height: 0; }
+.manual-entry-editor { max-width: 1120px; margin: 0 auto; min-height: 0; }
+.manual-batch-add { display:flex; align-items:center; flex-wrap:wrap; gap:12px 20px; margin:20px 0; }
+.manual-batch-add .field-hint { margin:0; }
+.manual-entry-editor .review-footer { position:static; }
 .chat-greeting { display: flex; gap: 14px; align-items: center; margin-bottom: 24px; }
 .chat-greeting strong { font-size: var(--text-title); }
 .chat-greeting p { font-size: var(--text-small); white-space: pre-line; color: var(--muted); margin-top: 6px; }

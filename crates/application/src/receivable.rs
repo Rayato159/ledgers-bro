@@ -3,6 +3,53 @@ use ledger_domain::*;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub const MAX_RECEIVABLES: usize = 500;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExpenseShare {
+    /// Number of people, including the payer. One person's share is claimed.
+    Equal(u32),
+    Amount(String),
+}
+
+pub fn expense_share_amount(total: Money, share: &ExpenseShare) -> Result<PositiveMoney, AppError> {
+    let amount = match share {
+        ExpenseShare::Equal(count) if (2..=1000).contains(count) => {
+            Money::from_minor(total.minor() / i64::from(*count))?
+        }
+        ExpenseShare::Equal(_) => {
+            return Err(AppError::Input(
+                "จำนวนคนต้องอยู่ระหว่าง 2–1000 คน รวมตัวเอง".into(),
+            ));
+        }
+        ExpenseShare::Amount(value) => value.parse()?,
+    };
+    if amount > total {
+        return Err(StorageError::ExpenseClaimExceedsAmount.into());
+    }
+    Ok(PositiveMoney::new(amount)?)
+}
+
+/// Remaining personal expense after active claims. Integer minor units only.
+pub fn expense_personal_amount(
+    view: &Dashboard,
+    entry: &JournalEntry,
+) -> Result<Money, DomainError> {
+    let EntryKind::Expense { amount, .. } = entry.kind() else {
+        return Err(DomainError::InvalidReceivable);
+    };
+    view.entries
+        .iter()
+        .filter(|claim| !view.reversed.contains(&claim.id()))
+        .try_fold(amount.money(), |remaining, claim| {
+            if let EntryKind::ExpenseClaim { source, amount, .. } = claim.kind()
+                && *source == entry.id()
+            {
+                remaining.checked_sub(amount.money())
+            } else {
+                Ok(remaining)
+            }
+        })
+}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReceivableInput {
     pub debtor: String,
@@ -53,6 +100,7 @@ fn receivable_activity(state: &LedgerState, id: ReceivableId) -> Vec<JournalEntr
             EntryKind::Repayment { receivable, .. }
             | EntryKind::Lending { receivable, .. }
             | EntryKind::ReceivableOpening { receivable, .. }
+            | EntryKind::ExpenseClaim { receivable, .. }
                 if *receivable == id =>
             {
                 Some(entry.id())
@@ -92,16 +140,35 @@ pub fn prepare_receivable_edit(
             crate::parse_installments(input.installments.as_deref())?,
         )?,
     )?;
-    let kind = match input.source {
-        Some(account) => EntryKind::Lending {
-            receivable: loan.id(),
+    let kind = if let EntryKind::ExpenseClaim {
+        source,
+        account,
+        category,
+        ..
+    } = *original.kind()
+    {
+        if input.source.is_some() || opened != original.date() {
+            return Err(StorageError::ExpenseClaimSourceChanged.into());
+        }
+        EntryKind::ExpenseClaim {
+            source,
             account,
-            amount: loan.total(),
-        },
-        None => EntryKind::ReceivableOpening {
+            category,
             receivable: loan.id(),
             amount: loan.total(),
-        },
+        }
+    } else {
+        match input.source {
+            Some(account) => EntryKind::Lending {
+                receivable: loan.id(),
+                account,
+                amount: loan.total(),
+            },
+            None => EntryKind::ReceivableOpening {
+                receivable: loan.id(),
+                amount: loan.total(),
+            },
+        }
     };
     let opening = JournalEntry::record(
         original.id(),
@@ -133,7 +200,7 @@ pub fn validate_receivable_edit(
         || !state.entries.contains(&edit.original)
         || receivable_activity(state, edit.expected.id()) != edit.activity
         || !matches!(edit.original.kind(), EntryKind::ReceivableOpening { receivable, .. }
-            | EntryKind::Lending { receivable, .. } if *receivable == edit.expected.id())
+            | EntryKind::Lending { receivable, .. } | EntryKind::ExpenseClaim { receivable, .. } if *receivable == edit.expected.id())
         || state.entries.iter().any(|e| matches!(e.kind(), EntryKind::Reversal { original } if *original == edit.original.id()))
     {
         return Err(StorageError::ReceivableChanged);
@@ -222,11 +289,55 @@ pub fn validate_receivables(state: &LedgerState) -> Result<(), StorageError> {
         })
         .collect();
     let mut origins = BTreeMap::new();
+    let mut claimed: BTreeMap<EntryId, i128> = BTreeMap::new();
     let mut total_principal = 0_i128;
     let mut balances: BTreeMap<ReceivableId, i128> = BTreeMap::new();
     for entry in &state.entries {
+        if let EntryKind::ExpenseClaim {
+            source,
+            account,
+            category,
+            amount,
+            ..
+        } = entry.kind()
+        {
+            // Keep provenance even for reversed claims, and reject stale sources
+            // or aggregate over-allocation under the repository write lock.
+            let original = state
+                .entries
+                .iter()
+                .find(|original| original.id() == *source)
+                .ok_or(StorageError::ExpenseClaimSourceChanged)?;
+            let EntryKind::Expense {
+                account: original_account,
+                category: original_category,
+                amount: original_amount,
+            } = original.kind()
+            else {
+                return Err(StorageError::ExpenseClaimSourceChanged);
+            };
+            if account != original_account
+                || category != original_category
+                || entry.date() != original.date()
+            {
+                return Err(StorageError::ExpenseClaimSourceChanged);
+            }
+            if !reversed.contains(&entry.id()) {
+                if reversed.contains(source) {
+                    return Err(StorageError::ExpenseClaimSourceChanged);
+                }
+                let total = claimed.entry(*source).or_default();
+                *total += i128::from(amount.money().minor());
+                if *total > i128::from(original_amount.money().minor()) {
+                    return Err(StorageError::ExpenseClaimExceedsAmount);
+                }
+            }
+        }
         let (id, delta, origin) = match entry.kind() {
             EntryKind::ReceivableOpening { receivable, amount }
+            | EntryKind::ExpenseClaim {
+                receivable, amount, ..
+            }
             | EntryKind::Lending {
                 receivable, amount, ..
             } => (*receivable, amount.money().minor(), true),
@@ -288,7 +399,7 @@ pub fn receivable_summary(view: &Dashboard) -> Result<ReceivableSummary, DomainE
             continue;
         }
         let cancelled = view.entries.iter().any(|e| {
-            matches!(e.kind(), EntryKind::Lending { receivable, .. } if *receivable == loan.id())
+            matches!(e.kind(), EntryKind::Lending { receivable, .. } | EntryKind::ExpenseClaim { receivable, .. } if *receivable == loan.id())
                 && view.reversed.contains(&e.id())
         });
         let payments: Vec<_> = view.entries.iter().filter(|e| e.date() <= view.today && !view.reversed.contains(&e.id()) && matches!(e.kind(), EntryKind::Repayment { receivable, .. } if *receivable == loan.id())).cloned().collect();

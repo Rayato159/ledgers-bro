@@ -111,6 +111,32 @@ pub fn QuickEntryPage(view: Dashboard) -> Element {
 #[component]
 pub fn ManualEntryPage(view: Dashboard) -> Element {
     let mut store = use_context::<UiState>();
+    let credit_cards: Vec<_> = view
+        .accounts
+        .iter()
+        .filter(|account| account.account.kind() == AccountKind::CreditCard)
+        .map(|account| account.account.id())
+        .collect();
+    use_effect(move || {
+        let input = store.input.read().clone();
+        if store.prepared.read().is_none()
+            && store.batch.read().is_none()
+            && let Some(input) = input
+            // Keep the dedicated card-settlement shortcut and its full/partial
+            // payment validation. Ordinary manual entries use the batch editor.
+            && !(input.kind == TransactionKind::Transfer
+                && input.destination.is_some_and(|id| credit_cards.contains(&id)))
+        {
+            store.batch.set(Some((
+                String::new(),
+                vec![ModelDraft {
+                    input,
+                    guidance: String::new(),
+                }],
+            )));
+            store.input.set(None);
+        }
+    });
     let input = store.input.read().clone();
     let prepared = store.prepared.read().clone();
     rsx! {
@@ -126,7 +152,7 @@ pub fn ManualEntryPage(view: Dashboard) -> Element {
             }
             ReceiptAttachments {}
             if let Some((source, drafts)) = store.batch.read().clone() {
-                crate::batch_entry::BatchReview { source, drafts, view: view.clone() }
+                crate::batch_entry::BatchReview { source, drafts, view: view.clone(), manual: true }
             } else if view.accounts.is_empty() {
                 EmptyState { title: crate::i18n::text("เพิ่มบัญชีก่อนเริ่มจด", &[]), body: crate::i18n::text("เลือกบัญชีที่จะใช้รับหรือจ่ายเงินก่อน", &[]) }
                 button { class: "primary", onclick: move |_| store.account_form.set(true), {crate::i18n::text("เพิ่มบัญชีแรก", &[])} }

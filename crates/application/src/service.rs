@@ -86,6 +86,11 @@ pub enum Command {
     PreviewPrompt(Vec<PromptDraft>),
     CommitPrompt(PromptPlan),
     PreviewReceivable(ReceivableInput),
+    PreviewExpenseClaim {
+        source: EntryId,
+        debtor: String,
+        share: ExpenseShare,
+    },
     CreateReceivable(PreparedReceivable),
     PreviewReceivableEdit {
         expected: Receivable,
@@ -292,6 +297,67 @@ impl<R: LedgerRepository, C: Clock, I: IdSource> LedgerApplication<R, C, I> {
                     kind,
                 )?;
                 let mut state = self.repository.snapshot()?;
+                state.receivables.push(loan.clone());
+                validate_append(&state, &entry)?;
+                Ok(Response::ReceivableReview(ReceivableReview::New(Box::new(
+                    PreparedReceivable {
+                        loan,
+                        opening: PreparedEntry {
+                            submission: self.ids.submission_id()?,
+                            entry,
+                            recurring: None,
+                        },
+                    },
+                ))))
+            }
+            Command::PreviewExpenseClaim {
+                source,
+                debtor,
+                share,
+            } => {
+                let state = self.repository.snapshot()?;
+                let source = state
+                    .entries
+                    .iter()
+                    .find(|entry| entry.id() == source)
+                    .ok_or_else(|| AppError::Input("ไม่พบรายจ่ายต้นทาง".into()))?;
+                let EntryKind::Expense {
+                    account,
+                    category,
+                    amount,
+                } = *source.kind()
+                else {
+                    return Err(AppError::Input("เลือกได้เฉพาะรายจ่ายที่ยังไม่ยกเลิก".into()));
+                };
+                if source.date() > self.clock.today()? {
+                    return Err(AppError::Input("วันที่ตั้งหนี้ต้องไม่เกินวันนี้".into()));
+                }
+                let amount = expense_share_amount(amount.money(), &share)?;
+                let loan = Receivable::new(
+                    self.ids.receivable_id()?,
+                    AccountName::new(&debtor)?,
+                    Note::new(&if source.note().as_str().trim().is_empty() {
+                        category.label().to_owned()
+                    } else {
+                        source.note().as_str().chars().take(300).collect()
+                    })?,
+                    amount,
+                    source.date(),
+                    CollectionTerms::new(Month::of(source.date())?, None, None)?,
+                )?;
+                let entry = JournalEntry::record(
+                    self.ids.entry_id()?,
+                    source.date(),
+                    Note::new(&format!("แบ่งรายจ่ายให้ {}", loan.debtor().as_str()))?,
+                    EntryKind::ExpenseClaim {
+                        source: source.id(),
+                        receivable: loan.id(),
+                        account,
+                        category,
+                        amount,
+                    },
+                )?;
+                let mut state = state;
                 state.receivables.push(loan.clone());
                 validate_append(&state, &entry)?;
                 Ok(Response::ReceivableReview(ReceivableReview::New(Box::new(
@@ -678,6 +744,7 @@ impl<R: LedgerRepository, C: Clock, I: IdSource> LedgerApplication<R, C, I> {
                     prepared.entry.kind(),
                     EntryKind::Opening { .. }
                         | EntryKind::ReceivableOpening { .. }
+                        | EntryKind::ExpenseClaim { .. }
                         | EntryKind::Lending { .. }
                         | EntryKind::Reversal { .. }
                 ) {
@@ -728,6 +795,7 @@ impl<R: LedgerRepository, C: Clock, I: IdSource> LedgerApplication<R, C, I> {
                             p.entry.kind(),
                             EntryKind::Opening { .. }
                                 | EntryKind::ReceivableOpening { .. }
+                                | EntryKind::ExpenseClaim { .. }
                                 | EntryKind::Lending { .. }
                                 | EntryKind::Reversal { .. }
                         )

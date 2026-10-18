@@ -97,6 +97,12 @@ impl UiGateway for TestGateway {
     }
 }
 fn harness() -> Element {
+    review_harness(false)
+}
+fn manual_harness() -> Element {
+    review_harness(true)
+}
+fn review_harness(manual: bool) -> Element {
     let mut store = crate::state::tests::use_test_state();
     use_context_provider(|| store);
     use_hook(move || {
@@ -119,9 +125,64 @@ fn harness() -> Element {
         )));
     });
     rsx! {
-        if let Some((source, drafts)) = store.batch.read().clone() { BatchReview { source, drafts, view: fixture() } }
+        if let Some((source, drafts)) = store.batch.read().clone() { BatchReview { source, drafts, view: fixture(), manual } }
         else { p { "Batch recorded" } }
     }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn manual_rows_can_be_added_removed_and_edited_without_saving_or_mixing_cards() {
+    set_event_converter(Box::new(dioxus::html::SerializedHtmlEventConverter));
+    let probe = Arc::new(Mutex::new(Probe::default()));
+    let mut dom = VirtualDom::new(manual_harness);
+    dom.insert_any_root_context(Box::new(Gateway(Arc::new(TestGateway(probe.clone())))));
+    let mut fields = ids(&dom.rebuild_to_vec());
+    fields.extend(ids(&click(&mut dom, fields["batch-edit-1"])));
+    form_event(
+        &mut dom,
+        fields["batch-note-1"],
+        "input",
+        "Synthetic train ticket",
+    );
+    form_event(&mut dom, fields["batch-amount-1"], "input", "42.00");
+    form_event(&mut dom, fields["batch-category-1"], "change", "transport");
+    fields.extend(ids(&click(&mut dom, fields["batch-remove-0"])));
+    fields.extend(ids(&settle(&mut dom).await));
+    let html = dioxus_ssr::render(&dom);
+    assert!(
+        html.contains("Synthetic train ticket") && html.contains("42.00"),
+        "{html}"
+    );
+    fields.extend(ids(&click(&mut dom, fields["batch-save-0"])));
+    fields.extend(ids(&settle(&mut dom).await));
+    fields.extend(ids(&click(&mut dom, fields["batch-add"])));
+    fields.extend(ids(&settle(&mut dom).await));
+    assert!(dioxus_ssr::render(&dom).contains("batch-amount-1"));
+    click(&mut dom, fields["batch-confirm"]);
+    settle(&mut dom).await;
+    assert_eq!(
+        probe.lock().expect("probe").commits,
+        0,
+        "an incomplete added row blocks the whole batch"
+    );
+    fields.extend(ids(&click(&mut dom, fields["batch-remove-1"])));
+    fields.extend(ids(&settle(&mut dom).await));
+    fields.extend(ids(&form_event(
+        &mut dom,
+        fields["batch-reviewed-0"],
+        "change",
+        "true",
+    )));
+    fields.extend(ids(&settle(&mut dom).await));
+    click(&mut dom, fields["batch-confirm"]);
+    settle(&mut dom).await;
+    let p = probe.lock().expect("probe");
+    assert_eq!(p.commits, 1, "{}", dioxus_ssr::render(&dom));
+    assert_eq!(p.saved.len(), 1);
+    assert_eq!(p.saved[0].entry.note().as_str(), "Synthetic train ticket");
+    assert!(
+        matches!(p.saved[0].entry.kind(), EntryKind::Expense { category: Category::Transport, amount, .. } if amount.money().to_string() == "42.00")
+    );
 }
 
 fn ids(changes: &Mutations) -> HashMap<String, ElementId> {

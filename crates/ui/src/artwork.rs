@@ -10,6 +10,7 @@ pub const fn category_art(category: Category) -> &'static str {
         Category::Luxury => "luxury",
         Category::Supplies => "supplies",
         Category::Medical => "medical",
+        Category::Transport => "transport",
         Category::Salary => "salary",
         Category::Freelance => "freelance",
         Category::Interest => "interest",
@@ -38,6 +39,13 @@ pub const fn entry_art(kind: &EntryKind) -> &'static str {
 #[component]
 pub fn ArtIcon(name: &'static str, size: u32) -> Element {
     let drawing = match name {
+        "transport" => rsx! {
+            rect { x: "12", y: "8", width: "32", height: "36", rx: "8", fill: "var(--art-primary)" }
+            path { d: "M16 17h24v14H16Z", fill: "var(--art-paper)" }
+            path { d: "M28 17v14M21 12h14M18 44l-3 6m23-6 3 6", fill: "none" }
+            circle { cx: "20", cy: "37", r: "2", fill: "var(--art-paper)" }
+            circle { cx: "36", cy: "37", r: "2", fill: "var(--art-paper)" }
+        },
         "food" => rsx! {
             path { d: "M10 30Q13 50 28 50Q43 50 46 30Z", fill: "var(--art-primary)" }
             ellipse { cx: "28", cy: "30", rx: "18", ry: "7", fill: "var(--art-paper)" }

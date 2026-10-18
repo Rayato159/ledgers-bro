@@ -29,10 +29,7 @@ pub fn expense_slices(view: &Dashboard, month: Month) -> Result<Vec<ExpenseSlice
         {
             continue;
         }
-        if let EntryKind::Expense {
-            category, amount, ..
-        } = entry.kind()
-        {
+        if let EntryKind::Expense { category, .. } = entry.kind() {
             let description =
                 (*category == Category::OtherExpense).then(|| expense_description(entry));
             let slice = groups
@@ -42,7 +39,9 @@ pub fn expense_slices(view: &Dashboard, month: Month) -> Result<Vec<ExpenseSlice
                     description,
                     amount: Money::ZERO,
                 });
-            slice.amount = slice.amount.checked_add(amount.money())?;
+            slice.amount = slice
+                .amount
+                .checked_add(crate::expense_personal_amount(view, entry)?)?;
         }
     }
     let mut slices: Vec<_> = groups.into_values().collect();
@@ -113,8 +112,11 @@ pub fn cashflow_breakdown(
                 result.recorded.income = result.recorded.income.checked_add(amount.money())?;
                 result.income_entries.push(entry.clone());
             }
-            EntryKind::Expense { amount, .. } => {
-                result.recorded.expenses = result.recorded.expenses.checked_add(amount.money())?;
+            EntryKind::Expense { .. } => {
+                result.recorded.expenses = result
+                    .recorded
+                    .expenses
+                    .checked_add(crate::expense_personal_amount(view, entry)?)?;
                 result.expense_entries.push(entry.clone());
             }
             _ => {}
@@ -206,8 +208,10 @@ pub fn monthly_cashflow(view: &Dashboard) -> Result<Vec<MonthlyFlow>, DomainErro
             EntryKind::Income { amount, .. } => {
                 period.income = period.income.checked_add(amount.money())?;
             }
-            EntryKind::Expense { amount, .. } => {
-                period.expenses = period.expenses.checked_add(amount.money())?;
+            EntryKind::Expense { .. } => {
+                period.expenses = period
+                    .expenses
+                    .checked_add(crate::expense_personal_amount(view, entry)?)?;
             }
             _ => {}
         }

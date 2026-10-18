@@ -183,6 +183,136 @@ fn card_installment_reduces_bank_and_debt_atomically_and_survives_reopen_restore
 }
 
 #[test]
+fn recurring_bill_paid_by_card_needs_no_bank_and_can_later_be_repaid_without_double_expense() {
+    let dir = tempfile::tempdir().expect("dir");
+    let path = dir.path().join("ledger.sqlite3");
+    let mut app = App::new(SqliteLedger::open(&path).expect("db"), Today, RandomIds);
+    let card = account(
+        &mut app,
+        "Synthetic travel card",
+        AccountKind::CreditCard,
+        "0",
+    );
+    let mut plan_input = RecurringInput {
+        name: "Synthetic transport pass".into(),
+        amount: "200".into(),
+        day: "25".into(),
+        start: "2026-09".into(),
+        account: Some(card),
+        category: Some(Category::Transport),
+        installments: None,
+    };
+    app.execute(Command::AddRecurring(plan_input.clone()))
+        .expect("add plan");
+    let before = view(&mut app);
+    assert_eq!(
+        before.accounts.len(),
+        1,
+        "this user has no bank or cash account"
+    );
+    let plan = before.recurring[0].clone();
+    let input = recurring_payment_input(&plan, before.today);
+    let prepared = prepare_installment(&mut app, &plan, input);
+    let entry = prepared.payment.entry.id();
+    app.execute(Command::PayRecurring(prepared.clone()))
+        .expect("record card charge");
+    app.execute(Command::PayRecurring(prepared))
+        .expect("idempotent retry");
+    let charged = view(&mut app);
+    assert_eq!(charged.entries.len(), before.entries.len() + 1);
+    assert_eq!(charged.liabilities.to_string(), "200.00");
+    assert_eq!(charged.expenses.to_string(), "200.00");
+    assert_eq!(recurring_progress(&charged)[0].paid, 1);
+    drop(app);
+    let mut repo = SqliteLedger::open(&path).expect("reopen");
+    let backup = repo.export_backup().expect("backup with transport");
+    let mut restored = SqliteLedger::in_memory().expect("restore");
+    restored
+        .restore_backup(&backup)
+        .expect("restore transport entries and plan");
+    assert_eq!(
+        restored.snapshot().expect("restored"),
+        repo.snapshot().expect("original")
+    );
+    let mut app = App::new(repo, Today, RandomIds);
+    app.execute(Command::Reverse(entry)).expect("cancel charge");
+    assert_eq!(view(&mut app).liabilities, Money::ZERO);
+    let prepared = prepare_installment(
+        &mut app,
+        &plan,
+        recurring_payment_input(&plan, before.today),
+    );
+    app.execute(Command::PayRecurring(prepared))
+        .expect("charge again");
+    let bank = account(
+        &mut app,
+        "Synthetic payment bank",
+        AccountKind::Bank,
+        "1000",
+    );
+    pay(&mut app, bank, card, "200");
+    let repaid = view(&mut app);
+    assert_eq!(repaid.liabilities, Money::ZERO);
+    assert_eq!(
+        repaid.expenses.to_string(),
+        "200.00",
+        "card repayment must not add another expense"
+    );
+    assert_eq!(
+        repaid
+            .accounts
+            .iter()
+            .find(|a| a.account.id() == bank)
+            .expect("bank")
+            .balance
+            .to_string(),
+        "800.00"
+    );
+    // The new category is valid for later recurring plans as well.
+    plan_input.name = "Synthetic next transport pass".into();
+    app.execute(Command::AddRecurring(plan_input))
+        .expect("second transport plan");
+}
+
+#[test]
+fn transport_upgrade_preserves_schema_ten_rows_and_imports_older_backups() {
+    let dir = tempfile::tempdir().expect("dir");
+    let path = dir.path().join("ledger.sqlite3");
+    let mut app = App::new(SqliteLedger::open(&path).expect("db"), Today, RandomIds);
+    let bank = account(
+        &mut app,
+        "Synthetic previous bank",
+        AccountKind::Bank,
+        "1000",
+    );
+    expense(&mut app, bank, "50", "2026-09-24");
+    drop(app);
+    let mut repo = SqliteLedger::open(&path).expect("open");
+    let before = repo.snapshot().expect("snapshot");
+    let mut old: serde_json::Value =
+        serde_json::from_slice(&repo.export_backup().expect("export")).expect("json");
+    old["schema"] = 10.into();
+    drop(repo);
+    let raw = rusqlite::Connection::open(&path).expect("fixture");
+    raw.pragma_update(None, "user_version", 10)
+        .expect("previous schema");
+    drop(raw);
+    let mut upgraded = SqliteLedger::open(&path).expect("upgrade");
+    assert_eq!(upgraded.snapshot().expect("after"), before);
+    let raw = rusqlite::Connection::open(&path).expect("check schema");
+    assert_eq!(
+        raw.pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0))
+            .expect("version"),
+        11
+    );
+    let mut restored = SqliteLedger::in_memory().expect("restore");
+    restored
+        .restore_backup(&serde_json::to_vec(&old).expect("encode old backup"))
+        .expect("import schema 10 backup");
+    assert_eq!(restored.snapshot().expect("restored rows"), before);
+}
+
+#[test]
 fn card_installment_rejects_invalid_routes_and_rechecks_debt_at_commit() {
     let mut app = App::new(SqliteLedger::in_memory().expect("db"), Today, RandomIds);
     let bank = account(&mut app, "Synthetic bank", AccountKind::Bank, "1000");

@@ -12,7 +12,7 @@ use std::{
 };
 
 const APPLICATION_ID: i64 = 1_279_414_863;
-const SCHEMA_VERSION: i64 = 10;
+const SCHEMA_VERSION: i64 = 11;
 
 pub struct SqliteLedger {
     pub(crate) connection: Connection,
@@ -97,6 +97,12 @@ impl SqliteLedger {
         }
         if version < 10 {
             tx.execute_batch(include_str!("../migrations/010_crypto_holdings.sql"))
+                .map_err(database_error)?;
+        }
+        // Transport introduces a new persisted category code. Older apps must
+        // reject this ledger as newer instead of misreporting it as corrupt.
+        if version < 11 {
+            tx.execute_batch("PRAGMA user_version=11;")
                 .map_err(database_error)?;
         }
         if version < SCHEMA_VERSION {
@@ -356,7 +362,7 @@ impl LedgerRepository for SqliteLedger {
         let loan = &prepared.loan;
         let opening = &prepared.opening;
         if opening.recurring.is_some()
-            || !matches!(opening.entry.kind(), EntryKind::ReceivableOpening { receivable, .. } | EntryKind::Lending { receivable, .. } if *receivable == loan.id())
+            || !matches!(opening.entry.kind(), EntryKind::ReceivableOpening { receivable, .. } | EntryKind::Lending { receivable, .. } | EntryKind::ExpenseClaim { receivable, .. } if *receivable == loan.id())
         {
             return Err(StorageError::Corrupt);
         }
@@ -677,6 +683,7 @@ impl LedgerRepository for SqliteLedger {
             entry.kind(),
             EntryKind::Opening { .. }
                 | EntryKind::ReceivableOpening { .. }
+                | EntryKind::ExpenseClaim { .. }
                 | EntryKind::Lending { .. }
         ) {
             return Err(StorageError::Corrupt);
@@ -1046,6 +1053,7 @@ impl SqliteLedger {
                     prepared.entry.kind(),
                     EntryKind::Opening { .. }
                         | EntryKind::ReceivableOpening { .. }
+                        | EntryKind::ExpenseClaim { .. }
                         | EntryKind::Lending { .. }
                         | EntryKind::Reversal { .. }
                 )

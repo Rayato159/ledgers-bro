@@ -370,7 +370,12 @@ fn PaymentDialog(
 ) -> Element {
     let mut store = use_context::<UiState>();
     let accounts: Vec<_> = view.accounts.iter().map(|a| a.account.clone()).collect();
-    let mut input = use_signal(|| recurring_payment_for_accounts(&schedule, view.today, &accounts));
+    let card_plan = accounts
+        .iter()
+        .any(|a| Some(a.id()) == schedule.account() && a.kind() == AccountKind::CreditCard);
+    // An account's type cannot tell us whether this is a new charge or a repayment.
+    let mut method_chosen = use_signal(|| !card_plan);
+    let mut input = use_signal(|| recurring_payment_input(&schedule, view.today));
     let repayment = input.read().kind == TransactionKind::Transfer;
     let default_account = schedule.account();
     let default_category = schedule.category();
@@ -403,12 +408,18 @@ fn PaymentDialog(
                     p { class: "field-hint", {crate::i18n::text("ลดเงินในบัญชีที่จ่ายและลดหนี้บัตร ไม่เพิ่มรายจ่ายซ้ำ", &[])} }
                 } else {
                     p { {crate::i18n::text("จะลงรายจ่ายหนึ่งรายการ และเปลี่ยนงวดนี้เป็นจ่ายแล้ว ยอดแผนจะไม่ถูกบวกซ้ำใน Flow rate", &[])} }
+                    if let EntryKind::Expense { account, amount, .. } = prepared.payment.entry.kind()
+                        && view.accounts.iter().any(|a| a.account.id() == *account && a.account.kind() == AccountKind::CreditCard) {
+                        p { class: "batch-question", {crate::i18n::text("จ่ายบิลด้วย {0} · หนี้บัตรเพิ่ม {1} · ยังไม่หักเงินบัญชีธนาคาร", &[account_label(&view, *account), format!("{}{}", crate::i18n::currency_prefix(), money_label(amount.money()))])} }
+                    }
                 }
                 button { class: "primary", disabled: *store.busy.read(), onclick: move |_| store.send(Command::PayRecurring(prepared.clone())), {crate::i18n::text("ยืนยันบันทึกการจ่าย", &[])} }
                 button { class: "text-button", disabled: *store.busy.read(), onclick: move |_| store.recurring_prepared.set(None), {crate::i18n::text("กลับไปแก้", &[])} }
             } else {
                 label { r#for: "rec-pay-kind", {crate::i18n::text("วิธีบันทึกงวดนี้", &[])} }
-                select { id: "rec-pay-kind", disabled: *store.busy.read(), value: if repayment { "repayment" } else { "expense" }, onchange: move |e| {
+                select { id: "rec-pay-kind", disabled: *store.busy.read(), value: if !method_chosen() { "" } else if repayment { "repayment" } else { "expense" }, onchange: move |e| {
+                    if !matches!(e.value().as_str(), "repayment" | "expense") { method_chosen.set(false); return; }
+                    method_chosen.set(true);
                     let card_payment = e.value() == "repayment";
                     existing.set(String::new());
                     let mut updated = input();
@@ -418,9 +429,12 @@ fn PaymentDialog(
                     updated.account = if card_payment { updated.account.filter(|id| mode_accounts.iter().any(|a| a.id() == *id && a.kind() != AccountKind::CreditCard)) } else { default_account };
                     input.set(updated);
                 },
-                    option { value: "repayment", selected: repayment, {crate::i18n::text("ชำระหนี้บัตรที่มีอยู่แล้ว", &[])} }
-                    option { value: "expense", selected: !repayment, {crate::i18n::text("รายจ่ายใหม่ / รูดบัตรเพิ่ม", &[])} }
+                    option { value: "", disabled: true, selected: !method_chosen(), {crate::i18n::tr("เลือกวิธีจ่ายงวดนี้")} }
+                    option { value: "expense", selected: method_chosen() && !repayment, {crate::i18n::tr("จ่ายบิลนี้ด้วยบัตรเครดิตหรือเงินในบัญชี")} }
+                    option { value: "repayment", selected: method_chosen() && repayment, {crate::i18n::tr("จ่ายเงินคืนบัตรเครดิต")} }
                 }
+                if !method_chosen() { p { class: "field-hint", {crate::i18n::tr("จ่ายบิลด้วยบัตร: เพิ่มยอดใช้บัตร · จ่ายคืนบัตร: หักเงินจากบัญชีและลดยอดหนี้บัตร")} } }
+                if method_chosen() {
                 p { class: "field-hint", {crate::i18n::tr(if repayment { "ลดเงินในบัญชีที่จ่ายและลดหนี้บัตร ไม่เพิ่มรายจ่ายซ้ำ" } else { "ถ้าเลือกบัญชีบัตรเครดิต รายการนี้จะเพิ่มหนี้บัตร" })} }
                 label { r#for: "rec-existing", {crate::i18n::text("เคยบันทึกรายการจ่ายนี้แล้วหรือยัง", &[])} }
                 select { id: "rec-existing", disabled: *store.busy.read(), value: "{existing}", onchange: move |e| existing.set(e.value()),
@@ -437,7 +451,7 @@ fn PaymentDialog(
                         fieldset { class: "recurring-fields", disabled: *store.busy.read(),
                             div { label { r#for: "rec-pay-amount", {crate::i18n::text("ยอดจ่ายจริง (บาท)", &[])} } input { id: "rec-pay-amount", required: true, inputmode: "decimal", value: input.read().amount.clone(), oninput: move |e| input.write().amount = e.value() } }
                             div { label { r#for: "rec-pay-date", {crate::i18n::text("วันที่จ่ายจริง", &[])} } input { id: "rec-pay-date", r#type: "date", required: true, min: "1900-01-01", max: "{view.today}", value: input.read().date.clone(), onchange: move |e| input.write().date = e.value() } }
-                            div { label { r#for: "rec-pay-account", {crate::i18n::text("บัญชีที่จ่าย", &[])} }
+                            div { label { r#for: "rec-pay-account", {crate::i18n::tr(if repayment { "บัญชีที่จ่าย" } else { "บัตรหรือบัญชีที่ใช้จ่าย" })} }
                                 select { id: "rec-pay-account", required: true, value: input.read().account.map(|id| id.to_string()).unwrap_or_default(), onchange: move |e| input.write().account = e.value().parse().ok(),
                                     option { value: "", selected: input.read().account.is_none(), {crate::i18n::text("เลือกบัญชี", &[])} }
                                     for a in &view.accounts { if a.account.accepts_cash_entries() && (!repayment || a.account.kind() != AccountKind::CreditCard) { option { value: "{a.account.id()}", selected: input.read().account == Some(a.account.id()), "{a.account.name().as_str()}" } } }
@@ -457,6 +471,7 @@ fn PaymentDialog(
                         p { class: "field-hint", {crate::i18n::text("จ่ายล่วงหน้าได้ โดยระบุวันที่จ่ายจริง · หากเคยจดในบันทึกด่วน ให้เลือกใช้รายการเดิมด้านบน", &[])} }
                         button { class: "primary", r#type: "submit", disabled: *store.busy.read(), {crate::i18n::text("ตรวจยอดจ่ายก่อนบันทึก", &[])} }
                     }
+                }
                 }
             }
             button { class: "text-button", disabled: *store.busy.read(), onclick: move |_| onclose.call(()), {crate::i18n::text("ปิด", &[])} }

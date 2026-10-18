@@ -22,3 +22,7 @@ Free text outside the grammar may use an optional [local model](local-model-sele
 Descriptions copy the user's words. When the model omits or invents a description, the original message is retained for review rather than leaving a blank note. There is no silent fuzzy account matching or model-generated SQL. Schema, source text, amounts, dates, names and policy are checked in Rust before confirmation. Valid JSON alone does not establish financial correctness.
 
 Receipt details remain subject to [exact amount reconciliation](receipt-ocr.md). Speech only fills draft text. Unsaved drafts and receipt images are not part of a backup.
+
+## Multiple manual entries
+
+Open **Manual entry** to fill an editable card. Use **Add another entry** for up to eight entries, and **Remove this entry** to discard a draft. Each card can use a different date, account, category and transaction type. Select **Save edits to card** to validate a card without recording money. Once every card is reviewed, confirm the batch to save all entries together. An incomplete or invalid entry blocks the batch; a failed save retains the drafts for correction or retry. Transport is available as an expense category.

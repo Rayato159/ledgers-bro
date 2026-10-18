@@ -8,6 +8,13 @@ use std::collections::BTreeMap;
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum StoredKind {
+    ExpenseClaim {
+        source: String,
+        receivable: String,
+        account: String,
+        category: String,
+        amount: i64,
+    },
     ReceivableOpening {
         receivable: String,
         amount: i64,
@@ -81,6 +88,19 @@ impl StoredIncomeTax {
 impl StoredKind {
     pub fn from_entry(entry: &JournalEntry) -> Self {
         match *entry.kind() {
+            EntryKind::ExpenseClaim {
+                source,
+                receivable,
+                account,
+                category,
+                amount,
+            } => Self::ExpenseClaim {
+                source: source.to_string(),
+                receivable: receivable.to_string(),
+                account: account.to_string(),
+                category: category.code().into(),
+                amount: amount.money().minor(),
+            },
             EntryKind::ReceivableOpening { receivable, amount } => Self::ReceivableOpening {
                 receivable: receivable.to_string(),
                 amount: amount.money().minor(),
@@ -149,6 +169,19 @@ impl StoredKind {
         let amount = |n| PositiveMoney::new(Money::from_minor(n)?);
         let mut income_tax = None;
         let kind = match self {
+            Self::ExpenseClaim {
+                source,
+                receivable,
+                account,
+                category,
+                amount: n,
+            } => EntryKind::ExpenseClaim {
+                source: source.parse()?,
+                receivable: receivable.parse()?,
+                account: account.parse()?,
+                category: Category::from_code(&category)?,
+                amount: amount(n)?,
+            },
             Self::ReceivableOpening {
                 receivable,
                 amount: n,

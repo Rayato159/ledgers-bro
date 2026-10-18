@@ -8,6 +8,7 @@ pub enum Category {
     Luxury,
     Supplies,
     Medical,
+    Transport,
     OtherExpense,
     Salary,
     Freelance,
@@ -15,13 +16,14 @@ pub enum Category {
     OtherIncome,
 }
 impl Category {
-    pub const EXPENSE: [Self; 7] = [
+    pub const EXPENSE: [Self; 8] = [
         Self::Rent,
         Self::Food,
         Self::Snacks,
         Self::Luxury,
         Self::Supplies,
         Self::Medical,
+        Self::Transport,
         Self::OtherExpense,
     ];
     pub const INCOME: [Self; 4] = [
@@ -38,6 +40,7 @@ impl Category {
             Self::Luxury => "ของฟุ่มเฟือย",
             Self::Supplies => "ของใช้",
             Self::Medical => "รักษาพยาบาล",
+            Self::Transport => "การเดินทาง",
             Self::OtherExpense => "อื่นๆ",
             Self::Salary => "เงินเดือน",
             Self::Freelance => "ฟรีแลนซ์",
@@ -53,6 +56,7 @@ impl Category {
             Self::Luxury => "luxury",
             Self::Supplies => "supplies",
             Self::Medical => "medical",
+            Self::Transport => "transport",
             Self::OtherExpense => "other_expense",
             Self::Salary => "salary",
             Self::Freelance => "freelance",
@@ -100,6 +104,15 @@ impl Posting {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EntryKind {
+    /// Reclassify part of a recorded expense as money owed by another person.
+    /// The original cash/card posting is unchanged.
+    ExpenseClaim {
+        source: EntryId,
+        receivable: crate::ReceivableId,
+        account: AccountId,
+        category: Category,
+        amount: PositiveMoney,
+    },
     ReceivableOpening {
         receivable: crate::ReceivableId,
         amount: PositiveMoney,
@@ -156,6 +169,18 @@ impl JournalEntry {
         kind: EntryKind,
     ) -> Result<Self, DomainError> {
         let (first, second, amount) = match kind {
+            EntryKind::ExpenseClaim {
+                category, amount, ..
+            } => {
+                if category.is_income() {
+                    return Err(DomainError::InvalidCategory);
+                }
+                (
+                    PostingTarget::System(SystemBook::Receivable),
+                    PostingTarget::System(SystemBook::Expense),
+                    amount.money(),
+                )
+            }
             EntryKind::ReceivableOpening { amount, .. } => (
                 PostingTarget::System(SystemBook::Receivable),
                 PostingTarget::System(SystemBook::Equity),

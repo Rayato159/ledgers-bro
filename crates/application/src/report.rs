@@ -63,6 +63,13 @@ pub fn dashboard(state: LedgerState, today: EntryDate) -> Result<Dashboard, Doma
         if entry.date().month_key() == today.month_key() && !reversed.contains(&entry.id()) {
             match entry.kind() {
                 EntryKind::Income { amount, .. } => income += i128::from(amount.money().minor()),
+                EntryKind::ExpenseClaim {
+                    amount, category, ..
+                } => {
+                    let minor = i128::from(amount.money().minor());
+                    expenses -= minor;
+                    *categories.entry(*category).or_default() -= minor;
+                }
                 EntryKind::Expense {
                     amount, category, ..
                 } => {

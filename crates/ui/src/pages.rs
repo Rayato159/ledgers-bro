@@ -278,6 +278,7 @@ fn history_entries(
                         .postings()
                         .iter()
                         .any(|p| p.target() == PostingTarget::Account(id))
+                        || matches!(entry.kind(), EntryKind::ExpenseClaim { account, .. } if *account == id)
                 })
                 && match entry.kind() {
                     EntryKind::Opening { .. }
@@ -289,7 +290,7 @@ fn history_entries(
                         3 => matches!(kind, EntryKind::Transfer { .. }),
                         4 => matches!(
                             kind,
-                            EntryKind::Lending { .. } | EntryKind::Repayment { .. }
+                            EntryKind::Lending { .. } | EntryKind::Repayment { .. } | EntryKind::ExpenseClaim { .. }
                         ),
                         _ => true,
                     },
@@ -305,9 +306,10 @@ fn history_entries(
 
 #[component]
 pub fn TransactionRows(view: Dashboard, limit: usize, allow_cancel: bool) -> Element {
-    let store = use_context::<UiState>();
+    let mut store = use_context::<UiState>();
     let mut cancelling = use_signal(|| None::<EntryId>);
     let mut inspecting = use_signal(|| None::<EntryId>);
+    let mut claiming = use_signal(|| None::<JournalEntry>);
     let entries: Vec<_> = view
         .entries
         .iter()
@@ -329,7 +331,7 @@ pub fn TransactionRows(view: Dashboard, limit: usize, allow_cancel: bool) -> Ele
                     let id = entry.id();
                     let cancelled = view.reversed.contains(&id);
                     let income = matches!(entry.kind(), EntryKind::Income { .. } | EntryKind::Repayment { .. });
-                    let transfer = matches!(entry.kind(), EntryKind::Transfer { .. });
+                    let transfer = matches!(entry.kind(), EntryKind::Transfer { .. } | EntryKind::ExpenseClaim { .. });
                     let account_name = account_label(&view, account);
                     let icon_name = entry_art(entry.kind());
                     let sign = if income { "+" } else if !transfer { "−" } else { "" };
@@ -373,9 +375,29 @@ pub fn TransactionRows(view: Dashboard, limit: usize, allow_cancel: bool) -> Ele
                 }
                 if view.reversed.contains(&id) { p { class: "cancel-tag", {crate::i18n::tr("ยกเลิกแล้ว")} } }
                 p { class: "entry-note-body", "{entry.note().as_str()}" }
+                if !view.reversed.contains(&id) && matches!(entry.kind(), EntryKind::Expense { .. }) {
+                    if let Some(latest) = store.view.read().as_ref() {
+                        if let Ok(remaining) = ledger_application::expense_personal_amount(latest, entry) {
+                            p { class: "field-hint", {crate::i18n::text("ส่วนของเรา / ยังแบ่งได้: {0}", &[money_label(remaining)])} }
+                            button { id: "expense-create-claim", class: "soft-button", disabled: remaining == Money::ZERO || *store.busy.read(),
+                                onclick: { let source = entry.clone(); move |_| { store.receivable_review.set(None); store.notice.set(None); inspecting.set(None); claiming.set(Some(source.clone())); } },
+                                Icon { name: "user", size: 18 } {crate::i18n::tr("แบ่งเป็นลูกหนี้")}
+                            }
+                        }
+                    }
+                }
+                if let EntryKind::ExpenseClaim { source, .. } = entry.kind() {
+                    if let Some(original) = store.view.read().as_ref().and_then(|v| v.entries.iter().find(|e| e.id() == *source)) {
+                        p { class: "field-hint", {crate::i18n::text("รายจ่ายต้นทาง: {0} · {1}", &[original.date().to_string(), original.note().as_str().to_owned()])} }
+                    }
+                    p { class: "field-hint", {crate::i18n::tr("รายการนี้ไม่หักเงินในบัญชีซ้ำ เปลี่ยนส่วนที่คนอื่นค้างจากรายจ่ายเป็นลูกหนี้")} }
+                }
                 if let Some(tax) = entry.income_tax() { crate::income_tax::IncomeTaxSummary { tax } }
                 crate::entry_breakdown::EntryBreakdown { view: view.clone(), entry: entry.clone() }
             }
         } }
+        if let Some(source) = claiming() {
+            crate::receivables::ExpenseClaimDialog { source, onclose: move |_| claiming.set(None) }
+        }
     }
 }

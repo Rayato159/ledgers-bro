@@ -63,7 +63,7 @@ fn edit_preview(app: &mut App, id: ReceivableId, input: ReceivableInput) -> Prep
         .find(|r| r.id() == id)
         .expect("loan")
         .clone();
-    let original = current.entries.iter().find(|e| matches!(e.kind(), EntryKind::ReceivableOpening { receivable, .. } | EntryKind::Lending { receivable, .. } if *receivable == id)).expect("opening").clone();
+    let original = current.entries.iter().find(|e| matches!(e.kind(), EntryKind::ReceivableOpening { receivable, .. } | EntryKind::Lending { receivable, .. } | EntryKind::ExpenseClaim { receivable, .. } if *receivable == id)).expect("opening").clone();
     match app
         .execute(Command::PreviewReceivableEdit {
             expected,
@@ -83,6 +83,234 @@ fn save_edit(app: &mut App, edit: PreparedReceivableEdit) {
             .expect("edit"),
         Response::ReceivableChanged
     ));
+}
+
+fn expense(app: &mut App, account: AccountId, amount: &str) -> EntryId {
+    let mut input = EntryInput::empty("2026-09-24".parse().expect("date"));
+    input.account = Some(account);
+    input.category = Some(Category::Transport);
+    input.amount = amount.into();
+    input.note = "Synthetic shared train ticket".into();
+    let Response::Prepared(prepared) = app
+        .execute(Command::Preview(input))
+        .expect("expense preview")
+    else {
+        panic!("preview");
+    };
+    let id = prepared.entry.id();
+    app.execute(Command::Commit(prepared))
+        .expect("expense commit");
+    id
+}
+
+fn claim(app: &mut App, source: EntryId, debtor: &str, share: ExpenseShare) -> PreparedReceivable {
+    let Response::ReceivableReview(ReceivableReview::New(prepared)) = app
+        .execute(Command::PreviewExpenseClaim {
+            source,
+            debtor: debtor.into(),
+            share,
+        })
+        .expect("claim preview")
+    else {
+        panic!("claim review");
+    };
+    *prepared
+}
+
+#[test]
+fn shared_expenses_reclassify_without_debiting_again_and_preserve_exact_split_history() {
+    for kind in [AccountKind::Bank, AccountKind::CreditCard] {
+        let mut app = app(SqliteLedger::in_memory().expect("db"));
+        app.execute(Command::CreateAccount {
+            credit_cycle: if kind == AccountKind::CreditCard {
+                Some(CreditCardCycle::new(20, 5).expect("cycle"))
+            } else {
+                None
+            },
+            name: "Synthetic payer".into(),
+            kind,
+            opening: "0".into(),
+        })
+        .expect("payer");
+        let account = view(&mut app).accounts[0].account.id();
+        let source = expense(&mut app, account, "100");
+        let first = claim(&mut app, source, "Synthetic Alex", ExpenseShare::Equal(3));
+        assert_eq!(first.loan.total().money().to_string(), "33.33");
+        let second = claim(
+            &mut app,
+            source,
+            "Synthetic Sam",
+            ExpenseShare::Amount("40".into()),
+        );
+        let stale = claim(
+            &mut app,
+            source,
+            "Synthetic stale",
+            ExpenseShare::Amount("70".into()),
+        );
+        let before = view(&mut app);
+        assert!(before.receivables.is_empty(), "review must not mutate");
+        app.execute(Command::CreateReceivable(first.clone()))
+            .expect("save first");
+        app.execute(Command::CreateReceivable(first.clone()))
+            .expect("idempotent retry");
+        app.execute(Command::CreateReceivable(second.clone()))
+            .expect("save second");
+        let saved = view(&mut app);
+        assert_eq!(
+            saved.accounts, before.accounts,
+            "cash and card balances must not change"
+        );
+        assert_eq!(saved.receivables.len(), 2);
+        assert_eq!(saved.expenses.to_string(), "26.67");
+        assert_eq!(
+            saved.category_expenses[&Category::Transport].to_string(),
+            "26.67"
+        );
+        assert_eq!(
+            daily_spending(&saved).expect("daily").total.to_string(),
+            "26.67"
+        );
+        assert_eq!(
+            monthly_cashflow(&saved)
+                .expect("monthly")
+                .last()
+                .expect("month")
+                .expenses
+                .to_string(),
+            "26.67"
+        );
+        assert_eq!(
+            expense_slices(&saved, "2026-09".parse().expect("month")).expect("slices")[0]
+                .amount
+                .to_string(),
+            "26.67"
+        );
+        assert_eq!(
+            receivable_summary(&saved)
+                .expect("receivables")
+                .outstanding
+                .to_string(),
+            "73.33"
+        );
+        assert!(
+            app.execute(Command::CreateReceivable(stale)).is_err(),
+            "revalidate aggregate shares at commit"
+        );
+        assert!(
+            app.execute(Command::Reverse(source)).is_err(),
+            "cannot orphan claims"
+        );
+        assert_eq!(view(&mut app), saved, "rejections are atomic");
+        let Response::Document(document) = app.execute(Command::ExportBackup).expect("backup")
+        else {
+            panic!("backup document");
+        };
+        let bytes = document.bytes;
+        let mut restored = SqliteLedger::in_memory().expect("restore db");
+        restored.restore_backup(&bytes).expect("restore");
+        let mut restored = LedgerApplication::new(restored, FixedClock, RandomIds);
+        assert_eq!(view(&mut restored), saved);
+        let mut edited = input("35");
+        edited.opened = "2026-09-24".into();
+        edited.start = "2026-09".into();
+        edited.day = None;
+        edited.installments = None;
+        let edit = edit_preview(&mut app, first.loan.id(), edited);
+        save_edit(&mut app, edit);
+        assert_eq!(view(&mut app).expenses.to_string(), "25.00");
+        assert!(
+            matches!(view(&mut app).entries.iter().find(|e| e.id() == first.opening.entry.id()).expect("opening").kind(), EntryKind::ExpenseClaim { source: id, .. } if *id == source)
+        );
+        app.execute(Command::CreateAccount {
+            credit_cycle: None,
+            name: "Synthetic return bank".into(),
+            kind: AccountKind::Bank,
+            opening: "0".into(),
+        })
+        .expect("return bank");
+        let bank = view(&mut app)
+            .accounts
+            .iter()
+            .find(|a| a.account.name().as_str() == "Synthetic return bank")
+            .expect("bank")
+            .account
+            .id();
+        let Response::ReceivableReview(ReceivableReview::Payment(payment)) = app
+            .execute(Command::PreviewRepayment(RepaymentInput {
+                receivable: first.loan.id(),
+                account: Some(bank),
+                principal: "10".into(),
+                interest: "0".into(),
+                date: "2026-09-24".into(),
+            }))
+            .expect("repayment")
+        else {
+            panic!("payment review");
+        };
+        let payment_id = payment[0].entry.id();
+        app.execute(Command::CommitBatch(payment))
+            .expect("receive money");
+        let paid = view(&mut app);
+        assert_eq!(paid.expenses.to_string(), "25.00");
+        assert_eq!(paid.income.to_string(), "0.00", "principal is not income");
+        assert_eq!(
+            paid.accounts
+                .iter()
+                .find(|a| a.account.id() == bank)
+                .expect("bank")
+                .balance
+                .to_string(),
+            "10.00"
+        );
+        assert!(
+            app.execute(Command::Reverse(first.opening.entry.id()))
+                .is_err(),
+            "repayment must be reversed first"
+        );
+        app.execute(Command::Reverse(payment_id))
+            .expect("reverse repayment");
+        app.execute(Command::Reverse(first.opening.entry.id()))
+            .expect("cancel first claim");
+        app.execute(Command::Reverse(second.opening.entry.id()))
+            .expect("cancel second claim");
+        assert_eq!(view(&mut app).expenses.to_string(), "100.00");
+        assert_eq!(
+            view(&mut app)
+                .accounts
+                .iter()
+                .find(|a| a.account.id() == account)
+                .expect("payer")
+                .balance
+                .to_string(),
+            "-100.00"
+        );
+        app.execute(Command::Reverse(source))
+            .expect("now cancel expense");
+        assert_eq!(view(&mut app).expenses.to_string(), "0.00");
+    }
+}
+
+#[test]
+fn split_rejects_invalid_precision_over_allocation_and_cancelled_sources() {
+    assert!(expense_share_amount("1".parse().expect("money"), &ExpenseShare::Equal(0)).is_err());
+    assert!(expense_share_amount("0.01".parse().expect("money"), &ExpenseShare::Equal(3)).is_err());
+    for amount in ["0", "-1", "100.01", "1.001"] {
+        assert!(
+            expense_share_amount(
+                "100".parse().expect("money"),
+                &ExpenseShare::Amount(amount.into())
+            )
+            .is_err()
+        );
+    }
+    let (mut app, account) = setup(SqliteLedger::in_memory().expect("db"));
+    let source = expense(&mut app, account, "100");
+    let stale = claim(&mut app, source, "Synthetic debt", ExpenseShare::Equal(2));
+    app.execute(Command::Reverse(source))
+        .expect("cancel before save");
+    assert!(app.execute(Command::CreateReceivable(stale)).is_err());
+    assert!(view(&mut app).receivables.is_empty());
 }
 
 #[test]
@@ -709,7 +937,7 @@ fn v3_upgrade_preserves_accounts_postings_and_recurring_plans() {
     assert_eq!(
         raw.pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0))
             .expect("version"),
-        10
+        11
     );
     assert_eq!(
         raw.query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |r| r

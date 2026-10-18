@@ -24,5 +24,5 @@ These guides describe the current application. Historical release notes remain o
 - [Android builds and emulator testing](android-emulator.md)
 - [Testing and release procedure](testing-and-release.md)
 - [SQLite decision](turso-assessment.md)
-- [Current update guide](update-0.1.16.md)
+- [Current update guide](update-0.1.17.md)
 - [Active design assets](../design/README.md)

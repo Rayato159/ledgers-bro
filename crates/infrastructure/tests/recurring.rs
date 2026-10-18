@@ -869,7 +869,7 @@ fn v1_database_migrates_without_changing_old_journals_and_reopens_plans() {
     assert_eq!(
         raw.pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0))
             .expect("version"),
-        10
+        11
     );
     assert_eq!(
         raw.query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |r| r
@@ -1188,6 +1188,6 @@ fn populated_v2_migrates_as_unlimited_and_new_count_survives_reopen() {
     assert_eq!(
         raw.pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0))
             .expect("schema"),
-        10
+        11
     );
 }

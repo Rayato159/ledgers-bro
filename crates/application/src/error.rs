@@ -3,6 +3,10 @@ use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum StorageError {
+    #[error("ยอดที่แบ่งเป็นลูกหนี้รวมกันต้องไม่เกินรายจ่ายต้นทาง")]
+    ExpenseClaimExceedsAmount,
+    #[error("รายจ่ายต้นทางเปลี่ยนหรือถูกยกเลิก กรุณายกเลิกลูกหนี้ที่ผูกไว้ก่อนแก้รายจ่ายต้นทาง")]
+    ExpenseClaimSourceChanged,
     #[error("ยอดชำระต้องไม่เกินหนี้คงค้างของบัตรที่เลือก")]
     CreditPaymentExceedsDebt,
     #[error("ไฟล์สำรองไม่ถูกต้อง หรือสร้างจากแอปรุ่นที่ยังไม่รองรับ")]

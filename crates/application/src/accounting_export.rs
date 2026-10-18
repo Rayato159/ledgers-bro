@@ -91,6 +91,9 @@ pub fn export_csv(view: &Dashboard, options: ExportOptions) -> Result<CsvExport,
         };
         let underlying = original.unwrap_or(entry);
         let kind = match entry.kind() {
+            EntryKind::ExpenseClaim { .. } => {
+                lang.text("แบ่งรายจ่ายเป็นลูกหนี้", "Expense share receivable")
+            }
             EntryKind::ReceivableOpening { .. } => lang.text("ยอดลูกหนี้ยกมา", "Opening receivable"),
             EntryKind::Lending { .. } => lang.text("ให้ยืมเงิน", "Loan advance"),
             EntryKind::Repayment { .. } => lang.text("ลูกหนี้ชำระเงินต้น", "Principal repayment"),
@@ -122,6 +125,7 @@ pub fn export_csv(view: &Dashboard, options: ExportOptions) -> Result<CsvExport,
                 PostingTarget::System(SystemBook::Receivable) => {
                     let id = match underlying.kind() {
                         EntryKind::ReceivableOpening { receivable, .. }
+                        | EntryKind::ExpenseClaim { receivable, .. }
                         | EntryKind::Lending { receivable, .. }
                         | EntryKind::Repayment { receivable, .. } => *receivable,
                         _ => return Err(DomainError::InvalidReceivable),
@@ -163,7 +167,9 @@ pub fn export_csv(view: &Dashboard, options: ExportOptions) -> Result<CsvExport,
                     )
                 }
                 PostingTarget::System(SystemBook::Expense) => {
-                    let EntryKind::Expense { category, .. } = underlying.kind() else {
+                    let (EntryKind::Expense { category, .. }
+                    | EntryKind::ExpenseClaim { category, .. }) = underlying.kind()
+                    else {
                         return Err(DomainError::InvalidCategory);
                     };
                     (
@@ -218,6 +224,7 @@ fn category_label(category: Category, language: ExportLanguage) -> String {
         Category::Luxury => "Discretionary expense",
         Category::Supplies => "Supplies expense",
         Category::Medical => "Medical expense",
+        Category::Transport => "Transport expense",
         Category::OtherExpense => "Other expense",
         Category::Salary => "Salary income",
         Category::Freelance => "Freelance income",

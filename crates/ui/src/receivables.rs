@@ -3,6 +3,181 @@ use dioxus::prelude::*;
 use ledger_application::*;
 use ledger_domain::*;
 
+fn filter_receivables(
+    items: &mut Vec<ReceivableProgress>,
+    name: &str,
+    from: &str,
+    through: &str,
+) -> Result<(), &'static str> {
+    let parse = |value: &str| {
+        if value.is_empty() {
+            Ok(None)
+        } else {
+            value
+                .parse::<EntryDate>()
+                .map(Some)
+                .map_err(|_| "กรุณาระบุวันที่ให้ครบถ้วน")
+        }
+    };
+    let dates = parse(from)
+        .and_then(|from| parse(through).map(|through| (from, through)))
+        .and_then(|(from, through)| {
+            if from.zip(through).is_some_and(|(a, b)| a > b) {
+                Err("วันที่เริ่มต้องไม่เกินวันที่สิ้นสุด")
+            } else {
+                Ok((from, through))
+            }
+        });
+    let (from, through) = match dates {
+        Ok(dates) => dates,
+        Err(error) => {
+            items.clear();
+            return Err(error);
+        }
+    };
+    let name = name.trim().to_lowercase();
+    items.retain(|item| {
+        item.loan.debtor().as_str().to_lowercase().contains(&name)
+            && from.is_none_or(|date| item.loan.opened() >= date)
+            && through.is_none_or(|date| item.loan.opened() <= date)
+    });
+    items.sort_by_key(|item| std::cmp::Reverse(item.loan.opened()));
+    Ok(())
+}
+
+#[cfg(test)]
+mod filter_tests {
+    #![allow(clippy::expect_used)]
+    use super::*;
+    fn item(name: &str, date: &str) -> ReceivableProgress {
+        let opened: EntryDate = date.parse().expect("date");
+        ReceivableProgress {
+            loan: Receivable::new(
+                "00000000-0000-0000-0000-000000000001".parse().expect("id"),
+                AccountName::new(name).expect("name"),
+                Note::new("Synthetic share").expect("note"),
+                PositiveMoney::new("10".parse().expect("amount")).expect("positive"),
+                opened,
+                CollectionTerms::new(Month::of(opened).expect("month"), None, None).expect("terms"),
+            )
+            .expect("loan"),
+            paid: Money::ZERO,
+            outstanding: "10".parse().expect("money"),
+            overdue: Money::ZERO,
+            paid_installments: None,
+            remaining_installments: None,
+            next_due: None,
+            next_amount: None,
+            status: ReceivableStatus::Unscheduled,
+            payments: vec![],
+        }
+    }
+    #[test]
+    fn name_and_opened_range_combine_inclusively_and_clear_without_mutating_loans() {
+        let all = vec![
+            item("Synthetic Alex", "2026-09-30"),
+            item("Synthetic ALEX", "2026-10-01"),
+            item("Synthetic Sam", "2026-10-01"),
+            item("ทดสอบ", "2026-10-02"),
+        ];
+        let mut items = all.clone();
+        filter_receivables(&mut items, " alex ", "2026-09-30", "2026-10-01").expect("filter");
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].loan.opened().to_string(), "2026-10-01");
+        filter_receivables(&mut items, "Alex", "2026-10-01", "2026-10-01").expect("exact date");
+        assert_eq!(items.len(), 1);
+        let mut items = all.clone();
+        filter_receivables(&mut items, "ทด", "", "").expect("Thai name");
+        assert_eq!(items.len(), 1);
+        let mut items = all.clone();
+        assert!(filter_receivables(&mut items, "", "2026-10-02", "2026-09-30").is_err());
+        assert!(items.is_empty());
+        let mut items = all.clone();
+        filter_receivables(&mut items, "", "", "").expect("clear");
+        assert_eq!(items.len(), all.len());
+    }
+}
+
+#[component]
+pub(crate) fn ExpenseClaimDialog(source: JournalEntry, onclose: EventHandler<()>) -> Element {
+    let mut store = use_context::<UiState>();
+    let mut debtor = use_signal(String::new);
+    let mut mode = use_signal(|| "equal".to_owned());
+    let mut people = use_signal(|| "2".to_owned());
+    let mut custom = use_signal(String::new);
+    let mut submitted = use_signal(|| None::<ReceivableId>);
+    use_effect(move || {
+        if let Some(id) = submitted()
+            && store
+                .view
+                .read()
+                .as_ref()
+                .is_some_and(|v| v.receivables.iter().any(|r| r.id() == id))
+        {
+            onclose.call(());
+        }
+    });
+    let Some(view) = store.view.read().clone() else {
+        return rsx! {};
+    };
+    let EntryKind::Expense { amount, .. } = source.kind() else {
+        return rsx! {};
+    };
+    let total = amount.money();
+    let remaining = expense_personal_amount(&view, &source).unwrap_or(Money::ZERO);
+    let share = if mode() == "equal" {
+        ExpenseShare::Equal(people().parse().unwrap_or(0))
+    } else {
+        ExpenseShare::Amount(custom())
+    };
+    let calculated = expense_share_amount(total, &share).ok().map(|v| v.money());
+    let review = store.receivable_review.read().clone();
+    let source_id = source.id();
+    rsx! {
+        dialog { id: "expense-claim-dialog", class: "account-dialog recurring-dialog", "aria-labelledby": "expense-claim-title",
+            onmounted: move |_| { let _ = document::eval("document.getElementById('expense-claim-dialog').showModal(); document.getElementById('claim-debtor')?.focus()"); },
+            oncancel: move |event| { event.prevent_default(); if !*store.busy.peek() { store.receivable_review.set(None); onclose.call(()); } },
+            div { class: "section-heading",
+                h2 { id: "expense-claim-title", {crate::i18n::tr("แบ่งรายจ่ายเป็นลูกหนี้")} }
+                button { class: "icon-button", disabled: *store.busy.read(), "aria-label": crate::i18n::tr("ปิดหน้าต่าง"), onclick: move |_| { store.receivable_review.set(None); onclose.call(()); }, Icon { name: "close", size: 20 } }
+            }
+            p { class: "entry-note-body", "{source.date()} · {source.note().as_str()}" }
+            p { {crate::i18n::text("ยอดเดิม {0} · ยังแบ่งได้ {1}", &[money_label(total), money_label(remaining)])} }
+            if let Some((true, error)) = store.notice.read().clone() { p { class: "form-error", role: "alert", "{crate::i18n::tr(&error)}" } }
+            if let Some(ReceivableReview::New(prepared)) = review {
+                p { class: "batch-question", {crate::i18n::text("{0} ค้างเรา {1}", &[prepared.loan.debtor().as_str().to_owned(), money_label(prepared.loan.total().money())])} }
+                p { {crate::i18n::text("ส่วนของเราหลังแบ่ง: {0}", &[money_label(remaining.checked_sub(prepared.loan.total().money()).unwrap_or(Money::ZERO))])} }
+                p { class: "field-hint", {crate::i18n::tr("รายการนี้ไม่หักเงินในบัญชีซ้ำ เปลี่ยนส่วนที่คนอื่นค้างจากรายจ่ายเป็นลูกหนี้")} }
+                div { class: "dialog-actions",
+                    button { id: "claim-confirm", class: "primary", disabled: *store.busy.read(), onclick: move |_| { submitted.set(Some(prepared.loan.id())); store.send(Command::CreateReceivable(*prepared.clone())); }, {crate::i18n::tr("ยืนยันเพิ่มลูกหนี้")} }
+                    button { class: "soft-button", disabled: *store.busy.read(), onclick: move |_| { store.receivable_review.set(None); store.notice.set(None); }, {crate::i18n::tr("กลับไปแก้")} }
+                }
+            } else {
+                form { onsubmit: move |event| { event.prevent_default(); store.send(Command::PreviewExpenseClaim { source: source_id, debtor: debtor(), share: share.clone() }); },
+                    fieldset { class: "recurring-fields", disabled: *store.busy.read(),
+                        div { label { r#for: "claim-debtor", {crate::i18n::tr("ชื่อลูกหนี้")} } input { id: "claim-debtor", required: true, maxlength: 60, value: debtor(), oninput: move |event| debtor.set(event.value()) } }
+                        div { label { r#for: "claim-mode", {crate::i18n::tr("วิธีแบ่งยอด")} }
+                            select { id: "claim-mode", value: mode(), onchange: move |event| mode.set(event.value()),
+                                option { value: "equal", selected: mode() == "equal", {crate::i18n::tr("หารเท่ากัน")} }
+                                option { value: "amount", selected: mode() == "amount", {crate::i18n::tr("ระบุยอดเอง")} }
+                            }
+                        }
+                        if mode() == "equal" {
+                            div { label { r#for: "claim-people", {crate::i18n::tr("จำนวนคนรวมตัวเอง")} } input { id: "claim-people", r#type: "number", min: "2", max: "1000", required: true, value: people(), oninput: move |event| people.set(event.value()) } }
+                        } else {
+                            div { label { r#for: "claim-amount", {crate::i18n::tr("ยอดที่คนนี้ค้างเรา")} } input { id: "claim-amount", inputmode: "decimal", required: true, value: custom(), oninput: move |event| custom.set(event.value()) } }
+                        }
+                    }
+                    if let Some(amount) = calculated { p { class: "batch-question", {crate::i18n::text("ลูกหนี้คนนี้: {0}", &[money_label(amount)])} } }
+                    p { class: "field-hint", {crate::i18n::tr("เพิ่มลูกหนี้ทีละคนจากรายการเดิม หารจากยอดเต็ม เศษสตางค์อยู่ในส่วนของเรา")} }
+                    p { class: "field-hint", {crate::i18n::tr("รายการนี้ไม่หักเงินในบัญชีซ้ำ เปลี่ยนส่วนที่คนอื่นค้างจากรายจ่ายเป็นลูกหนี้")} }
+                    button { id: "claim-preview", r#type: "submit", class: "primary", disabled: *store.busy.read() || calculated.is_none_or(|v| v > remaining), {crate::i18n::tr("ตรวจข้อมูลลูกหนี้")} }
+                }
+            }
+        }
+    }
+}
+
 fn new_form(today: EntryDate) -> ReceivableInput {
     ReceivableInput {
         debtor: String::new(),
@@ -40,6 +215,9 @@ pub(crate) fn ReceivablesPage(view: Dashboard) -> Element {
     let mut form = use_signal(|| new_form(view.today));
     let mut is_new_loan = use_signal(|| false);
     let mut known_count = use_signal(|| view.receivables.len());
+    let mut filter_name = use_signal(String::new);
+    let mut filter_from = use_signal(String::new);
+    let mut filter_through = use_signal(String::new);
     use_effect(move || {
         if let Some(view) = store.view.read().as_ref()
             && view.receivables.len() != *known_count.peek()
@@ -50,18 +228,39 @@ pub(crate) fn ReceivablesPage(view: Dashboard) -> Element {
             is_new_loan.set(false);
         }
     });
-    let summary = match receivable_summary(&view) {
+    let mut summary = match receivable_summary(&view) {
         Ok(value) => value,
         Err(e) => return rsx! { p { role: "alert", "{e}" } },
     };
+    let filters = filter_receivables(
+        &mut summary.items,
+        &filter_name(),
+        &filter_from(),
+        &filter_through(),
+    );
     let review = store.receivable_review.read().clone();
     let editing = store.receivable_edit.read().is_some();
+    let from_expense = store
+        .receivable_edit
+        .read()
+        .as_ref()
+        .is_some_and(|(_, opening)| matches!(opening.kind(), EntryKind::ExpenseClaim { .. }));
     rsx! {
         section { class: "page-heading",
             div { h1 { {crate::i18n::text("ลูกหนี้", &[])} } p { class: "muted", {crate::i18n::text("ใครค้างเราเท่าไหร่ รับคืนแล้วกี่งวด และนัดเก็บเงินวันไหน", &[])} } }
             button { class: "primary", "aria-haspopup": "dialog", disabled: *store.busy.read(), onclick: move |_| { form.set(new_form(view.today)); is_new_loan.set(false); store.receivable_edit.set(None); adding.set(true); store.notice.set(None); store.receivable_review.set(None); }, {crate::i18n::text("เพิ่มลูกหนี้", &[])} }
         }
         PageTabs { id: "receivables", tabs: vec![("list", "รายการลูกหนี้"), ("up", "ภาพรวมการรับคืน")], selected: tab }
+        if tab() == 0 {
+            div { class: "history-filters receivable-filters",
+                div { label { r#for: "receivable-filter-name", {crate::i18n::tr("ค้นหาชื่อลูกหนี้")} } input { id: "receivable-filter-name", r#type: "search", value: filter_name(), oninput: move |e| filter_name.set(e.value()) } }
+                div { label { r#for: "receivable-filter-from", {crate::i18n::tr("ตั้งหนี้ตั้งแต่วันที่")} } input { id: "receivable-filter-from", r#type: "date", value: filter_from(), onchange: move |e| filter_from.set(e.value()) } }
+                div { label { r#for: "receivable-filter-through", {crate::i18n::tr("ถึงวันที่")} } input { id: "receivable-filter-through", r#type: "date", value: filter_through(), onchange: move |e| filter_through.set(e.value()) } }
+                button { id: "receivable-filter-clear", class: "soft-button", disabled: filter_name().is_empty() && filter_from().is_empty() && filter_through().is_empty(), onclick: move |_| { filter_name.set(String::new()); filter_from.set(String::new()); filter_through.set(String::new()); }, {crate::i18n::tr("ล้างตัวกรอง")} }
+            }
+            if let Err(error) = filters { p { class: "form-error", role: "alert", "{crate::i18n::tr(error)}" } }
+            p { class: "history-result", role: "status", {crate::i18n::text("พบ {0} รายการ", &[summary.items.len().to_string()])} }
+        }
         PagePanel { lazy: true, id: "receivables", index: 1, selected: tab(), ReceivablesChart { view: view.clone() } }
         if adding() || editing {
             dialog { id: "receivable-create-dialog", class: "account-dialog recurring-dialog receivable-dialog", "aria-labelledby": "receivable-create-title",
@@ -79,7 +278,7 @@ pub(crate) fn ReceivablesPage(view: Dashboard) -> Element {
                             let latest = store.view.peek().clone();
                             if let (Some(id), Some(latest)) = (selected, latest)
                                 && let Some(loan) = latest.receivables.iter().find(|loan| loan.id() == id)
-                                && let Some(opening) = latest.entries.iter().find(|e| matches!(e.kind(), EntryKind::Lending { receivable, .. } | EntryKind::ReceivableOpening { receivable, .. } if *receivable == id)) {
+                                && let Some(opening) = latest.entries.iter().find(|e| matches!(e.kind(), EntryKind::Lending { receivable, .. } | EntryKind::ReceivableOpening { receivable, .. } | EntryKind::ExpenseClaim { receivable, .. } if *receivable == id)) {
                                 let input = edit_form(loan, opening);
                                 is_new_loan.set(input.source.is_some()); form.set(input);
                                 store.receivable_edit.set(Some((loan.clone(), opening.clone())));
@@ -116,7 +315,7 @@ pub(crate) fn ReceivablesPage(view: Dashboard) -> Element {
                             div { label { r#for: "debtor-name", {crate::i18n::text("ชื่อลูกหนี้", &[])} } input { id: "debtor-name", required: true, maxlength: 60, value: form.read().debtor.clone(), onmounted: move |_| { let _ = document::eval("document.getElementById('debtor-name')?.focus()"); }, oninput: move |e| form.write().debtor = e.value() } }
                             div { label { r#for: "debt-description", {crate::i18n::text("หนี้อะไร", &[])} } input { id: "debt-description", required: true, maxlength: 300, placeholder: crate::i18n::text("เช่น ยืมซื้อคอมพิวเตอร์", &[]), value: form.read().description.clone(), oninput: move |e| form.write().description = e.value() } }
                             div { label { r#for: "debt-total", {crate::i18n::text("เงินต้นทั้งหมดที่ยังค้าง ณ วันที่ตั้งหนี้ (บาท)", &[])} } input { id: "debt-total", required: true, inputmode: "decimal", value: form.read().total.clone(), oninput: move |e| form.write().total = e.value() } }
-                            div { label { r#for: "debt-opened", {crate::i18n::text("วันที่ตั้งยอดหนี้", &[])} } input { id: "debt-opened", r#type: "date", required: true, min: "1900-01-01", max: "{view.today}", value: form.read().opened.clone(), onchange: move |e| form.write().opened = e.value() } }
+                            div { label { r#for: "debt-opened", {crate::i18n::text("วันที่ตั้งยอดหนี้", &[])} } input { id: "debt-opened", disabled: from_expense, r#type: "date", required: true, min: "1900-01-01", max: "{view.today}", value: form.read().opened.clone(), onchange: move |e| form.write().opened = e.value() } }
                             div { label { r#for: "debt-start", {crate::i18n::text("เดือนเริ่มเก็บ (ค.ศ.)", &[])} } input { id: "debt-start", r#type: "month", required: true, min: "1900-01", max: "9999-12", value: form.read().start.clone(), onchange: move |e| form.write().start = e.value() } }
                             div {
                                 label { class: "flow-mode", input { r#type: "checkbox", checked: form.read().installments.is_some(), onchange: move |e| form.write().installments = e.checked().then(String::new) } {crate::i18n::text("กำหนดจำนวนงวด", &[])} }
@@ -129,7 +328,7 @@ pub(crate) fn ReceivablesPage(view: Dashboard) -> Element {
                                 else { p { class: "field-hint", {crate::i18n::text("ไม่กำหนดวันเก็บ จะไม่ตีความว่าเลยกำหนด", &[])} } }
                             }
                             div {
-                                label { class: "flow-mode", input { r#type: "checkbox", checked: is_new_loan(), onchange: move |e| { is_new_loan.set(e.checked()); form.write().source = None; } } {crate::i18n::text("เป็นการให้ยืมเงินใหม่ หักเงินจากบัญชี", &[])} }
+                                label { class: "flow-mode", input { r#type: "checkbox", checked: is_new_loan(), disabled: from_expense, onchange: move |e| { is_new_loan.set(e.checked()); form.write().source = None; } } {crate::i18n::text("เป็นการให้ยืมเงินใหม่ หักเงินจากบัญชี", &[])} }
                                 if is_new_loan() {
                                     label { r#for: "debt-source", {crate::i18n::text("บัญชีที่จ่ายเงินให้ยืม", &[])} }
                                     select { id: "debt-source", required: true, value: form.read().source.map(|id| id.to_string()).unwrap_or_default(), onchange: move |e| form.write().source = e.value().parse().ok(),
@@ -150,11 +349,12 @@ pub(crate) fn ReceivablesPage(view: Dashboard) -> Element {
         }
         PagePanel { lazy: true, id: "receivables", index: 0, selected: tab(), section { class: "card recurring-card",
             h2 { {crate::i18n::text("รายการลูกหนี้และการชำระ", &[])} }
-            if summary.items.is_empty() { p { class: "muted", {crate::i18n::text("ยังไม่มีลูกหนี้ เพิ่มรายการแรกเพื่อเริ่มติดตามยอดค้าง", &[])} } }
+            if summary.items.is_empty() { p { class: "muted", {crate::i18n::tr(if view.receivables.is_empty() { "ยังไม่มีลูกหนี้ เพิ่มรายการแรกเพื่อเริ่มติดตามยอดค้าง" } else { "ไม่พบลูกหนี้ตามชื่อและช่วงวันที่เลือก" })} } }
             for p in summary.items {
                 article { class: "debtor-item", key: "{p.loan.id()}",
                     div { class: "section-heading", h3 { "{p.loan.debtor().as_str()}" } span { class: if p.status == ReceivableStatus::Overdue { "status-pill debt-overdue" } else { "status-pill" }, "{crate::i18n::tr(p.status.label())}" } }
                     p { "{p.loan.description().as_str()}" }
+                    p { class: "field-hint", {crate::i18n::text("วันที่ตั้งยอดหนี้: {0}", &[p.loan.opened().to_string()])} }
                     div { class: "debtor-balance-grid",
                         div { small { {crate::i18n::text("ยังค้างเรา", &[])} } strong { "{crate::i18n::currency_prefix()}{money_label(p.outstanding)}" } }
                         div { small { {crate::i18n::text("รับคืนแล้ว", &[])} } strong { "{crate::i18n::currency_prefix()}{money_label(p.paid)}" } }
@@ -169,7 +369,7 @@ pub(crate) fn ReceivablesPage(view: Dashboard) -> Element {
                     div { class: "receivable-item-actions",
                     if p.status != ReceivableStatus::Cancelled {
                         button { class: "soft-button receivable-edit-button", r#type: "button", disabled: *store.busy.read(),
-                            onclick: { let loan = p.loan.clone(); let opening = view.entries.iter().find(|e| matches!(e.kind(), EntryKind::Lending { receivable, .. } | EntryKind::ReceivableOpening { receivable, .. } if *receivable == loan.id())).cloned(); move |_| {
+                            onclick: { let loan = p.loan.clone(); let opening = view.entries.iter().find(|e| matches!(e.kind(), EntryKind::Lending { receivable, .. } | EntryKind::ReceivableOpening { receivable, .. } | EntryKind::ExpenseClaim { receivable, .. } if *receivable == loan.id())).cloned(); move |_| {
                                 if let Some(opening) = opening.clone() {
                                     let input = edit_form(&loan, &opening);
                                     is_new_loan.set(input.source.is_some()); form.set(input);
@@ -283,6 +483,7 @@ fn ReceivableEditReview(prepared: PreparedReceivableEdit, view: Dashboard) -> El
                 div { small { {crate::i18n::tr("รับคืนแล้ว")} } strong { "{crate::i18n::currency_prefix()}{money_label(paid)}" } }
                 div { small { {crate::i18n::tr("ยังค้างเรา")} } strong { "{crate::i18n::currency_prefix()}{money_label(outstanding)}" } }
             }
+            if matches!(prepared.original().kind(), EntryKind::ExpenseClaim { .. }) { p { class: "field-hint", {crate::i18n::tr("แก้ส่วนแบ่งจากรายจ่ายเดิม เงินในบัญชีและยอดหนี้บัตรไม่เปลี่ยน")} } }
             if balances.is_empty() { p { class: "field-hint", {crate::i18n::tr("ยอดเงินในบัญชีไม่เปลี่ยน")} } }
             else {
                 h3 { {crate::i18n::tr("ยอดบัญชีหลังแก้ไข")} }

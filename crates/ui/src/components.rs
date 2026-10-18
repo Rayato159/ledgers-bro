@@ -111,6 +111,9 @@ pub fn account_label(view: &ledger_application::Dashboard, id: AccountId) -> Str
 pub fn entry_label(entry: &JournalEntry) -> Option<(&'static str, Money, AccountId)> {
     Some(match *entry.kind() {
         EntryKind::ReceivableOpening { .. } => return None,
+        EntryKind::ExpenseClaim {
+            account, amount, ..
+        } => ("แบ่งรายจ่ายเป็นลูกหนี้", amount.money(), account),
         EntryKind::Lending {
             account, amount, ..
         } => ("ให้ยืมเงินต้น", amount.money(), account),
