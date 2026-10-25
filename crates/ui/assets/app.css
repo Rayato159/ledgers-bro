@@ -1333,6 +1333,7 @@ label.review-check { display:flex; align-items:center; gap:10px; margin:0; min-h
   .daily-spending-track { height:112px; }
 }
 .receivable-item-actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-block: 16px; }
+.debtor-totals { padding: clamp(18px, 3vw, 28px); }
 .debtor-group { padding-block: 22px; border-top: 1px solid var(--line); }
 .debtor-totals .section-heading { flex-wrap: wrap; gap: 12px; }
 .debtor-group h3, .debtor-group-item > div { min-width: 0; overflow-wrap: anywhere; }
