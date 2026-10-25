@@ -150,6 +150,7 @@ pub fn PrivacyNote() -> Element {
 
 #[component]
 pub fn NewEntryButton() -> Element {
-    let mut store = use_context::<UiState>();
-    rsx! { button { class: "primary add-entry-button", "aria-label": crate::i18n::tr("เพิ่มรายการ"), disabled: *store.busy.read() && store.model_operation.read().is_none(), onclick: move |_| store.page.set(crate::state::Page::Chat), Icon { name: "plus", size: 19 } span { {crate::i18n::tr("เพิ่มรายการ")} } } }
+    let store = use_context::<UiState>();
+    let add_id = "quick-add-entry";
+    rsx! { button { id: add_id, class: "primary add-entry-button", "aria-label": crate::i18n::tr("เพิ่มรายการ"), disabled: *store.busy.read() && store.model_operation.read().is_none(), onclick: move |_| store.quick_add(), Icon { name: "plus", size: 19 } span { {crate::i18n::tr("เพิ่มรายการ")} } } }
 }

@@ -53,7 +53,6 @@ pub(crate) fn BatchReview(
         reviewed.write().clear();
         store.batch_prepared.set(None);
     };
-    let today = view.today;
     let checked = drafts
         .iter()
         .enumerate()
@@ -68,21 +67,15 @@ pub(crate) fn BatchReview(
             p { class: "field-hint", {crate::i18n::tr("ตรวจรายละเอียดแล้วติ๊กแต่ละรายการ หรือแก้ไขในบัตร จากนั้นยืนยันบันทึกทั้งชุด")} }
         }
         if !source.is_empty() { details { class: "batch-source", summary { {crate::i18n::tr("ดูข้อความต้นฉบับ")} } pre { class: "model-source", "{source}" } } }
-        div { class: "review-cards", for (index, draft) in drafts.iter().enumerate() {
-            ReviewCard { key: "{keys[index]}", index, draft: draft.clone(), view: view.clone(), reviewed, removable: manual, onremove: onremove.clone() }
-        } }
         if manual {
             div { class: "manual-batch-add",
-                button { id: add_id, class: "soft-button", disabled: *store.busy.read() || drafts.len() >= MAX_BATCH_ENTRIES, onclick: move |_| {
-                    if *store.busy.peek() { return; }
-                    if let Some((_, rows)) = store.batch.write().as_mut() && rows.len() < MAX_BATCH_ENTRIES {
-                        rows.push(ModelDraft { input: EntryInput::empty(today), guidance: String::new() });
-                    }
-                    store.batch_prepared.set(None);
-                }, Icon { name: "plus", size: 18 } {crate::i18n::tr("เพิ่มอีกหนึ่งรายการ")} }
+                button { id: add_id, class: "soft-button", disabled: *store.busy.read() || drafts.len() >= MAX_BATCH_ENTRIES, onclick: move |_| store.add_manual_row(), Icon { name: "plus", size: 18 } {crate::i18n::tr("เพิ่มอีกหนึ่งรายการ")} }
                 span { class: "field-hint", {crate::i18n::tr("กรอกได้ครั้งละไม่เกิน 8 รายการ แล้วบันทึกพร้อมกัน")} }
             }
         }
+        div { class: "review-cards", for (index, draft) in drafts.iter().enumerate() {
+            ReviewCard { key: "{keys[index]}", index, draft: draft.clone(), view: view.clone(), reviewed, removable: manual, onremove: onremove.clone() }
+        } }
         div { class: "review-footer",
             div {
                 strong { role: "status", {crate::i18n::text("ตรวจแล้ว {0} / {1} รายการ", &[checked.to_string(), drafts.len().to_string()])} }

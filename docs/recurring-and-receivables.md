@@ -28,4 +28,12 @@ The notification bell covers upcoming/overdue bills and collection dates while t
 
 ## Shared expenses
 
-From a transaction detail, split a recorded expense into a receivable using an equal share or a custom amount. The original account payment stays unchanged; the shared portion reduces personal expenses and increases receivables. The Receivables list can be filtered by debtor name and an inclusive debt-opening date range. See the [current update guide](update-0.1.17.md) for rounding, cancellation and editing rules.
+From a transaction detail, split a recorded expense into a receivable using an equal share or a custom amount. The original account payment stays unchanged; the shared portion reduces personal expenses and increases receivables. The Receivables list can be filtered by debtor name and an inclusive debt-opening date range. Equal splits include the payer and round down to minor units, leaving the remainder with the payer. Cancel repayments before cancelling their receivable, and cancel linked receivables before cancelling the original expense. Editing a shared receivable preserves its source and original date.
+
+## Active debt, totals and history
+
+**Outstanding debts** shows only positive unpaid balances. Partially repaid debts remain here. Fully repaid and cancelled debts appear in **Debt history**, retaining their details and payment history. Reversing a repayment returns a debt to the active list whenever it has a positive balance again; this separation is computed from the ledger, not a destructive archive operation.
+
+**By debtor** groups outstanding debts by full debtor name, ignoring letter case and extra whitespace. People sharing the same name are grouped together; use distinct names when they are different people. Totals use the remaining balance, not the original principal, and exclude settled/cancelled debts. Expand a person to see each debt and record a repayment against that specific debt.
+
+Name and inclusive debt-opening date filters apply to all three views. Group totals reflect only matching debts. **Collection overview** remains the complete collection summary.

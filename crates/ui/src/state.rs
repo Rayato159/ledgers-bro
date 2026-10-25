@@ -683,6 +683,48 @@ impl UiState {
             self.busy.set(false);
         });
     }
+    pub fn add_manual_row(mut self) {
+        if *self.busy.peek() {
+            return;
+        }
+        let Some(today) = self.view.peek().as_ref().map(|view| view.today) else {
+            return;
+        };
+        if let Some((_, rows)) = self.batch.write().as_mut() {
+            if rows.len() >= MAX_BATCH_ENTRIES {
+                self.notice.set(Some((
+                    true,
+                    "กรอกได้ครั้งละไม่เกิน 8 รายการ แล้วบันทึกพร้อมกัน".into(),
+                )));
+                return;
+            }
+            rows.push(ModelDraft {
+                input: EntryInput::empty(today),
+                guidance: String::new(),
+            });
+        }
+        self.batch_prepared.set(None);
+    }
+
+    /// The global + opens manual entry and appends on repeated presses without
+    /// resetting existing cards or their in-progress edits.
+    pub fn quick_add(mut self) {
+        if self.model_operation.peek().is_some() {
+            self.new_entry();
+        } else if !*self.busy.peek() {
+            if *self.page.peek() == Page::Manual && self.batch.peek().is_some() {
+                self.add_manual_row();
+            } else if self.batch.peek().is_some()
+                || self.input.peek().is_some()
+                || self.prepared.peek().is_some()
+            {
+                self.page.set(Page::Manual);
+            } else {
+                self.new_entry();
+            }
+        }
+    }
+
     pub fn new_entry(mut self) {
         if *self.busy.peek() && self.model_operation.peek().is_none() {
             return;

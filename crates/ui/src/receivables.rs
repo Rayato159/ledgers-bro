@@ -3,6 +3,89 @@ use dioxus::prelude::*;
 use ledger_application::*;
 use ledger_domain::*;
 
+fn is_outstanding(item: &ReceivableProgress) -> bool {
+    item.status != ReceivableStatus::Cancelled && item.outstanding > Money::ZERO
+}
+
+struct DebtorGroup {
+    name: String,
+    outstanding: Money,
+    items: Vec<ReceivableProgress>,
+}
+
+fn debtor_groups(items: &[ReceivableProgress]) -> Result<Vec<DebtorGroup>, DomainError> {
+    let mut groups = std::collections::BTreeMap::<String, DebtorGroup>::new();
+    for item in items.iter().filter(|item| is_outstanding(item)) {
+        let name = item
+            .loan
+            .debtor()
+            .as_str()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        let group = groups
+            .entry(name.to_lowercase())
+            .or_insert_with(|| DebtorGroup {
+                name,
+                outstanding: Money::ZERO,
+                items: Vec::new(),
+            });
+        group.outstanding = group.outstanding.checked_add(item.outstanding)?;
+        group.items.push(item.clone());
+    }
+    let mut groups: Vec<_> = groups.into_values().collect();
+    groups.sort_by(|a, b| {
+        b.outstanding
+            .cmp(&a.outstanding)
+            .then_with(|| a.name.cmp(&b.name))
+    });
+    Ok(groups)
+}
+
+#[component]
+fn DebtorTotals(items: Vec<ReceivableProgress>) -> Element {
+    let mut store = use_context::<UiState>();
+    let groups = match debtor_groups(&items) {
+        Ok(groups) => groups,
+        Err(error) => return rsx! { p { class: "form-error", role: "alert", "{error}" } },
+    };
+    let total = groups
+        .iter()
+        .try_fold(Money::ZERO, |sum, group| sum.checked_add(group.outstanding));
+    let total = match total {
+        Ok(total) => total,
+        Err(error) => return rsx! { p { class: "form-error", role: "alert", "{error}" } },
+    };
+    rsx! {
+        section { class: "card debtor-totals",
+            div { class: "section-heading",
+                h2 { {crate::i18n::tr("หนี้ค้างรวมตามคน")} }
+                strong { id: "debtor-total-outstanding", "{crate::i18n::currency_prefix()}{money_label(total)}" }
+            }
+            p { class: "field-hint", {crate::i18n::tr("รวมยอดที่ยังไม่จ่ายของชื่อเดียวกัน ตามตัวกรองที่เลือก ไม่รวมรายการชำระครบหรือยกเลิก")} }
+            if groups.is_empty() { p { class: "muted", {crate::i18n::tr("ไม่มีหนี้ค้างตามตัวกรองที่เลือก")} } }
+            for group in groups {
+                article { class: "debtor-group", key: "{group.name.to_lowercase()}",
+                    div { class: "section-heading",
+                        h3 { "{group.name}" }
+                        strong { class: "debtor-group-total", "{crate::i18n::currency_prefix()}{money_label(group.outstanding)}" }
+                    }
+                    details {
+                        summary { {crate::i18n::text("ดูหนี้ค้าง {0} รายการ", &[group.items.len().to_string()])} }
+                        for item in group.items {
+                            div { class: "debtor-group-item", key: "{item.loan.id()}",
+                                div { strong { "{item.loan.description().as_str()}" } p { class: "field-hint", "{item.loan.opened()}" } }
+                                strong { "{crate::i18n::currency_prefix()}{money_label(item.outstanding)}" }
+                                button { class: "soft-button", disabled: *store.busy.read(), onclick: move |_| { store.receivable_review.set(None); store.repayment_selection.set(Some(item.loan.id())); store.repayment_form.set(true); }, {crate::i18n::tr("บันทึกลูกหนี้ชำระหนี้")} }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 fn filter_receivables(
     items: &mut Vec<ReceivableProgress>,
     name: &str,
@@ -72,6 +155,47 @@ mod filter_tests {
             payments: vec![],
         }
     }
+    #[test]
+    fn totals_group_only_unpaid_balances_and_keep_settled_and_cancelled_in_history() {
+        let mut partial = item("Synthetic Alex", "2026-10-01");
+        partial.paid = "3.25".parse().expect("paid");
+        partial.outstanding = "6.75".parse().expect("remaining");
+        let second = item("synthetic  ALEX", "2026-10-02");
+        let mut settled = item("Synthetic Alex", "2026-10-03");
+        settled.paid = "10".parse().expect("paid");
+        settled.outstanding = Money::ZERO;
+        settled.status = ReceivableStatus::Paid;
+        let mut cancelled = item("Synthetic Cancelled", "2026-10-04");
+        cancelled.outstanding = Money::ZERO;
+        cancelled.status = ReceivableStatus::Cancelled;
+        let items = vec![partial, second, settled.clone(), cancelled];
+        let groups = debtor_groups(&items).expect("totals");
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].outstanding.to_string(), "16.75");
+        assert_eq!(groups[0].items.len(), 2);
+        assert_eq!(items.iter().filter(|p| !is_outstanding(p)).count(), 2);
+        let mut filtered = items.clone();
+        filter_receivables(&mut filtered, "alex", "2026-10-01", "2026-10-01").expect("filter");
+        assert_eq!(
+            debtor_groups(&filtered).expect("filtered totals")[0]
+                .outstanding
+                .to_string(),
+            "6.75"
+        );
+        // A repayment reversal makes the debt active again; no archive flag can
+        // strand it in history after its live balance changes.
+        settled.outstanding = "10".parse().expect("reopened");
+        settled.paid = Money::ZERO;
+        settled.status = ReceivableStatus::Unscheduled;
+        assert!(is_outstanding(&settled));
+        assert_eq!(
+            debtor_groups(&[settled]).expect("reopened totals")[0]
+                .outstanding
+                .to_string(),
+            "10.00"
+        );
+    }
+
     #[test]
     fn name_and_opened_range_combine_inclusively_and_clear_without_mutating_loans() {
         let all = vec![
@@ -238,6 +362,11 @@ pub(crate) fn ReceivablesPage(view: Dashboard) -> Element {
         &filter_from(),
         &filter_through(),
     );
+    let history = tab() == 2;
+    if tab() != 1 {
+        summary.items.retain(|item| is_outstanding(item) != history);
+    }
+    let list_tab = if history { 2 } else { 0 };
     let review = store.receivable_review.read().clone();
     let editing = store.receivable_edit.read().is_some();
     let from_expense = store
@@ -250,8 +379,8 @@ pub(crate) fn ReceivablesPage(view: Dashboard) -> Element {
             div { h1 { {crate::i18n::text("ลูกหนี้", &[])} } p { class: "muted", {crate::i18n::text("ใครค้างเราเท่าไหร่ รับคืนแล้วกี่งวด และนัดเก็บเงินวันไหน", &[])} } }
             button { class: "primary", "aria-haspopup": "dialog", disabled: *store.busy.read(), onclick: move |_| { form.set(new_form(view.today)); is_new_loan.set(false); store.receivable_edit.set(None); adding.set(true); store.notice.set(None); store.receivable_review.set(None); }, {crate::i18n::text("เพิ่มลูกหนี้", &[])} }
         }
-        PageTabs { id: "receivables", tabs: vec![("list", "รายการลูกหนี้"), ("up", "ภาพรวมการรับคืน")], selected: tab }
-        if tab() == 0 {
+        PageTabs { id: "receivables", tabs: vec![("list", "หนี้ค้าง"), ("user", "รวมตามคน"), ("notebook", "ประวัติหนี้"), ("up", "ภาพรวมการรับคืน")], selected: tab }
+        if tab() != 3 {
             div { class: "history-filters receivable-filters",
                 div { label { r#for: "receivable-filter-name", {crate::i18n::tr("ค้นหาชื่อลูกหนี้")} } input { id: "receivable-filter-name", r#type: "search", value: filter_name(), oninput: move |e| filter_name.set(e.value()) } }
                 div { label { r#for: "receivable-filter-from", {crate::i18n::tr("ตั้งหนี้ตั้งแต่วันที่")} } input { id: "receivable-filter-from", r#type: "date", value: filter_from(), onchange: move |e| filter_from.set(e.value()) } }
@@ -259,9 +388,10 @@ pub(crate) fn ReceivablesPage(view: Dashboard) -> Element {
                 button { id: "receivable-filter-clear", class: "soft-button", disabled: filter_name().is_empty() && filter_from().is_empty() && filter_through().is_empty(), onclick: move |_| { filter_name.set(String::new()); filter_from.set(String::new()); filter_through.set(String::new()); }, {crate::i18n::tr("ล้างตัวกรอง")} }
             }
             if let Err(error) = filters { p { class: "form-error", role: "alert", "{crate::i18n::tr(error)}" } }
-            p { class: "history-result", role: "status", {crate::i18n::text("พบ {0} รายการ", &[summary.items.len().to_string()])} }
+            if tab() != 1 { p { class: "history-result", role: "status", {crate::i18n::text("พบ {0} รายการ", &[summary.items.len().to_string()])} } }
         }
-        PagePanel { lazy: true, id: "receivables", index: 1, selected: tab(), ReceivablesChart { view: view.clone() } }
+        PagePanel { lazy: true, id: "receivables", index: 1, selected: tab(), DebtorTotals { items: summary.items.clone() } }
+        PagePanel { lazy: true, id: "receivables", index: 3, selected: tab(), ReceivablesChart { view: view.clone() } }
         if adding() || editing {
             dialog { id: "receivable-create-dialog", class: "account-dialog recurring-dialog receivable-dialog", "aria-labelledby": "receivable-create-title",
                 onmounted: move |_| { let _ = document::eval("document.getElementById('receivable-create-dialog').showModal(); document.getElementById('debtor-name')?.focus()"); },
@@ -347,9 +477,9 @@ pub(crate) fn ReceivablesPage(view: Dashboard) -> Element {
                 }
             }
         }
-        PagePanel { lazy: true, id: "receivables", index: 0, selected: tab(), section { class: "card recurring-card",
-            h2 { {crate::i18n::text("รายการลูกหนี้และการชำระ", &[])} }
-            if summary.items.is_empty() { p { class: "muted", {crate::i18n::tr(if view.receivables.is_empty() { "ยังไม่มีลูกหนี้ เพิ่มรายการแรกเพื่อเริ่มติดตามยอดค้าง" } else { "ไม่พบลูกหนี้ตามชื่อและช่วงวันที่เลือก" })} } }
+        PagePanel { lazy: true, id: "receivables", index: list_tab, selected: tab(), section { class: "card recurring-card",
+            h2 { {crate::i18n::tr(if history { "ประวัติหนี้ที่ชำระครบหรือยกเลิก" } else { "รายการหนี้ที่ยังไม่จ่ายครบ" })} }
+            if summary.items.is_empty() { p { class: "muted", {crate::i18n::tr(if history { "ไม่มีประวัติหนี้ตามตัวกรองที่เลือก" } else { "ไม่มีหนี้ค้างตามตัวกรองที่เลือก" })} } }
             for p in summary.items {
                 article { class: "debtor-item", key: "{p.loan.id()}",
                     div { class: "section-heading", h3 { "{p.loan.debtor().as_str()}" } span { class: if p.status == ReceivableStatus::Overdue { "status-pill debt-overdue" } else { "status-pill" }, "{crate::i18n::tr(p.status.label())}" } }

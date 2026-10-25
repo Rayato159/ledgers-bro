@@ -99,6 +99,62 @@ impl UiGateway for TestGateway {
 fn harness() -> Element {
     review_harness(false)
 }
+fn quick_add_harness() -> Element {
+    let mut store = crate::state::tests::use_test_state();
+    use_context_provider(|| store);
+    use_hook(move || store.view.set(Some(fixture())));
+    rsx! {
+        crate::components::NewEntryButton {}
+        if *store.page.read() == crate::state::Page::Manual { crate::entry::ManualEntryPage { view: fixture() } }
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn global_plus_opens_multiple_manual_entries_and_preserves_unsaved_edits() {
+    set_event_converter(Box::new(dioxus::html::SerializedHtmlEventConverter));
+    let probe = Arc::new(Mutex::new(Probe::default()));
+    let mut dom = VirtualDom::new(quick_add_harness);
+    dom.insert_any_root_context(Box::new(Gateway(Arc::new(TestGateway(probe.clone())))));
+    dom.insert_any_root_context(Box::new(crate::HostInfo {
+        art: Arc::new(crate::ArtAssets::bundled()),
+        isolated: true,
+        receipt_ocr_available: false,
+        preview_label: "test",
+    }));
+    let mut fields = ids(&dom.rebuild_to_vec());
+    fields.extend(ids(&click(&mut dom, fields["quick-add-entry"])));
+    fields.extend(ids(&settle(&mut dom).await));
+    assert!(dioxus_ssr::render(&dom).contains("batch-amount-0"));
+    form_event(
+        &mut dom,
+        fields["batch-note-0"],
+        "input",
+        "Synthetic unsaved ticket",
+    );
+    form_event(&mut dom, fields["batch-amount-0"], "input", "12.34");
+    fields.extend(ids(&click(&mut dom, fields["quick-add-entry"])));
+    fields.extend(ids(&settle(&mut dom).await));
+    let html = dioxus_ssr::render(&dom);
+    assert!(
+        html.contains("batch-amount-1")
+            && html.contains("Synthetic unsaved ticket")
+            && html.contains("12.34"),
+        "{html}"
+    );
+    for _ in 0..10 {
+        fields.extend(ids(&click(&mut dom, fields["quick-add-entry"])));
+    }
+    fields.extend(ids(&settle(&mut dom).await));
+    let html = dioxus_ssr::render(&dom);
+    assert!(html.contains("batch-amount-7") && !html.contains("batch-amount-8"));
+    click(&mut dom, fields["batch-confirm"]);
+    settle(&mut dom).await;
+    assert_eq!(
+        probe.lock().expect("probe").commits,
+        0,
+        "blank cards cannot be committed"
+    );
+}
 fn manual_harness() -> Element {
     review_harness(true)
 }

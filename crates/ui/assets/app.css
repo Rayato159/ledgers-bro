@@ -1333,6 +1333,14 @@ label.review-check { display:flex; align-items:center; gap:10px; margin:0; min-h
   .daily-spending-track { height:112px; }
 }
 .receivable-item-actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-block: 16px; }
+.debtor-group { padding-block: 22px; border-top: 1px solid var(--line); }
+.debtor-totals .section-heading { flex-wrap: wrap; gap: 12px; }
+.debtor-group h3, .debtor-group-item > div { min-width: 0; overflow-wrap: anywhere; }
+.debtor-group-total { font-size: 1.25rem; }
+.debtor-group details > summary { cursor: pointer; padding-block: 12px; }
+.debtor-group-item { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 12px 20px; padding: 18px 0; border-top: 1px solid var(--line); }
+.debtor-group-item > button { grid-column: 1 / -1; justify-self: start; }
+@media (max-width: 420px) { .debtor-group-item { grid-template-columns: minmax(0,1fr); } }
 .receivable-edit-changes { display: grid; gap: 0; margin-block: 20px; }
 .receivable-edit-changes > div { display: grid; grid-template-columns: minmax(140px, .8fr) minmax(0, 1.2fr); gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--line); }
 .receivable-edit-changes dt { font-weight: 600; }
